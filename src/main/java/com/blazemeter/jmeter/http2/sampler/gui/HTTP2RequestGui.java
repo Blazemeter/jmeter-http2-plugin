@@ -28,7 +28,7 @@ public class HTTP2RequestGui extends AbstractSamplerGui {
     private JTextField sourceIpAddr;
     private JComboBox<String> sourceIpType = new JComboBox<>(HTTPSamplerBase.getSourceTypeList());
 
-    public HTTP2RequestGui(){
+    public HTTP2RequestGui() {
         setLayout(new BorderLayout(0, 5));
         setBorder(makeBorder());
 
@@ -52,7 +52,7 @@ public class HTTP2RequestGui extends AbstractSamplerGui {
         add(logoPanel, BorderLayout.SOUTH);
         add(tabbedPane, BorderLayout.CENTER);
     }
-    
+
     private JPanel createEmbeddedRsrcPanel() {
         retrieveEmbeddedResources = new JCheckBox(JMeterUtils.getResString("web_testing_retrieve_images")); // $NON-NLS-1$
 
@@ -60,13 +60,13 @@ public class HTTP2RequestGui extends AbstractSamplerGui {
         embeddedRsrcPanel.setBorder(BorderFactory.createTitledBorder(BorderFactory.createEtchedBorder(), JMeterUtils
                 .getResString("web_testing_retrieve_title"))); // $NON-NLS-1$
         embeddedRsrcPanel.add(retrieveEmbeddedResources);
-        
-        embeddedResourceUrlRegexFilter = new JLabeledTextField(JMeterUtils.getResString("web_testing_embedded_url_pattern"),20); // $NON-NLS-1$
+
+        embeddedResourceUrlRegexFilter = new JLabeledTextField(JMeterUtils.getResString("web_testing_embedded_url_pattern"), 20); // $NON-NLS-1$
         embeddedRsrcPanel.add(embeddedResourceUrlRegexFilter);
-        
+
         return embeddedRsrcPanel;
     }
-    
+
     private JPanel createSourceAddrPanel() {
         final JPanel sourceAddrPanel = new HorizontalPanel();
         sourceAddrPanel.setBorder(BorderFactory.createTitledBorder(BorderFactory.createEtchedBorder(), JMeterUtils
@@ -79,7 +79,7 @@ public class HTTP2RequestGui extends AbstractSamplerGui {
         sourceAddrPanel.add(sourceIpAddr);
         return sourceAddrPanel;
     }
-    
+
     private JPanel createOptionalTasksPanel() {
         final JPanel checkBoxPanel = new VerticalPanel();
         checkBoxPanel.setBorder(BorderFactory.createTitledBorder(BorderFactory.createEtchedBorder(), JMeterUtils
@@ -105,7 +105,7 @@ public class HTTP2RequestGui extends AbstractSamplerGui {
         modifyTestElement(sampler);
         return sampler;
     }
-    
+
     /**
      * Modifies a given TestElement to mirror the data in the gui components.
      */
@@ -117,7 +117,7 @@ public class HTTP2RequestGui extends AbstractSamplerGui {
         retrieveEmbeddedResources.setSelected(http2sampler.isEmbeddedResources());
         embeddedResourceUrlRegexFilter.setText(http2sampler.getEmbeddedUrlRE());
     }
-    
+
     @Override
     public void modifyTestElement(TestElement sampler) {
         sampler.clear();
@@ -128,7 +128,7 @@ public class HTTP2RequestGui extends AbstractSamplerGui {
         http2Sample.setEmbeddedUrlRE(embeddedResourceUrlRegexFilter.getText());
         super.configureTestElement(sampler);
     }
-    
+
     @Override
     public Dimension getPreferredSize() {
         return getMinimumSize();
