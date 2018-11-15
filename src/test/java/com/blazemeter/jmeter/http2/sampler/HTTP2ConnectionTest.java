@@ -27,7 +27,7 @@ public class HTTP2ConnectionTest {
 
     @Before
     public void setup() throws Exception {
-    	TestJMeterUtils.createJmeterEnv();
+        TestJMeterUtils.createJmeterEnv();
         headerManagerMock = Mockito.mock(HeaderManager.class);
         urlMock = Mockito.mock(URL.class);
         cookieManagerMock = Mockito.mock(CookieManager.class);
