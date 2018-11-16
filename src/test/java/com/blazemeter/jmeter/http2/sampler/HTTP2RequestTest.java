@@ -14,6 +14,7 @@ import org.junit.Before;
 import org.junit.Test;
 import org.mockito.Mockito;
 import kg.apc.emulators.TestJMeterUtils;
+
 import java.net.URL;
 
 import static org.junit.Assert.*;
@@ -25,7 +26,7 @@ public class HTTP2RequestTest {
 
     @Before
     public void setup() {
-    	TestJMeterUtils.createJmeterEnv();
+        TestJMeterUtils.createJmeterEnv();
         http2Req = new HTTP2Request();
         http2Req.setThreadName("10");
         http2Req.setProperty(HTTP2Request.DOMAIN, "www.sprint.com");

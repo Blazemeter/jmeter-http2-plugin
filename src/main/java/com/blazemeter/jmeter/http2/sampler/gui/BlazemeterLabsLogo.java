@@ -11,64 +11,65 @@ import java.net.URISyntaxException;
 import javax.swing.ImageIcon;
 import javax.swing.JLabel;
 import javax.swing.UIManager;
+
 import org.apache.jorphan.logging.LoggingManager;
 import org.apache.log.Logger;
 
 public class BlazemeterLabsLogo extends JLabel {
 
-  private static final Logger LOG = LoggingManager.getLoggerForClass();
+    private static final Logger LOG = LoggingManager.getLoggerForClass();
 
-  private static final ImageIcon DEFAULT_ICON = new ImageIcon(
-      BlazemeterLabsLogo.class.getResource("/blazemeter-labs-logo.png"));
-  private static final ImageIcon DARCULA_ICON = new ImageIcon(
-      BlazemeterLabsLogo.class.getResource("/blazemeter-labs-light-logo.png"));
+    private static final ImageIcon DEFAULT_ICON = new ImageIcon(
+            BlazemeterLabsLogo.class.getResource("/blazemeter-labs-logo.png"));
+    private static final ImageIcon DARCULA_ICON = new ImageIcon(
+            BlazemeterLabsLogo.class.getResource("/blazemeter-labs-light-logo.png"));
 
-  public BlazemeterLabsLogo() {
-    super(DEFAULT_ICON);
-    setBrowseOnClick("https://github.com/Blazemeter/jmeter-bzm-plugins");
-  }
+    public BlazemeterLabsLogo() {
+        super(DEFAULT_ICON);
+        setBrowseOnClick("https://github.com/Blazemeter/jmeter-http2-plugin");
+    }
 
-  @Override
-  public void paint(Graphics g) {
-    setIcon("Darcula".equals(UIManager.getLookAndFeel().getID()) ? DARCULA_ICON : DEFAULT_ICON);
-    super.paint(g);
-  }
+    @Override
+    public void paint(Graphics g) {
+        setIcon("Darcula".equals(UIManager.getLookAndFeel().getID()) ? DARCULA_ICON : DEFAULT_ICON);
+        super.paint(g);
+    }
 
-  private void setBrowseOnClick(String url) {
-    setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-    addMouseListener(new MouseListener() {
-      @Override
-      public void mouseClicked(MouseEvent mouseEvent) {
-        if (Desktop.isDesktopSupported()) {
-          try {
-            Desktop.getDesktop().browse(new URI(url));
-          } catch (IOException | URISyntaxException exception) {
-            LOG.error("Problem when accessing repository", exception);
-          }
-        }
-      }
+    private void setBrowseOnClick(String url) {
+        setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        addMouseListener(new MouseListener() {
+            @Override
+            public void mouseClicked(MouseEvent mouseEvent) {
+                if (Desktop.isDesktopSupported()) {
+                    try {
+                        Desktop.getDesktop().browse(new URI(url));
+                    } catch (IOException | URISyntaxException exception) {
+                        LOG.error("Problem when accessing repository", exception);
+                    }
+                }
+            }
 
-      @Override
-      public void mousePressed(MouseEvent mouseEvent) {
-        //no action
-      }
+            @Override
+            public void mousePressed(MouseEvent mouseEvent) {
+                //no action
+            }
 
-      @Override
-      public void mouseReleased(MouseEvent mouseEvent) {
-        //no action
-      }
+            @Override
+            public void mouseReleased(MouseEvent mouseEvent) {
+                //no action
+            }
 
-      @Override
-      public void mouseEntered(MouseEvent mouseEvent) {
-        //no action
-      }
+            @Override
+            public void mouseEntered(MouseEvent mouseEvent) {
+                //no action
+            }
 
-      @Override
-      public void mouseExited(MouseEvent mouseEvent) {
-        //no action
-      }
+            @Override
+            public void mouseExited(MouseEvent mouseEvent) {
+                //no action
+            }
 
-    });
-  }
+        });
+    }
 
 }
