@@ -26,7 +26,7 @@ public class BlazemeterLabsLogo extends JLabel {
 
     public BlazemeterLabsLogo() {
         super(DEFAULT_ICON);
-        setBrowseOnClick("https://github.com/Blazemeter/jmeter-bzm-plugins");
+        setBrowseOnClick("https://github.com/Blazemeter/jmeter-http2-plugin");
     }
 
     @Override
