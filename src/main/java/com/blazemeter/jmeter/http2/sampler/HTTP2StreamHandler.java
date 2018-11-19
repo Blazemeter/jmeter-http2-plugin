@@ -1,31 +1,13 @@
 
 package com.blazemeter.jmeter.http2.sampler;
 
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.net.MalformedURLException;
-import java.net.URISyntaxException;
-import java.net.URL;
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.Map;
-import java.util.concurrent.CompletableFuture;
-
-import org.apache.commons.lang3.StringUtils;
 import org.apache.jmeter.protocol.http.control.CookieManager;
 import org.apache.jmeter.protocol.http.control.HeaderManager;
-import org.apache.jmeter.protocol.http.parser.BaseParser;
-import org.apache.jmeter.protocol.http.parser.LinkExtractorParseException;
-import org.apache.jmeter.protocol.http.parser.LinkExtractorParser;
 import org.apache.jmeter.protocol.http.sampler.HTTPSampleResult;
-import org.apache.jmeter.protocol.http.util.ConversionUtils;
+import org.apache.jmeter.protocol.http.sampler.HTTPSamplerBase;
 import org.apache.jmeter.protocol.http.util.HTTPConstants;
 import org.apache.jmeter.samplers.SampleResult;
 import org.apache.jmeter.util.JMeterUtils;
-import org.apache.jorphan.util.JOrphanUtils;
-import org.apache.oro.text.MalformedCachePatternException;
-import org.apache.oro.text.regex.Pattern;
-import org.apache.oro.text.regex.Perl5Matcher;
 import org.eclipse.jetty.http.HttpField;
 import org.eclipse.jetty.http.HttpStatus;
 import org.eclipse.jetty.http.MetaData;
@@ -39,11 +21,16 @@ import org.eclipse.jetty.http2.frames.ResetFrame;
 import org.eclipse.jetty.util.Callback;
 import org.slf4j.LoggerFactory;
 
-public class HTTP2StreamHandler extends Stream.Listener.Adapter {
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.lang.reflect.Method;
+import java.net.MalformedURLException;
+import java.net.URISyntaxException;
+import java.net.URL;
+import java.util.concurrent.CompletableFuture;
 
-    private static final String USER_AGENT = "User-Agent";
-    private static final Map<String, String> PARSERS_FOR_CONTENT_TYPE = new HashMap<>();
-    private static final String RESPONSE_PARSERS = JMeterUtils.getProperty("HTTPResponse.parsers");
+public class HTTP2StreamHandler extends HTTPSamplerBase implements Stream.Listener {
+
     private static final org.slf4j.Logger LOG = LoggerFactory.getLogger(HTTP2StreamHandler.class);
     private static final boolean IGNORE_FAILED_EMBEDDED_RESOURCES = JMeterUtils.
             getPropDefault("httpsampler.ignore_failed_embedded_resources", false);
@@ -58,34 +45,19 @@ public class HTTP2StreamHandler extends Stream.Listener.Adapter {
     private boolean first = true;
     private int timeout = 0;
 
+    private static final Method setParentSampleSuccessMethod;
+
     static {
-        getParsers();
+        Method setParentSampleSuccess = null;
+        try {
+            setParentSampleSuccess = HTTPSamplerBase.class.getDeclaredMethod("setParentSampleSuccess", HTTPSampleResult.class, boolean.class);
+            setParentSampleSuccess.setAccessible(true);
+        } catch (ReflectiveOperationException ex) {
+            LOG.error("Can not find setParentSampleSuccess in HTTPSamplerBase class", ex);
+        }
+        setParentSampleSuccessMethod = setParentSampleSuccess;
     }
 
-    private static void getParsers() {
-        String[] parsers = JOrphanUtils.split(RESPONSE_PARSERS, " ", true);
-        for (final String parser : parsers) {
-            String classname = JMeterUtils.getProperty(parser + ".className");
-            if (classname == null) {
-                LOG.error(
-                        "Cannot find .className property for " + parser + ", ensure you set property:'" + parser
-                                + ".className'");
-                continue;
-            }
-            String typeList = JMeterUtils.getProperty(parser + ".types");
-            if (typeList != null) {
-                String[] types = JOrphanUtils.split(typeList, " ", true);
-                for (final String type : types) {
-                    LOG.info("Parser for " + type + " is " + classname);
-                    PARSERS_FOR_CONTENT_TYPE.put(type, classname);
-                }
-            } else {
-                LOG.warn("Cannot find .types property for " + parser
-                        + ", as a consequence parser will not be used, to make it usable, define property:'"
-                        + parser + ".types'");
-            }
-        }
-    }
 
     public HTTP2StreamHandler(HTTP2Connection parent, HeaderManager headerManager,
                               CookieManager cookieManager, HTTP2SampleResult sampleResult) {
@@ -197,14 +169,14 @@ public class HTTP2StreamHandler extends Stream.Listener.Adapter {
 
                 if ((result.isEmbebedResults()) && (result.getEmbebedResultsDepth() > 0)
                         && (result.getDataType().equals(SampleResult.TEXT))) {
-                    getPageResources(result);
+                    downloadPageResources(result, null, 0);
                 }
 
                 if (result.isSecondaryRequest()) {
                     HTTP2SampleResult parent = (HTTP2SampleResult) result.getParent();
                     // set primary request failed if at least one secondary
                     // request fail
-                    setParentSampleSuccess(parent,
+                    invokeSetParentSampleSuccess(parent,
                             parent.isSuccessful() && (result == null || result.isSuccessful()));
                 }
                 completeStream();
@@ -213,6 +185,16 @@ public class HTTP2StreamHandler extends Stream.Listener.Adapter {
             e.printStackTrace(); // TODO
         }
 
+    }
+
+    private void invokeSetParentSampleSuccess(HTTPSampleResult res, boolean initialValue) {
+        if (setParentSampleSuccessMethod != null) {
+            try {
+                setParentSampleSuccessMethod.invoke(this, res, initialValue);
+            } catch (ReflectiveOperationException ex) {
+                LOG.warn("Failed to invoke setParentSampleSuccess method in class HTTPSamplerBase", ex);
+            }
+        }
     }
 
     @Override
@@ -224,30 +206,6 @@ public class HTTP2StreamHandler extends Stream.Listener.Adapter {
         completeStream();
     }
 
-    /**
-     * Set parent successful attribute based on IGNORE_FAILED_EMBEDDED_RESOURCES parameter
-     *
-     * @param res          {@link HTTP2SampleResult}
-     * @param initialValue boolean
-     */
-    private void setParentSampleSuccess(HTTP2SampleResult res, boolean initialValue) {
-        if (!IGNORE_FAILED_EMBEDDED_RESOURCES) {
-            res.setSuccessful(initialValue);
-            if (!initialValue) {
-                StringBuilder detailedMessage = new StringBuilder(80);
-                detailedMessage.append("Embedded resource download error:"); //$NON-NLS-1$
-                for (SampleResult subResult : res.getSubResults()) {
-                    HTTP2SampleResult httpSampleResult = (HTTP2SampleResult) subResult;
-                    if (!httpSampleResult.isSuccessful()) {
-                        detailedMessage.append(httpSampleResult.getURL()).append(" code:") //$NON-NLS-1$
-                                .append(httpSampleResult.getResponseCode()).append(" message:") //$NON-NLS-1$
-                                .append(httpSampleResult.getResponseMessage()).append(", "); //$NON-NLS-1$
-                    }
-                }
-                res.setResponseMessage(detailedMessage.toString()); // $NON-NLS-1$
-            }
-        }
-    }
 
     private void setResponseBytes(byte[] bytes) {
         ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
@@ -264,132 +222,10 @@ public class HTTP2StreamHandler extends Stream.Listener.Adapter {
         this.responseBytes = outputStream.toByteArray();
     }
 
-    /**
-     * @param url URL to escape
-     * @return escaped url
-     */
-    private URL escapeIllegalURLCharacters(java.net.URL url) {
-        if (url == null || url.getProtocol().equals("file")) {
-            return url;
-        }
-        try {
-            return ConversionUtils.sanitizeUrl(url).toURL();
-        } catch (Exception e1) {
-            //TODO fix log
-            return url;
-        }
-    }
-
-    /**
-     * Download the resources of an HTML page.
-     *
-     * @param res result of the initial request - must contain an HTML response and for storing the
-     *            results, if any
-     */
-    private void getPageResources(HTTP2SampleResult res) throws Exception {
-        Iterator<URL> urls = null;
-        try {
-            final byte[] responseData = res.getResponseData();
-            if (responseData.length > 0) { // Bug 39205
-                final LinkExtractorParser parser = getParser(res);
-                if (parser != null) {
-                    String userAgent = getUserAgent(res);
-                    String encoding = res.getDataEncodingWithDefault();
-                    urls = parser.getEmbeddedResourceURLs(userAgent, responseData, res.getURL(), encoding);
-                }
-            }
-        } catch (LinkExtractorParseException e) {
-            // Don't break the world just because this failed:
-            HTTP2SampleResult subRes = new HTTP2SampleResult(res);
-            subRes.setErrorResult("Error while getting the embebed resources", e);
-            setParentSampleSuccess(res, false);
-        }
-
-        // Iterate through the URLs and download each image:
-        if (urls != null && urls.hasNext()) {
-            // Get the URL matcher
-            String re = res.getEmbeddedUrlRE();
-            Perl5Matcher localMatcher = null;
-            Pattern pattern = null;
-            if (re.length() > 0) {
-                try {
-                    pattern = JMeterUtils.getPattern(re);
-                    localMatcher = JMeterUtils.getMatcher();// don't fetch unless pattern compiles
-                } catch (MalformedCachePatternException e) {
-                    //TODO Log
-                }
-            }
-
-            while (urls.hasNext()) {
-                URL url = urls.next();
-                try {
-                    url = escapeIllegalURLCharacters(url);
-                } catch (Exception e) {
-                    res.addSubResult(
-                            HTTP2SampleResult.createErrorResult(url.toString() + " is not a correct URI", e));
-                    setParentSampleSuccess(res, false);
-                    continue;
-                }
-                // I don't think localMatcher can be null here, but
-                // check just in case
-                if (pattern != null && localMatcher != null && !localMatcher
-                        .matches(url.toString(), pattern)) {
-                    continue; // we have a pattern and the URL does not match, so skip it
-                }
-                try {
-                    url = url.toURI().normalize().toURL();
-                } catch (MalformedURLException | URISyntaxException e) {
-                    res.addSubResult(
-                            HTTP2SampleResult
-                                    .createErrorResult(url.toString() + " URI can not be normalized", e));
-                    setParentSampleSuccess(res, false);
-                    continue;
-                }
-
-                HTTP2SampleResult subResult = result.createSubResult();
-                subResult.setSampleLabel(url.toString());
-                subResult.setSync(res.isSync());
-                res.addSubResult(subResult);
-
-                parent.send("GET", url, headerManager, cookieManager, null, subResult, this.timeout);
-
-            }
-        }
-    }
-
-    /**
-     * Gets parser from {@link HTTPSampleResult#getMediaType()}. Returns null if no parser defined for
-     * it
-     *
-     * @param res {@link HTTPSampleResult}
-     * @return {@link LinkExtractorParser}
-     */
-    private LinkExtractorParser getParser(HTTP2SampleResult res) throws LinkExtractorParseException {
-        String parserClassName = PARSERS_FOR_CONTENT_TYPE.get(res.getMediaType());
-        if (!StringUtils.isEmpty(parserClassName)) {
-            return BaseParser.getParser(parserClassName);
-        }
+    @Override
+    protected HTTPSampleResult sample(java.net.URL url, String s, boolean b, int i) {
+        // NOOP
         return null;
-    }
-
-    private String getUserAgent(HTTP2SampleResult sampleResult) {
-        String res = sampleResult.getRequestHeaders();
-        int index = res.indexOf(USER_AGENT);
-        if (index >= 0) {
-            // see HTTPHC3Impl#getConnectionHeaders
-            // see HTTPHC4Impl#getConnectionHeaders
-            // see HTTPJavaImpl#getConnectionHeaders
-            // ': ' is used by JMeter to fill-in requestHeaders, see
-            // getConnectionHeaders
-            final String userAgentPrefix = USER_AGENT + ": ";
-            String userAgentHdr = res.substring(index + userAgentPrefix.length(), res.indexOf('\n',
-                    // '\n' is used by JMeter to fill-in requestHeaders, see getConnectionHeaders
-                    index + userAgentPrefix.length() + 1));
-            return userAgentHdr.trim();
-        } else {
-            //TODO log
-            return null;
-        }
     }
 
     /**
