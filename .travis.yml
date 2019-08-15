@@ -2,7 +2,9 @@ env:
   global:
     - MAVEN_OPTS=-Dmaven.repo.local=.m2/repository
     - MQTT_WEBSOCKET_VERSION=1.0.1
-    
+
+dist: trusty
+
 cache:
   directories:
   - .jmeter
@@ -11,7 +13,7 @@ cache:
 language: java
 
 jdk:
-- openjdk8
+- oraclejdk8
 
 before_install: 
   - sudo apt-get -y update
