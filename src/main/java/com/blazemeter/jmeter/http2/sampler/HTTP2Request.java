@@ -276,7 +276,12 @@ public class HTTP2Request extends AbstractSampler implements ThreadListener, Loo
             }
         } else {
             //TODO handle no SSL connection
-            http2Connection = new HTTP2Connection(connectionId, true);
+            String protocol = getProtocol();
+            boolean isSSL = true;   // default
+            if (HTTPConstants.PROTOCOL_HTTP.equalsIgnoreCase(protocol)) {
+                isSSL = false;
+            }
+            http2Connection = new HTTP2Connection(connectionId, isSSL);
             http2Connection.connect(host, port);
             threadConnections.put(connectionId, http2Connection);
         }
@@ -382,11 +387,11 @@ public class HTTP2Request extends AbstractSampler implements ThreadListener, Loo
     }
 
     public void setProtocol(String value) {
-        setProperty(PROTOCOL_SCHEME, value);
+        setProperty(PROTOCOL, value);
     }
 
     public String getProtocol() {
-        String protocol = getPropertyAsString(PROTOCOL_SCHEME);
+        String protocol = getPropertyAsString(PROTOCOL);
         if (protocol == null || protocol.length() == 0) {
             return DEFAULT_PROTOCOL;
         }
