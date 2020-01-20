@@ -4,6 +4,7 @@ import com.blazemeter.jmeter.http2.visualizers.ResultCollector;
 
 import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
+import java.io.UnsupportedEncodingException;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
@@ -11,6 +12,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.apache.jmeter.config.Argument;
 import org.apache.jmeter.config.Arguments;
 import org.apache.jmeter.engine.event.LoopIterationEvent;
 import org.apache.jmeter.engine.event.LoopIterationListener;
@@ -18,6 +20,7 @@ import org.apache.jmeter.protocol.http.control.CacheManager;
 import org.apache.jmeter.protocol.http.control.CookieManager;
 import org.apache.jmeter.protocol.http.control.HeaderManager;
 import org.apache.jmeter.protocol.http.sampler.HTTPSamplerBase;
+import org.apache.jmeter.protocol.http.util.EncoderCache;
 import org.apache.jmeter.protocol.http.util.HTTPArgument;
 import org.apache.jmeter.protocol.http.util.HTTPConstants;
 import org.apache.jmeter.protocol.http.util.HTTPFileArg;
@@ -32,11 +35,14 @@ import org.apache.jmeter.testelement.ThreadListener;
 import org.apache.jmeter.testelement.property.JMeterProperty;
 import org.apache.jmeter.testelement.property.StringProperty;
 import org.apache.jmeter.testelement.property.TestElementProperty;
+import org.apache.jmeter.testelement.property.CollectionProperty;
+import org.apache.jmeter.testelement.property.PropertyIterator;
 import org.apache.jmeter.threads.JMeterContext;
 import org.apache.jmeter.threads.JMeterContextService;
 import org.apache.jmeter.threads.JMeterThread;
 import org.apache.jmeter.threads.SamplePackage;
 import org.apache.jorphan.logging.LoggingManager;
+import org.apache.jorphan.util.JOrphanUtils;
 import org.apache.log.Logger;
 import org.eclipse.jetty.http.HttpFields;
 
@@ -90,6 +96,10 @@ public class HTTP2Request extends AbstractSampler implements ThreadListener, Loo
      */
     public static final String CONTENT_ENCODING = "HTTP2Request.contentEncoding"; // $NON-NLS-1$
     public static final String PATH = "HTTP2Request.path"; // $NON-NLS-1$
+
+    private static final String ARG_VAL_SEP = "="; // $NON-NLS-1$
+    private static final String QRY_SEP = "&"; // $NON-NLS-1$
+    private static final String QRY_PFX = "?"; // $NON-NLS-1$
 
     private static ThreadLocal<Map<String, HTTP2Connection>> connections = ThreadLocal
             .withInitial(HashMap::new);
@@ -187,6 +197,11 @@ public class HTTP2Request extends AbstractSampler implements ThreadListener, Loo
     protected void sample(URL url, String method, HTTP2Connection http2Connection,
                           HTTP2SampleResult sampleResult) {
 
+        String urlStr = url.toString();
+        if (log.isDebugEnabled()) {
+            log.debug("Start : sample: " + urlStr + ", method: " + method);
+        }
+
         sampleResult.setEmbebedResults(isEmbeddedResources());
         sampleResult.setEmbeddedUrlRE(getEmbeddedUrlRE());
 
@@ -196,7 +211,9 @@ public class HTTP2Request extends AbstractSampler implements ThreadListener, Loo
                 timeout = Integer.parseInt(getResponseTimeout());
             }
             RequestBody body = null;
-            if (HTTPConstants.POST.equals(method) || HTTPConstants.PUT.equals(method)) {
+            if (HTTPConstants.POST.equals(method) 
+                || HTTPConstants.PUT.equals(method) 
+                || HTTPConstants.PATCH.equals(method)) {
                 body = RequestBody
                         .from(method, getContentEncoding(), getArguments(), getSendParameterValuesAsPostBody());
             }
@@ -318,12 +335,30 @@ public class HTTP2Request extends AbstractSampler implements ThreadListener, Loo
 
         String domain = getDomain();
         String protocol = getProtocol();
+        String method = getMethod();
 
         // HTTP URLs must be absolute, allow file to be relative
         if (!path.startsWith("/")) { // $NON-NLS-1$
             pathAndQuery.append("/"); // $NON-NLS-1$
         }
         pathAndQuery.append(path);
+
+         if (HTTPConstants.GET.equals(method)
+                || HTTPConstants.DELETE.equals(method)
+                || HTTPConstants.OPTIONS.equals(method)) {
+            // Get the query string encoded in specified encoding
+            // If no encoding is specified by user, we will get it
+            // encoded in UTF-8, which is what the HTTP spec says
+            String queryString = getQueryString(getContentEncoding());
+            if (queryString.length() > 0) {
+                if (path.contains(QRY_PFX)) {// Already contains a prefix
+                    pathAndQuery.append(QRY_SEP);
+                } else {
+                    pathAndQuery.append(QRY_PFX);
+                }
+                pathAndQuery.append(queryString);
+            }
+        }
 
         // If default port for protocol is used, we do not include port in URL
         if (isProtocolDefaultPort()) {
@@ -572,6 +607,82 @@ public class HTTP2Request extends AbstractSampler implements ThreadListener, Loo
                 log.warn("Interrupted while waiting for HTTP2 async responses", e);
             }
         });
+    }
+
+    /**
+     * Gets the QueryString attribute of the UrlConfig object, using
+     * UTF-8 to encode the URL
+     *
+     * @return the QueryString value
+     */
+    public String getQueryString() {
+        // We use the encoding which should be used according to the HTTP spec, which is UTF-8
+        return getQueryString(EncoderCache.URL_ARGUMENT_ENCODING);
+    }
+
+    /**
+     * Gets the QueryString attribute of the UrlConfig object, using the
+     * specified encoding to encode the parameter values put into the URL
+     *
+     * @param contentEncoding the encoding to use for encoding parameter values
+     * @return the QueryString value
+     */
+    public String getQueryString(final String contentEncoding) {
+
+        CollectionProperty arguments = getArguments().getArguments();
+        // Optimisation : avoid building useless objects if empty arguments
+        //if(arguments.isEmpty()) {
+        //    return "";
+        //}
+        String lContentEncoding = contentEncoding;
+        // Check if the sampler has a specified content encoding
+        if (JOrphanUtils.isBlank(lContentEncoding)) {
+            // We use the encoding which should be used according to the HTTP spec, which is UTF-8
+            lContentEncoding = EncoderCache.URL_ARGUMENT_ENCODING;
+        }
+
+        StringBuilder buf = new StringBuilder(arguments.size() * 15);
+        PropertyIterator iter = arguments.iterator();
+        boolean first = true;
+        while (iter.hasNext()) {
+            HTTPArgument item = null;
+            /*
+             * N.B. Revision 323346 introduced the ClassCast check, but then used iter.next()
+             * to fetch the item to be cast, thus skipping the element that did not cast.
+             * Reverted to work more like the original code, but with the check in place.
+             * Added a warning message so can track whether it is necessary
+             */
+            Object objectValue = iter.next().getObjectValue();
+            try {
+                item = (HTTPArgument) objectValue;
+            } catch (ClassCastException e) { // NOSONAR
+                log.warn("Unexpected argument type: " + objectValue.getClass().getName() + " cannot be cast to HTTPArgument");
+                item = new HTTPArgument((Argument) objectValue);
+            }
+            final String encodedName = item.getEncodedName();
+            if (encodedName.isEmpty()) {
+                continue; // Skip parameters with a blank name (allows use of optional variables in parameter lists)
+            }
+            if (!first) {
+                buf.append(QRY_SEP);
+            } else {
+                first = false;
+            }
+            buf.append(encodedName);
+            if (item.getMetaData() == null) {
+                buf.append(ARG_VAL_SEP);
+            } else {
+                buf.append(item.getMetaData());
+            }
+
+            // Encode the parameter value in the specified content encoding
+            try {
+                buf.append(item.getEncodedValue(lContentEncoding));
+            } catch(UnsupportedEncodingException e) { // NOSONAR
+                log.warn("Unable to encode parameter in encoding " + lContentEncoding + ", parameter value not included in query string");
+            }
+        }
+        return buf.toString();
     }
 
 }
