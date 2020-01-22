@@ -76,7 +76,9 @@ public class HTTP2Connection {
     private synchronized void sendMutExc(String method, HeadersFrame headersFrame, FuturePromise<Stream> streamPromise,
                                          HTTP2StreamHandler http2StreamHandler, RequestBody requestBody) throws Exception {
         session.newStream(headersFrame, streamPromise, http2StreamHandler);
-        if (HTTPConstants.POST.equals(method)) {
+        LOG.debug("sendMutExc().method=" + method);
+        if (HTTPConstants.POST.equals(method)
+            || HTTPConstants.PATCH.equals(method)) {
             Stream actualStream = streamPromise.get();
             int streamID = actualStream.getId();
             DataFrame data = new DataFrame(streamID, ByteBuffer.wrap(requestBody.getPayloadBytes()), true);
@@ -111,7 +113,18 @@ public class HTTP2Connection {
                         headers);
                 endOfStream = false;
                 break;
+            case "PATCH":
+                metaData = new MetaData.Request("PATCH", new HttpURI(url.toString()), HttpVersion.HTTP_2,
+                        headers);
+                endOfStream = false;
+                break;
+            case "DELETE":
+                metaData = new MetaData.Request("DELETE", new HttpURI(url.toString()), HttpVersion.HTTP_2,
+                        headers);
+                break;
             default:
+                metaData = new MetaData.Request(method, new HttpURI(url.toString()), HttpVersion.HTTP_2,
+                        headers);
                 break;
         }
 
