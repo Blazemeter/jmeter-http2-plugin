@@ -37,7 +37,7 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <version.org.apache.jmeter.all>3.2</version.org.apache.jmeter.all>
-        <jetty.version>9.4.9.v20180320</jetty.version>
+        <jetty.version>9.4.26.v20200117</jetty.version>
         <alpn-boot.version>8.1.12.v20180117</alpn-boot.version>
     </properties>
 
@@ -70,14 +70,14 @@
         <dependency>
             <groupId>org.mockito</groupId>
             <artifactId>mockito-core</artifactId>
-            <version>2.15.0</version>
+            <version>2.28.2</version>
             <scope>test</scope>
         </dependency>
 
         <dependency>
             <groupId>org.assertj</groupId>
             <artifactId>assertj-core</artifactId>
-            <version>3.8.0</version>
+            <version>3.12.2</version>
             <scope>test</scope>
         </dependency>
 
@@ -226,7 +226,7 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
-                <version>2.21.0</version>
+                <version>2.22.2</version>
                 <configuration>
                     <argLine>-Xbootclasspath/p:${project.build.directory}/test-lib/alpn-boot.jar</argLine>
                 </configuration>
