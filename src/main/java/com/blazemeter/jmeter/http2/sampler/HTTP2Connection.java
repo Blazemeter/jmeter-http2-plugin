@@ -1,5 +1,15 @@
 package com.blazemeter.jmeter.http2.sampler;
 
+import java.net.InetSocketAddress;
+import java.net.URL;
+import java.nio.ByteBuffer;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Queue;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import org.apache.jmeter.protocol.http.control.CookieManager;
 import org.apache.jmeter.protocol.http.control.Header;
 import org.apache.jmeter.protocol.http.control.HeaderManager;
@@ -18,18 +28,6 @@ import org.eclipse.jetty.http2.frames.HeadersFrame;
 import org.eclipse.jetty.util.Callback;
 import org.eclipse.jetty.util.FuturePromise;
 import org.eclipse.jetty.util.ssl.SslContextFactory;
-
-import java.net.InetSocketAddress;
-import java.net.URL;
-import java.nio.ByteBuffer;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Queue;
-import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -76,13 +74,12 @@ public class HTTP2Connection {
     private synchronized void sendMutExc(String method, HeadersFrame headersFrame, FuturePromise<Stream> streamPromise,
                                          HTTP2StreamHandler http2StreamHandler, RequestBody requestBody) throws Exception {
         session.newStream(headersFrame, streamPromise, http2StreamHandler);
-        LOG.debug("sendMutExc().method=" + method);
-        if (HTTPConstants.POST.equals(method)
-            || HTTPConstants.PATCH.equals(method)) {
+        LOG.debug("sendMutExc().method= {}", method);
+        if (HTTPConstants.POST.equals(method) || HTTPConstants.PATCH.equals(method)) {
             Stream actualStream = streamPromise.get();
-            int streamID = actualStream.getId();
-            DataFrame data = new DataFrame(streamID, ByteBuffer.wrap(requestBody.getPayloadBytes()), true);
-            actualStream.data(data, Callback.NOOP);
+            actualStream
+                .data(new DataFrame(actualStream.getId(), ByteBuffer.wrap(requestBody.getPayloadBytes()),
+                        true), Callback.NOOP);
         }
     }
 
@@ -101,26 +98,27 @@ public class HTTP2Connection {
             sampleResult.setQueryString(requestBody.getPayload());
         }
 
-        MetaData.Request metaData = null;
+        MetaData.Request metaData;
         boolean endOfStream = true;
         switch (method) {
-            case "GET":
-                metaData = new MetaData.Request("GET", new HttpURI(url.toString()), HttpVersion.HTTP_2,
+            case HTTPConstants.GET:
+                metaData = new MetaData.Request(method, new HttpURI(url.toString()), HttpVersion.HTTP_2,
                         headers);
                 break;
-            case "POST":
-                metaData = new MetaData.Request("POST", new HttpURI(url.toString()), HttpVersion.HTTP_2,
+            case HTTPConstants.POST:
+                metaData = new MetaData.Request(method, new HttpURI(url.toString()), HttpVersion.HTTP_2,
                         headers);
                 endOfStream = false;
                 break;
-            case "PATCH":
-                metaData = new MetaData.Request("PATCH", new HttpURI(url.toString()), HttpVersion.HTTP_2,
+            case HTTPConstants.PATCH:
+                metaData = new MetaData.Request(method, new HttpURI(url.toString()), HttpVersion.HTTP_2,
                         headers);
                 endOfStream = false;
                 break;
-            case "DELETE":
-                metaData = new MetaData.Request("DELETE", new HttpURI(url.toString()), HttpVersion.HTTP_2,
+            case HTTPConstants.DELETE:
+                metaData = new MetaData.Request(method, new HttpURI(url.toString()), HttpVersion.HTTP_2,
                         headers);
+                endOfStream = false;
                 break;
             default:
                 metaData = new MetaData.Request(method, new HttpURI(url.toString()), HttpVersion.HTTP_2,
