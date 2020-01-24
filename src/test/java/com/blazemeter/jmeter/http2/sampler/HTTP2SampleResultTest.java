@@ -42,7 +42,7 @@ public class HTTP2SampleResultTest {
         List<SampleListener> sampleListeners = new ArrayList<>();
         List<Assertion> assertions = new ArrayList<>();
         List<PostProcessor> postProcessors = new ArrayList<>();
-        TestJMeterUtils.createJmeterEnv();
+        JMeterTestUtils.setupJmeterEnv();
         when(threadContext.getVariables()).thenReturn(threadVars);
         when(threadVars.getObject(any(String.class))).thenReturn(pack);
         when(pack.getAssertions()).thenReturn(assertions);

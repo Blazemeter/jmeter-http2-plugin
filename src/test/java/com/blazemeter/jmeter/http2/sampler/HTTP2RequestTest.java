@@ -26,7 +26,7 @@ public class HTTP2RequestTest {
 
     @Before
     public void setup() {
-        TestJMeterUtils.createJmeterEnv();
+        JMeterTestUtils.setupJmeterEnv();
         http2Req = new HTTP2Request();
         http2Req.setThreadName("10");
         http2Req.setProperty(HTTP2Request.DOMAIN, "www.sprint.com");
