@@ -420,7 +420,7 @@ public class HTTP2StreamHandler extends Stream.Listener.Adapter {
         this.timeout = timeout;
     }
 
-    private void completeStream() {
+    public void completeStream() {
         result.sampleEnd();
         result.setPendingResponse(false);
         if (!result.isSync()) {

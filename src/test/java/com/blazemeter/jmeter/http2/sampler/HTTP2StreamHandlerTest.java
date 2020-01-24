@@ -38,58 +38,68 @@ import org.eclipse.jetty.http2.frames.HeadersFrame;
 import org.eclipse.jetty.http2.frames.PushPromiseFrame;
 import org.eclipse.jetty.http2.frames.ResetFrame;
 import org.eclipse.jetty.util.Callback;
+import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.mockito.Mock;
 import org.mockito.Mockito;
+import org.mockito.junit.MockitoJUnitRunner;
 
+@RunWith(MockitoJUnitRunner.class)
 public class HTTP2StreamHandlerTest {
 
-    private HTTP2StreamHandler http2StreamHandler;
-    private HTTP2Connection http2Connection;
-    private URL url;
     private HTTP2SampleResult http2SampleResult;
+    private URL url;
+    private HTTP2StreamHandler http2StreamHandler;
+    
+    @Mock
+    private HTTP2Connection http2Connection;
+    @Mock
     private Stream stream;
+    @Mock
     private PushPromiseFrame pushPromisFrame;
+    @Mock
     private HeadersFrame headersFrame;
+    @Mock
     private Response responseMetadata;
+    @Mock
     private Callback callback;
+    @Mock
     private DataFrame dataFrame;
+    @Mock
     private JMeterVariables threadVars;
+    @Mock
     private ListenerNotifier listener;
+    @Mock
     private SamplePackage packMock;
+    @Mock
     private Request mockRequestMetadata;
+    @Mock
     private HttpURI mockHttpURI;
+    @Mock
     private transient JMeterContext threadContext;
 
     @Before
     public void setup() throws MalformedURLException {
-        TestJMeterUtils.createJmeterEnv();
+        JMeterTestUtils.setupJmeterEnv();
         JMeterUtils.setProperty("HTTPResponse.parsers", "htmlParser");
         JMeterUtils.setProperty("htmlParser.className",
                 "org.apache.jmeter.protocol.http.parser.LagartoBasedHtmlParser");
         JMeterUtils.setProperty("htmlParser.types",
                 "text/html application/xhtml+xml application/xml text/xml");
         url = new URL("http://www.tenfieldigital.com.uy");
-        http2Connection = Mockito.mock(HTTP2Connection.class);
-        stream = Mockito.mock(Stream.class);
-        pushPromisFrame = Mockito.mock(PushPromiseFrame.class);
-        headersFrame = Mockito.mock(HeadersFrame.class);
-        responseMetadata = Mockito.mock(Response.class);
-        callback = Mockito.mock(Callback.class);
-        dataFrame = Mockito.mock(DataFrame.class);
-        threadVars = Mockito.mock(JMeterVariables.class);
-        listener = Mockito.mock(ListenerNotifier.class);
-        packMock = Mockito.mock(SamplePackage.class);
-        mockRequestMetadata = Mockito.mock(Request.class);
-        mockHttpURI = Mockito.mock(HttpURI.class);
-        threadContext = Mockito.mock(JMeterContext.class);
     }
 
+    @After
+    public void teardown() throws Exception {
+        http2Connection.disconnect();
+        http2StreamHandler.completeStream();
+    }
+    
     @Test
     public void onPushTest() throws URISyntaxException, MalformedURLException {
-
-        when(pushPromisFrame.getStreamId()).thenReturn(5);
-        when(pushPromisFrame.toString()).thenReturn("TestString");
+        
         when(pushPromisFrame.getMetaData()).thenReturn(mockRequestMetadata);
         when(mockRequestMetadata.getURI()).thenReturn(mockHttpURI);
         URI uri = new URI("http://www.test.com");
@@ -239,8 +249,6 @@ public class HTTP2StreamHandlerTest {
         ResponseAssertion assertion = Mockito.mock(ResponseAssertion.class);
         assertions.add(assertion);
         assertions.add(assertion);
-        when(packMock.getAssertions())
-                .thenReturn(assertions);
 
         http2StreamHandler.onData(stream, dataFrame, callback);
 
