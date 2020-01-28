@@ -36,6 +36,7 @@ import org.apache.jmeter.threads.JMeterContext;
 import org.apache.jmeter.threads.JMeterContextService;
 import org.apache.jmeter.threads.JMeterThread;
 import org.apache.jmeter.threads.SamplePackage;
+import org.apache.jmeter.util.JMeterUtils;
 import org.eclipse.jetty.http.HttpFields;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -331,9 +332,9 @@ public class HTTP2Request extends AbstractSampler implements ThreadListener, Loo
          if (HTTPConstants.GET.equals(method)
                 || HTTPConstants.DELETE.equals(method)
                 || HTTPConstants.OPTIONS.equals(method)) {
-            // Get the query string encoded in specified encoding
-            // If no encoding is specified by user, we will get it
-            // encoded in UTF-8, which is what the HTTP spec says
+            /* Get the query string encoded in specified encoding
+             If no encoding is specified by user, we will get it
+             encoded in UTF-8, which is what the HTTP spec says */
            String queryString = null;
            try {
              queryString = RequestBody.from(method, getContentEncoding(), getArguments(), false)
@@ -341,13 +342,9 @@ public class HTTP2Request extends AbstractSampler implements ThreadListener, Loo
            } catch (UnsupportedEncodingException e) {
              LOG.debug("Content encoding not supported: {}", getContentEncoding(), e);
            }
-           if (!queryString.isEmpty()) {
-                if (path.contains(QRY_PFX)) {// Already contains a prefix
-                    pathAndQuery.append(QRY_SEP);
-                } else {
-                    pathAndQuery.append(QRY_PFX);
-                }
-                pathAndQuery.append(queryString);
+           if (queryString != null && !queryString.isEmpty()) {
+               pathAndQuery.append(path.contains(QRY_PFX) ? QRY_SEP : QRY_PFX);
+               pathAndQuery.append(queryString);
             }
         }
 
@@ -402,11 +399,10 @@ public class HTTP2Request extends AbstractSampler implements ThreadListener, Loo
             String protocol = getProtocol();
             if (HTTPConstants.PROTOCOL_HTTPS.equalsIgnoreCase(protocol)) {
                 return HTTPConstants.DEFAULT_HTTPS_PORT;
-            }
-            if (!HTTPConstants.PROTOCOL_HTTP.equalsIgnoreCase(protocol)) {
-                LOG.warn("Unexpected protocol: " + protocol);
-                // TODO - should this return something else?
+            } else if (HTTPConstants.PROTOCOL_HTTP.equalsIgnoreCase(protocol)) {
                 return HTTPConstants.DEFAULT_HTTP_PORT;
+            } else {
+                LOG.error("Unexpected protocol: " + protocol);
             }
         }
         return port;

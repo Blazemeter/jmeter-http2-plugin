@@ -4,6 +4,7 @@ import java.net.InetSocketAddress;
 import java.net.URL;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -98,35 +99,8 @@ public class HTTP2Connection {
             sampleResult.setQueryString(requestBody.getPayload());
         }
 
-        MetaData.Request metaData;
-        boolean endOfStream = true;
-        switch (method) {
-            case HTTPConstants.GET:
-                metaData = new MetaData.Request(method, new HttpURI(url.toString()), HttpVersion.HTTP_2,
-                        headers);
-                break;
-            case HTTPConstants.POST:
-                metaData = new MetaData.Request(method, new HttpURI(url.toString()), HttpVersion.HTTP_2,
-                        headers);
-                endOfStream = false;
-                break;
-            case HTTPConstants.PATCH:
-                metaData = new MetaData.Request(method, new HttpURI(url.toString()), HttpVersion.HTTP_2,
-                        headers);
-                endOfStream = false;
-                break;
-            case HTTPConstants.DELETE:
-                metaData = new MetaData.Request(method, new HttpURI(url.toString()), HttpVersion.HTTP_2,
-                        headers);
-                endOfStream = false;
-                break;
-            default:
-                metaData = new MetaData.Request(method, new HttpURI(url.toString()), HttpVersion.HTTP_2,
-                        headers);
-                break;
-        }
-
-        HeadersFrame headersFrame = new HeadersFrame(metaData, null, endOfStream);
+        HeadersFrame headersFrame = new HeadersFrame(new MetaData.Request(method, new HttpURI(url.toString()), HttpVersion.HTTP_2,
+            headers), null, getEndOfStream(method));
         // we do this replacement and remove final char to be consistent with jmeter HTTP request sampler
         String headersString = headers.toString().replaceAll("\r\n", "\n");
         sampleResult.setRequestHeaders(headersString.substring(0, headersString.length() - 1));
@@ -140,6 +114,13 @@ public class HTTP2Connection {
         sampleResult.sampleStart();
 
         sendMutExc(method, headersFrame, new FuturePromise<>(), http2StreamHandler, requestBody);
+    }
+
+    private boolean getEndOfStream(String method) {
+        //Currently the end of stream should be true if its GET, DELETE or Default value.
+        return !Arrays.asList(HTTPConstants.PATCH, HTTPConstants.POST)
+            .contains(method);
+        
     }
 
     private HttpFields buildHeaders(URL url, HeaderManager headerManager, CookieManager cookieManager) {
