@@ -1,5 +1,6 @@
 package com.blazemeter.jmeter.http2.sampler;
 
+import java.io.UnsupportedEncodingException;
 import org.apache.jmeter.config.Argument;
 import org.apache.jmeter.config.Arguments;
 import org.apache.jmeter.protocol.http.util.EncoderCache;
@@ -11,8 +12,6 @@ import org.apache.jmeter.testelement.property.PropertyIterator;
 import org.apache.jorphan.util.JOrphanUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.io.UnsupportedEncodingException;
 
 public class RequestBody {
 
@@ -36,9 +35,12 @@ public class RequestBody {
 
     private static String buildPostBody(String method, String contentEncoding, Arguments args, boolean sendParamsAsBody)
             throws UnsupportedEncodingException {
-        if (HTTPConstants.POST.equals(method) && !sendParamsAsBody) {
-            CollectionProperty arguments = args.getArguments();
-            if (arguments.size() == 0) {
+        if ((HTTPConstants.POST.equals(method) 
+            || HTTPConstants.PATCH.equals(method) )
+            && !sendParamsAsBody) {
+            PropertyIterator iter = args.getArguments().iterator();
+            
+            if (!iter.hasNext()) {
                 return "";
             }
 
@@ -46,8 +48,8 @@ public class RequestBody {
                 contentEncoding = EncoderCache.URL_ARGUMENT_ENCODING;
             }
 
-            StringBuilder buf = new StringBuilder(arguments.size() * 15);
-            PropertyIterator iter = arguments.iterator();
+            StringBuilder buf = new StringBuilder(args.getArguments().size() * 15);
+            
             boolean first = true;
             while (iter.hasNext()) {
                 HTTPArgument item;
@@ -61,7 +63,7 @@ public class RequestBody {
                 if (objectValue instanceof HTTPArgument) {
                     item = (HTTPArgument) objectValue;
                 } else {
-                    LOG.warn("Unexpected argument type: " + objectValue.getClass().getName());
+                    LOG.warn("Unexpected argument type: {}", objectValue.getClass().getName());
                     item = new HTTPArgument((Argument) objectValue);
                 }
                 final String encodedName = item.getEncodedName();
@@ -83,7 +85,9 @@ public class RequestBody {
                 try {
                     buf.append(item.getEncodedValue(contentEncoding));
                 } catch (UnsupportedEncodingException e) {
-                    LOG.warn("Unable to encode parameter in encoding " + contentEncoding + ", parameter value not included in query string");
+                    LOG.warn(
+                        "Unable to encode parameter in encoding {} , parameter value not included in query string",
+                        contentEncoding);
                 }
             }
             return buf.toString();

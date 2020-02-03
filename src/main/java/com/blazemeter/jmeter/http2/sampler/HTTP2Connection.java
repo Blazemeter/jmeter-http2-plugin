@@ -1,5 +1,16 @@
 package com.blazemeter.jmeter.http2.sampler;
 
+import java.net.InetSocketAddress;
+import java.net.URL;
+import java.nio.ByteBuffer;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Queue;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import org.apache.jmeter.protocol.http.control.CookieManager;
 import org.apache.jmeter.protocol.http.control.Header;
 import org.apache.jmeter.protocol.http.control.HeaderManager;
@@ -18,18 +29,6 @@ import org.eclipse.jetty.http2.frames.HeadersFrame;
 import org.eclipse.jetty.util.Callback;
 import org.eclipse.jetty.util.FuturePromise;
 import org.eclipse.jetty.util.ssl.SslContextFactory;
-
-import java.net.InetSocketAddress;
-import java.net.URL;
-import java.nio.ByteBuffer;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Queue;
-import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -76,11 +75,12 @@ public class HTTP2Connection {
     private synchronized void sendMutExc(String method, HeadersFrame headersFrame, FuturePromise<Stream> streamPromise,
                                          HTTP2StreamHandler http2StreamHandler, RequestBody requestBody) throws Exception {
         session.newStream(headersFrame, streamPromise, http2StreamHandler);
-        if (HTTPConstants.POST.equals(method)) {
+        LOG.debug("sendMutExc().method= {}", method);
+        if (HTTPConstants.POST.equals(method) || HTTPConstants.PATCH.equals(method)) {
             Stream actualStream = streamPromise.get();
-            int streamID = actualStream.getId();
-            DataFrame data = new DataFrame(streamID, ByteBuffer.wrap(requestBody.getPayloadBytes()), true);
-            actualStream.data(data, Callback.NOOP);
+            actualStream
+                .data(new DataFrame(actualStream.getId(), ByteBuffer.wrap(requestBody.getPayloadBytes()),
+                        true), Callback.NOOP);
         }
     }
 
@@ -99,23 +99,8 @@ public class HTTP2Connection {
             sampleResult.setQueryString(requestBody.getPayload());
         }
 
-        MetaData.Request metaData = null;
-        boolean endOfStream = true;
-        switch (method) {
-            case "GET":
-                metaData = new MetaData.Request("GET", new HttpURI(url.toString()), HttpVersion.HTTP_2,
-                        headers);
-                break;
-            case "POST":
-                metaData = new MetaData.Request("POST", new HttpURI(url.toString()), HttpVersion.HTTP_2,
-                        headers);
-                endOfStream = false;
-                break;
-            default:
-                break;
-        }
-
-        HeadersFrame headersFrame = new HeadersFrame(metaData, null, endOfStream);
+        HeadersFrame headersFrame = new HeadersFrame(new MetaData.Request(method, new HttpURI(url.toString()), HttpVersion.HTTP_2,
+            headers), null, getEndOfStream(method));
         // we do this replacement and remove final char to be consistent with jmeter HTTP request sampler
         String headersString = headers.toString().replaceAll("\r\n", "\n");
         sampleResult.setRequestHeaders(headersString.substring(0, headersString.length() - 1));
@@ -129,6 +114,13 @@ public class HTTP2Connection {
         sampleResult.sampleStart();
 
         sendMutExc(method, headersFrame, new FuturePromise<>(), http2StreamHandler, requestBody);
+    }
+
+    private boolean getEndOfStream(String method) {
+        //Currently the end of stream should be true if its GET, DELETE or Default value.
+        return !Arrays.asList(HTTPConstants.PATCH, HTTPConstants.POST)
+            .contains(method);
+        
     }
 
     private HttpFields buildHeaders(URL url, HeaderManager headerManager, CookieManager cookieManager) {
