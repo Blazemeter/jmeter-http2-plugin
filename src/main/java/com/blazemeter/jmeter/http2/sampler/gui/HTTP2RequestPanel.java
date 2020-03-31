@@ -14,8 +14,15 @@ import org.apache.jmeter.testelement.property.BooleanProperty;
 import org.apache.jmeter.testelement.property.JMeterProperty;
 import org.apache.jmeter.testelement.property.TestElementProperty;
 import org.apache.jmeter.util.JMeterUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import com.blazemeter.jmeter.http2.sampler.HTTP2Request;
+
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.ResourceBundle;
 
 import javax.swing.*;
 
@@ -24,6 +31,10 @@ public class HTTP2RequestPanel extends JPanel {
     private static final int TAB_PARAMETERS = 0;
 
     private HTTPArgumentsPanel argsPanel;
+    
+    private static Logger log = LoggerFactory.getLogger(HTTP2RequestPanel.class);
+    
+    private static volatile ResourceBundle resources = ResourceBundle.getBundle("com.hpe.simulap.http2.sampler.gui.HTTP2RequestPanelResources", JMeterUtils.getLocale());
 
     // handle tabs
     private int tabRawBodyIndex = 1;
@@ -57,7 +68,13 @@ public class HTTP2RequestPanel extends JPanel {
     private JCheckBox autoRedirects = new JCheckBox();
     private JCheckBox followRedirects = new JCheckBox();
     private JCheckBox syncRequest = new JCheckBox();
-
+    
+    private JCheckBox forceMultipart = new JCheckBox();
+    private JLabel multipartSubtypeLabel = new JLabel();
+    private JComboBox<String> multipartSubtype = new JComboBox<>();
+    private JLabel forceBoundaryLabel = new JLabel();
+    private JTextField forceBoundary = new JTextField();
+    
     private JLabel methodLabel = new JLabel();
     private JComboBox<String> method = new JComboBox<>();
 
@@ -170,10 +187,10 @@ public class HTTP2RequestPanel extends JPanel {
         contentEncodingLabel.setText("Content encoding:");
         contextPathLabel.setText("Path:");
 
-        protocolLabel.setText("Protocol [http/https]:");
+        protocolLabel.setText("Protocol [http/HTTPS]:");
 
         methodLabel.setText("Method:");
-        String[] methodList = HTTPSamplerBase.getValidMethodsAsArray();
+        String[] methodList = getValidMethodsAsArray();
         for (String aMethodList : methodList) method.addItem(aMethodList);
         http2ImplementationLabel.setText(JMeterUtils.getResString("http_implementation"));
         http2Implementation.addItem("Jetty");
@@ -188,6 +205,37 @@ public class HTTP2RequestPanel extends JPanel {
         autoRedirects.setText("Redirect Automatically");
         followRedirects.setText("Follow Redirects");
         syncRequest.setText("Synchronized Request");
+        
+        forceMultipart.setText(resources.getString("force_multipart_label"));
+        forceMultipart.setToolTipText(resources.getString("force_multipart_tooltip"));
+        // TODO:
+        forceMultipart.setVisible(false);
+        
+        multipartSubtypeLabel.setText(resources.getString("multipart_subtype_label"));
+        // TODO:
+        multipartSubtypeLabel.setVisible(false);
+        multipartSubtype.setToolTipText(resources.getString("multipart_subtype_tooltip"));
+        // TODO:
+        multipartSubtype.setVisible(false);
+        multipartSubtype.addItem("");
+        multipartSubtype.addItem(HTTP2Request.MULTIPART_ALTERNATIVE);
+        multipartSubtype.addItem(HTTP2Request.MULTIPART_BYTERANGE);
+        multipartSubtype.addItem(HTTP2Request.MULTIPART_DIGEST);
+        multipartSubtype.addItem(HTTP2Request.MULTIPART_ENCRYPTED);
+        multipartSubtype.addItem(HTTP2Request.MULTIPART_FORMDATA);
+        multipartSubtype.addItem(HTTP2Request.MULTIPART_MIXED);
+        multipartSubtype.addItem(HTTP2Request.MULTIPART_MIXEDREPLACE);
+        multipartSubtype.addItem(HTTP2Request.MULTIPART_PARALLEL);
+        multipartSubtype.addItem(HTTP2Request.MULTIPART_RELATED);
+        multipartSubtype.addItem(HTTP2Request.MULTIPART_REPORT);
+        multipartSubtype.addItem(HTTP2Request.MULTIPART_SIGNED);
+        
+        forceBoundaryLabel.setText(resources.getString("force_boundary_label"));
+        // TODO:
+        forceBoundaryLabel.setVisible(false);
+        forceBoundary.setToolTipText(resources.getString("force_boundary_tooltip"));
+        // TODO:
+        forceBoundary.setVisible(false);
 
         javax.swing.GroupLayout webRequestPanelLayout = new javax.swing.GroupLayout(webRequestPanel);
         webRequestPanel.setLayout(webRequestPanelLayout);
@@ -226,6 +274,20 @@ public class HTTP2RequestPanel extends JPanel {
                                                                     .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.UNRELATED)))
                                                     .addGap(0, 0, Short.MAX_VALUE))
                                             .addGroup(webRequestPanelLayout.createSequentialGroup()
+                                                    .addGroup(webRequestPanelLayout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
+                                                            .addGroup(webRequestPanelLayout.createSequentialGroup()
+                                                                    .addComponent(forceMultipart)
+                                                                    .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.UNRELATED)
+                                                                    .addComponent(multipartSubtypeLabel)
+                                                                    .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.UNRELATED)
+                                                                    .addComponent(multipartSubtype)
+                                                                    .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.UNRELATED)
+                                                                    .addComponent(forceBoundaryLabel)
+                                                                    .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.UNRELATED)
+                                                                    .addComponent(forceBoundary)
+                                                                    .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.UNRELATED)))
+                                                    .addGap(0, 0, Short.MAX_VALUE))
+                                            .addGroup(webRequestPanelLayout.createSequentialGroup()
                                                     .addComponent(contextPathLabel)
                                                     .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
                                                     .addComponent(path)))
@@ -253,6 +315,13 @@ public class HTTP2RequestPanel extends JPanel {
                                             .addComponent(autoRedirects)
                                             .addComponent(followRedirects)
                                             .addComponent(syncRequest))
+                                    .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.UNRELATED)
+                                    .addGroup(webRequestPanelLayout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
+                                            .addComponent(forceMultipart)
+                                            .addComponent(multipartSubtypeLabel)
+                                            .addComponent(multipartSubtype)
+                                            .addComponent(forceBoundaryLabel)
+                                            .addComponent(forceBoundary, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE))
                                     .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
                                     .addComponent(parametersPanel, javax.swing.GroupLayout.DEFAULT_SIZE, 102, Short.MAX_VALUE)
                                     .addContainerGap())
@@ -340,6 +409,12 @@ public class HTTP2RequestPanel extends JPanel {
                                 .addComponent(webRequestPanel, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
                                 .addContainerGap())
         );
+    }
+    
+    private String[] getValidMethodsAsArray() {
+    	List<String> validMethodsArray = new ArrayList<>(Arrays.asList(HTTPSamplerBase.getValidMethodsAsArray()));
+    	validMethodsArray.add(new String(HTTP2Request.PRI)); // Add missing lone HTTP2 method "PRI"
+    	return validMethodsArray.toArray(new String[validMethodsArray.size()]);
     }
 
     class ValidationTabbedPane extends JTabbedPane {
@@ -620,6 +695,10 @@ public class HTTP2RequestPanel extends JPanel {
             autoRedirects.setSelected(false);
             method.setSelectedItem(HTTPSamplerBase.DEFAULT_METHOD);
         }
+        
+        forceMultipart.setSelected(false); // $NON-NLS-1$
+        multipartSubtype.setSelectedItem(""); // $NON-NLS-1$
+        forceBoundary.setText(""); // $NON-NLS-1$
 
     }
 

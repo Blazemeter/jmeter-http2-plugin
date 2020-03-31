@@ -1,5 +1,6 @@
 package com.blazemeter.jmeter.http2.sampler;
 
+import java.net.HttpCookie;
 import java.net.InetSocketAddress;
 import java.net.URL;
 import java.nio.ByteBuffer;
@@ -132,12 +133,15 @@ public class HTTP2Connection {
                     Header header = (Header) prop.getObjectValue();
                     String n = header.getName();
                     if (n.startsWith(":")) {
-                        LOG.warn("The specified pseudo header {} is not allowed "
-                                + "and will be ignored", n);
+                        LOG.warn("The specified pseudo header {} is not allowed and will be ignored", n);
                     } else if (!HTTPConstants.HEADER_CONTENT_LENGTH.equalsIgnoreCase(n)) {
                         String v = header.getValue();
-                        v = v.replaceFirst(":\\d+$", ""); // remove any port
-                        headers.put(n, v);
+                        if (v.isEmpty()) {
+                            headers.remove(n);
+                        } else {
+                            v = v.replaceFirst(":\\d+$", ""); // remove any port
+                            headers.put(n, v);
+                        }
                     }
                 }
             }

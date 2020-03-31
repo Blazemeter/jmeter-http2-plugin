@@ -4,6 +4,7 @@ import com.blazemeter.jmeter.http2.visualizers.ResultCollector;
 import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
 import java.io.UnsupportedEncodingException;
+import java.net.HttpCookie;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
@@ -38,6 +39,8 @@ import org.apache.jmeter.threads.JMeterThread;
 import org.apache.jmeter.threads.SamplePackage;
 import org.apache.jmeter.util.JMeterUtils;
 import org.eclipse.jetty.http.HttpFields;
+import org.eclipse.jetty.util.log.Log;
+import org.eclipse.jetty.util.log.StdErrLog;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -85,6 +88,28 @@ public class HTTP2Request extends AbstractSampler implements ThreadListener, Loo
     public static final String SYNC_REQUEST = "HTTP2Request.sync_request"; // $NON-NLS-1$
     public static final String PROTOCOL = "HTTP2Request.protocol"; // $NON-NLS-1$
     public static final String REQUEST_ID = "HTTP2Request.request_id"; // $NON-NLS-1$
+
+    public static final String FORCE_MULTIPART = "HTTP2Request.force_multipart"; // $NON-NLS-1$
+    public static final String MULTIPART_SUBTYPE = "HTTP2Request.multipart_subtype"; // $NON-NLS-1$
+    public static final String FORCE_BOUNDARY = "HTTP2Request.force_boundary"; // $NON-NLS-1$
+
+    public static final String PRI = "PRI"; // $NON-NLS-1$
+
+    public static final String MULTIPART = "multipart/";
+    public static final String MULTIPART_ALTERNATIVE = "alternative";
+    public static final String MULTIPART_BYTERANGE = "byterange";
+    public static final String MULTIPART_DIGEST = "digest";
+    public static final String MULTIPART_ENCRYPTED = "encrypted";
+    public static final String MULTIPART_FORMDATA = "form-data";
+    public static final String MULTIPART_MIXED = "mixed";
+    public static final String MULTIPART_MIXEDREPLACE = "x-mixed-replace";
+    public static final String MULTIPART_PARALLEL = "parallel";
+    public static final String MULTIPART_RELATED = "related";
+    public static final String MULTIPART_REPORT = "report";
+    public static final String MULTIPART_SIGNED = "signed";
+
+    public static final String BOUNDARY = "boundary";
+
     /**
      * This is the encoding used for the content, i.e. the charset name, not the header
      * "Content-Encoding"
@@ -101,6 +126,11 @@ public class HTTP2Request extends AbstractSampler implements ThreadListener, Loo
     private HTTP2Connection http2Connection;
 
     public HTTP2Request() {
+        if (LOG.isDebugEnabled()) {
+            StdErrLog logger = new StdErrLog();
+            logger.setDebugEnabled(true);
+            Log.setLog(logger);
+        }
         setName("HTTP2 Request");
     }
 
@@ -140,14 +170,16 @@ public class HTTP2Request extends AbstractSampler implements ThreadListener, Loo
         try {
             URL url = getUrl();
             sampleResult.setURL(url);
-            sampleResult.setHTTPMethod(getMethod());
+            sampleResult.setHTTPMethod(getHttpMethod(getMethod()));
             setConnection(url, sampleResult);
             sample(url, getMethod(), getConnection(), sampleResult);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             errorResult(e, sampleResult);
+            LOG.warn("InterruptedException: ",e);
         } catch (Exception e) {
             errorResult(e, sampleResult);
+            LOG.warn("Exception: ",e);
         }
     /*As HTTP2 protocol is async then when the Sampler finish there is a possibility that the
      response did not come yet, so this method returns null because when the response finish a
@@ -191,8 +223,9 @@ public class HTTP2Request extends AbstractSampler implements ThreadListener, Loo
     protected void sample(URL url, String method, HTTP2Connection http2Connection,
                           HTTP2SampleResult sampleResult) {
 
-      LOG.debug("Start : sample: {}, method: {}" , url.toString(), method);
+        LOG.debug("Start : sample: {}, method: {}" , url.toString(), method);
 
+        sampleResult.setSuccessful(false);
         sampleResult.setEmbebedResults(isEmbeddedResources());
         sampleResult.setEmbeddedUrlRE(getEmbeddedUrlRE());
 
@@ -201,10 +234,14 @@ public class HTTP2Request extends AbstractSampler implements ThreadListener, Loo
             if (!getResponseTimeout().isEmpty()) {
                 timeout = Integer.parseInt(getResponseTimeout());
             }
+
             RequestBody body = null;
-            if (HTTPConstants.POST.equals(method) 
+            /*if (HTTPConstants.POST.equals(method) 
                 || HTTPConstants.PUT.equals(method) 
-                || HTTPConstants.PATCH.equals(method)) {
+                || HTTPConstants.PATCH.equals(method)) {*/
+            
+            if (!HttpMethod.fromString(getMethod()).equals(HttpMethod.GET) 
+                && !HttpMethod.fromString(getMethod()).equals(HttpMethod.HEAD)) {
                 body = RequestBody
                         .from(method, getContentEncoding(), getArguments(), getSendParameterValuesAsPostBody());
             }
@@ -213,7 +250,7 @@ public class HTTP2Request extends AbstractSampler implements ThreadListener, Loo
                     .send(method, url, getHeaderManager(), getCookieManager(), body, sampleResult, timeout);
 
             final CacheManager cacheManager = getCacheManager();
-            if (cacheManager != null && HTTPConstants.GET.equalsIgnoreCase(method)) {
+            if (cacheManager != null && HttpMethod.fromString(getMethod()).equals(HttpMethod.GET)) {
                 // TODO implement cache Manager
             }
             if (isSyncRequest()) {
@@ -280,12 +317,13 @@ public class HTTP2Request extends AbstractSampler implements ThreadListener, Loo
         http2Connection = threadConnections.get(connectionId);
         if (http2Connection != null) {
             if (http2Connection.isClosed()) {
+                LOG.warn("http2Connection == closed");
                 http2Connection.connect(host, port);
             }
         } else {
-          http2Connection = new HTTP2Connection(connectionId,
-              HTTPConstants.PROTOCOL_HTTPS.equalsIgnoreCase(getProtocol()));
-          http2Connection.connect(host, port);
+            http2Connection = new HTTP2Connection(connectionId,
+                    HTTPConstants.PROTOCOL_HTTPS.equalsIgnoreCase(getProtocol()));
+            http2Connection.connect(host, port);
             threadConnections.put(connectionId, http2Connection);
         }
         sampleResult.setConnectTime(sampleResult.currentTimeInMillis() - startConnectTime);
@@ -329,22 +367,22 @@ public class HTTP2Request extends AbstractSampler implements ThreadListener, Loo
         }
         pathAndQuery.append(path);
 
-         if (HTTPConstants.GET.equals(method)
-                || HTTPConstants.DELETE.equals(method)
-                || HTTPConstants.OPTIONS.equals(method)) {
-            /* Get the query string encoded in specified encoding
-             If no encoding is specified by user, we will get it
-             encoded in UTF-8, which is what the HTTP spec says */
-           String queryString = null;
-           try {
-             queryString = RequestBody.from(method, getContentEncoding(), getArguments(), false)
-                 .getPayload();
-           } catch (UnsupportedEncodingException e) {
-             LOG.debug("Content encoding not supported: {}", getContentEncoding(), e);
-           }
-           if (queryString != null && !queryString.isEmpty()) {
-               pathAndQuery.append(path.contains(QRY_PFX) ? QRY_SEP : QRY_PFX);
-               pathAndQuery.append(queryString);
+        if (HTTPConstants.GET.equals(method)
+               || HTTPConstants.DELETE.equals(method)
+               || HTTPConstants.OPTIONS.equals(method)) {
+            // Get the query string encoded in specified encoding
+            // If no encoding is specified by user, we will get it
+            // encoded in UTF-8, which is what the HTTP spec says
+            String queryString = null;
+            try {
+               queryString = RequestBody.from(method, getContentEncoding(), getArguments(), false)
+                   .getPayload();
+            } catch (UnsupportedEncodingException e) {
+                LOG.debug("Content encoding not supported: {}", getContentEncoding(), e);
+            }
+            if (queryString != null && !queryString.isEmpty()) {
+                pathAndQuery.append(path.contains(QRY_PFX) ? QRY_SEP : QRY_PFX);
+                pathAndQuery.append(queryString);
             }
         }
 
@@ -448,6 +486,11 @@ public class HTTP2Request extends AbstractSampler implements ThreadListener, Loo
         return getPropertyAsString(PATH);
     }
 
+    // gets called from ctor, so has to be final
+    public final void setArguments(Arguments value) {
+        setProperty(new TestElementProperty(ARGUMENTS, value));
+    }
+
     private Arguments getArguments() {
         return (Arguments) getProperty(ARGUMENTS).getObjectValue();
     }
@@ -499,8 +542,8 @@ public class HTTP2Request extends AbstractSampler implements ThreadListener, Loo
         HeaderManager mgr = getHeaderManager();
         if (mgr != null) {
             value = mgr.merge(value);
-           LOG.debug("Existing HeaderManager '{}' merged with '{}'", mgr.getName(), value.getName());
-          value.getHeaders().forEach(h-> LOG.debug("{} = {}", h.getName(), h.getStringValue()));
+            LOG.debug("Existing HeaderManager '{}' merged with '{}'", mgr.getName(), value.getName());
+            value.getHeaders().forEach(h-> LOG.debug("{} = {}", h.getName(), h.getStringValue()));
         }
         setProperty(new TestElementProperty(HEADER_MANAGER, value));
     }

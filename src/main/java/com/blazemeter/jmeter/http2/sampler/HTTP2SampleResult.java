@@ -33,6 +33,7 @@ import org.slf4j.LoggerFactory;
 
 public class HTTP2SampleResult extends HTTPSampleResult {
 
+    private static final long serialVersionUID = 7610270685063142334L;
     private int embebedResultsDepth;
     private boolean embebedResults;
     private String embeddedUrlRE;
@@ -70,6 +71,7 @@ public class HTTP2SampleResult extends HTTPSampleResult {
     }
 
     public HTTP2SampleResult() {
+        super();
     }
 
     public HTTP2SampleResult(JMeterContext threadContext) {

@@ -37,6 +37,7 @@ import org.eclipse.jetty.http2.frames.HeadersFrame;
 import org.eclipse.jetty.http2.frames.PushPromiseFrame;
 import org.eclipse.jetty.http2.frames.ResetFrame;
 import org.eclipse.jetty.util.Callback;
+import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public class HTTP2StreamHandler extends Stream.Listener.Adapter {
@@ -44,7 +45,7 @@ public class HTTP2StreamHandler extends Stream.Listener.Adapter {
     private static final String USER_AGENT = "User-Agent";
     private static final Map<String, String> PARSERS_FOR_CONTENT_TYPE = new HashMap<>();
     private static final String RESPONSE_PARSERS = JMeterUtils.getProperty("HTTPResponse.parsers");
-    private static final org.slf4j.Logger LOG = LoggerFactory.getLogger(HTTP2StreamHandler.class);
+    private static final Logger LOG = LoggerFactory.getLogger(HTTP2StreamHandler.class);
     private static final boolean IGNORE_FAILED_EMBEDDED_RESOURCES = JMeterUtils.
             getPropDefault("httpsampler.ignore_failed_embedded_resources", false);
 
@@ -119,10 +120,11 @@ public class HTTP2StreamHandler extends Stream.Listener.Adapter {
             switch (h.getName()) {
                 case HTTPConstants.HEADER_CONTENT_TYPE:
                 case "content-type":
-                    sampleSubResult.setContentType(h.getValue());
+                    //sampleSubResult.setContentType(h.getValue());
                     sampleSubResult.setEncodingAndType(h.getValue());
                     break;
                 case HTTPConstants.HEADER_CONTENT_ENCODING:
+                case "Content-Encoding":
                     sampleSubResult.setDataEncoding(h.getValue());
                     break;
             }

@@ -36,10 +36,10 @@ public class RequestBody {
     private static String buildPostBody(String method, String contentEncoding, Arguments args, boolean sendParamsAsBody)
             throws UnsupportedEncodingException {
         if ((HTTPConstants.POST.equals(method) 
-            || HTTPConstants.PATCH.equals(method) )
-            && !sendParamsAsBody) {
+                || HTTPConstants.PATCH.equals(method) )
+                && !sendParamsAsBody) {
             PropertyIterator iter = args.getArguments().iterator();
-            
+
             if (!iter.hasNext()) {
                 return "";
             }
@@ -86,8 +86,8 @@ public class RequestBody {
                     buf.append(item.getEncodedValue(contentEncoding));
                 } catch (UnsupportedEncodingException e) {
                     LOG.warn(
-                        "Unable to encode parameter in encoding {} , parameter value not included in query string",
-                        contentEncoding);
+                            "Unable to encode parameter in encoding {}, parameter value not included in query string",
+                            contentEncoding);
                 }
             }
             return buf.toString();
@@ -107,6 +107,10 @@ public class RequestBody {
 
     public byte[] getPayloadBytes() throws UnsupportedEncodingException {
         return payload.getBytes(encoding);
+    }
+
+    public String getEncoding() {
+        return encoding;
     }
 
 }
