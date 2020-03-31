@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+	<modelVersion>4.0.0</modelVersion>
+
+	<artifactId>simulap-jmeter-webclient</artifactId>
+	<packaging>jar</packaging>
+	<name>simulap-jmeter-webclient</name>
+	<description>HTTP/2 protocol sampler</description>
+
+	<url>https://github.com/SIMULAP/jmeter-http2-plugin</url>
+
+	<issueManagement>
+		<system>GitHub</system>
+		<url>https://github.com/SIMULAP/jmeter-http2-plugin/issues</url>
+	</issueManagement>
+
+	<organization>
+		<name>HPE SIMULAP</name>
+		<url>https://github.com/SIMULAP</url>
+	</organization>
+
+	<scm>
+		<connection>scm:git@github.com:SIMULAP/jmeter-http2-plugin.git</connection>
+		<developerConnection>scm:git@github.com:SIMULAP/jmeter-http2-plugin.git</developerConnection>
+		<url>https://github.com/SIMULAP/jmeter-http2-plugin</url>
+	</scm>
+
+	<parent>
+		<artifactId>simulap-plugin-webclient-parent</artifactId>
+		<version>${plugin.version}-${src.version}</version>
+		<groupId>com.hpe.simulap</groupId>
+		<relativePath>parent/pom.xml</relativePath>
+	</parent>
+
+	<properties>
+		<main.basedir>${project.basedir}</main.basedir>
+
+		<jmeter.command>jmeter</jmeter.command>
+	</properties>
+
+	<build />
+
+</project>

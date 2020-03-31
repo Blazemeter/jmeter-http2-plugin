@@ -1,0 +1,9 @@
+**/*.class
+**/*.md.html
+/.classpath
+/.project
+**/target/
+/jmeter.log
+/.settings/
+/.factorypath
+**/*.java-*
