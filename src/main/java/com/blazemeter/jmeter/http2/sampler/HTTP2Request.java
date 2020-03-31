@@ -633,6 +633,33 @@ public class HTTP2Request extends AbstractSampler implements ThreadListener, Loo
             }
         });
     }
+
+    private String getHttpMethod(String method) {
+        switch(method) {
+           case HTTPConstants.POST: return "POST" ; 
+           case HTTPConstants.HEAD: return "HEAD" ; 
+           case HTTPConstants.CONNECT: return "CONNECT" ; 
+           case HTTPConstants.DELETE: return "DELETE" ; 
+           case HTTPConstants.GET: return "GET" ;
+           //case HTTPConstants.MOVE: return "MOVE" ; // WEBDAV
+           case HTTPConstants.OPTIONS: return "OPTIONS";
+           case HTTPConstants.PUT: return "PUT" ; 
+           case HTTPConstants.TRACE: return "TRACE" ;
+           case HTTPConstants.PATCH: return "PATCH" ;
+           //case HTTPConstants.PROPFIND: return "PROPFIND" ; // WEBDAV
+           //case HTTPConstants.PROPPATCH: return "PROPPATCH" ; // WEBDAV
+           //case HTTPConstants.MKCOL: return "MKCOL" ; // WEBDAV
+           //case HTTPConstants.COPY: return "COPY" ; // WEBDAV
+           case HTTPConstants.MOVE: return "MOVE" ; // WEBDAV
+           //case HTTPConstants.LOCK: return "LOCK" ; // WEBDAV
+           //case HTTPConstants.UNLOCK: return "UNLOCK" ; // WEBDAV
+           //case HTTPConstants.REPORT: return "REPORT" ; // WEBDAV
+           //case HTTPConstants.MKCALENDAR: return "MKCALENDAR" ; // WEBDAV
+           //case HTTPConstants.SEARCH: return "SEARCH" ; // WEBDAV
+           case PRI: return PRI ; // HTTP/2
+           default: return "GET" ;
+        }
+    }
     
 }
 
