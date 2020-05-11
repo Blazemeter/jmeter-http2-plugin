@@ -252,6 +252,7 @@
 							<includes>
 								<include>com/blazemeter/jmeter/**</include>
 								<include>com/hpe/simulap/**</include>
+								<include>blazemeter*.png</include>
 							</includes>
 						</configuration>
 					</execution>
