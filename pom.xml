@@ -228,7 +228,8 @@
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>2.22.2</version>
                 <configuration>
-                    <argLine>-Xbootclasspath/p:${project.build.directory}/test-lib/alpn-boot.jar</argLine>
+                    <!-- avoid issue with jdk 11 -->
+                    <useSystemClassLoader>false</useSystemClassLoader>
                 </configuration>
             </plugin>
         </plugins>

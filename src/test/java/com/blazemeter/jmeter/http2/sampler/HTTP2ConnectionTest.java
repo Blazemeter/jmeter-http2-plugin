@@ -5,11 +5,11 @@ import org.apache.jmeter.protocol.http.control.Header;
 import org.apache.jmeter.protocol.http.control.HeaderManager;
 import org.apache.jmeter.testelement.property.CollectionProperty;
 import org.eclipse.jetty.http2.api.Session;
+import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
+import org.mockito.Mock;
 import org.mockito.Mockito;
-
-import kg.apc.emulators.TestJMeterUtils;
 
 import java.net.URL;
 import java.util.ArrayList;
@@ -20,14 +20,23 @@ import static org.junit.Assert.assertEquals;
 public class HTTP2ConnectionTest {
 
     private HTTP2Connection http2Connection;
+    @Mock
     private HeaderManager headerManagerMock;
+    @Mock
     private CookieManager cookieManagerMock;
+    @Mock
     private URL urlMock;
+    @Mock
     private Session sessionMock;
 
+    @After
+    public void teardown() throws Exception {
+        http2Connection.disconnect();
+    }
+    
     @Before
     public void setup() throws Exception {
-        TestJMeterUtils.createJmeterEnv();
+        JMeterTestUtils.setupJmeterEnv();
         headerManagerMock = Mockito.mock(HeaderManager.class);
         urlMock = Mockito.mock(URL.class);
         cookieManagerMock = Mockito.mock(CookieManager.class);
