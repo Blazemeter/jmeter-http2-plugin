@@ -10,7 +10,7 @@ As Java 8 does not have native support for HTTP/2, you will need to ensure you h
 
 > Please note that you need to install OpenJDK version 8 as newer version won't work.
 
-1- Download alpn-boot from [here](https://mvnrepository.com/artifact/org.mortbay.jetty.alpn/alpn-boot) according to your JVM version as stated at the bottom of this this [page](https://www.eclipse.org/jetty/documentation/9.4.x/alpn-chapter.html)
+1- Download alpn-boot from [here](https://mvnrepository.com/artifact/org.mortbay.jetty.alpn/alpn-boot) according to your JVM version as stated in this [page](https://www.eclipse.org/jetty/documentation/current/alpn-chapter.html#alpn-versions)
 	
 2- On Windows at the start of jmeter.bat add the next line:
 		`set JVM_ARGS= -Xbootclasspath/p:<path.to.jar>;`
