@@ -53,6 +53,7 @@ public class Http2DefaultsGui extends AbstractConfigGui {
 
     private HTTP2RequestPanel http2RequestPanel;
     private JCheckBox retrieveEmbeddedResources;
+    private JCheckBox useGzipDecompressor;
     private JCheckBox useMD5;
     private JLabeledTextField embeddedResourceUrlRegexFilter;
     private JTextField sourceIpAddr;
@@ -118,6 +119,8 @@ public class Http2DefaultsGui extends AbstractConfigGui {
                 .getResString("optional_tasks"))); // $NON-NLS-1$
         useMD5 = new JCheckBox(JMeterUtils.getResString("response_save_as_md5")); // $NON-NLS-1$
         checkBoxPanel.add(useMD5);
+        useGzipDecompressor = new JCheckBox("Decompress Gzip response ?");
+        checkBoxPanel.add(useGzipDecompressor);
         return checkBoxPanel;
     }
 
@@ -158,6 +161,11 @@ public class Http2DefaultsGui extends AbstractConfigGui {
         } else {
             config.removeProperty(HTTP2Request.EMBEDDED_RESOURCES);
         }
+        if (useGzipDecompressor.isSelected()) {
+            config.setProperty(new BooleanProperty(HTTP2Request.GZIP,true));
+        } else {
+            config.removeProperty(HTTP2Request.GZIP);
+        }
         if (useMD5.isSelected()) {
             config.setProperty(new BooleanProperty(HTTP2Request.MD5, true));
         } else {
@@ -189,6 +197,7 @@ public class Http2DefaultsGui extends AbstractConfigGui {
         super.clearGui();
         retrieveEmbeddedResources.setSelected(false);
         useMD5.setSelected(false);
+        useGzipDecompressor.setSelected(false);
         http2RequestPanel.clear();
         embeddedResourceUrlRegexFilter.setText(""); // $NON-NLS-1$
         sourceIpAddr.setText(""); // $NON-NLS-1$
@@ -202,6 +211,7 @@ public class Http2DefaultsGui extends AbstractConfigGui {
         http2RequestPanel.configure(el);
         retrieveEmbeddedResources.setSelected(http2Sampler.getPropertyAsBoolean(HTTP2Request.EMBEDDED_RESOURCES));
         useMD5.setSelected(http2Sampler.getPropertyAsBoolean(HTTP2Request.MD5, false));
+        useGzipDecompressor.setSelected(http2Sampler.getPropertyAsBoolean(HTTP2Request.GZIP));
         embeddedResourceUrlRegexFilter.setText(http2Sampler.getPropertyAsString(HTTP2Request.EMBEDDED_URL_REGEX, ""));//$NON-NLS-1$
         sourceIpAddr.setText(http2Sampler.getPropertyAsString(HTTP2Request.IP_SOURCE)); //$NON-NLS-1$
         sourceIpType.setSelectedIndex(

@@ -35,6 +35,7 @@ public class HTTP2SampleResult extends HTTPSampleResult {
 
     private int embebedResultsDepth;
     private boolean embebedResults;
+    private boolean isGzip;
     private String embeddedUrlRE;
     private boolean secondaryRequest;
     private boolean pendingResponse;
@@ -123,6 +124,8 @@ public class HTTP2SampleResult extends HTTPSampleResult {
         return embebedResults;
     }
 
+    public boolean isGzipResponse() {return isGzip; }
+
     public String getEmbeddedUrlRE() {
         return embeddedUrlRE;
     }
@@ -133,6 +136,10 @@ public class HTTP2SampleResult extends HTTPSampleResult {
 
     public void setEmbebedResults(boolean embebedResults) {
         this.embebedResults = embebedResults;
+    }
+
+    public void setGzip(boolean gzip) {
+        this.isGzip = gzip;
     }
 
     public int getEmbebedResultsDepth() {

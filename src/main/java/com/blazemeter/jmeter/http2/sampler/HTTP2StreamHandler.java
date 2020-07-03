@@ -1,15 +1,16 @@
 
 package com.blazemeter.jmeter.http2.sampler;
 
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
+import java.io.*;
 import java.net.MalformedURLException;
 import java.net.URISyntaxException;
 import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.zip.GZIPInputStream;
 
 import org.apache.commons.lang3.StringUtils;
 import org.apache.jmeter.protocol.http.control.CookieManager;
@@ -26,6 +27,7 @@ import org.apache.jorphan.util.JOrphanUtils;
 import org.apache.oro.text.MalformedCachePatternException;
 import org.apache.oro.text.regex.Pattern;
 import org.apache.oro.text.regex.Perl5Matcher;
+import org.apache.tika.io.IOUtils;
 import org.eclipse.jetty.http.HttpField;
 import org.eclipse.jetty.http.HttpStatus;
 import org.eclipse.jetty.http.MetaData;
@@ -192,7 +194,12 @@ public class HTTP2StreamHandler extends Stream.Listener.Adapter {
                 result.latencyEnd();
                 first = false;
             }
+
             setResponseBytes(bytes);
+
+            if(result !=null && result.isGzipResponse()){
+                this.responseBytes = gzipDecompressor(this.responseBytes);
+            }
 
             if (frame.isEndStream()) {
                 result.setSuccessful(isSuccessCode(Integer.parseInt(result.getResponseCode())));
@@ -427,6 +434,16 @@ public class HTTP2StreamHandler extends Stream.Listener.Adapter {
             result.completeAsyncSample();
         }
         completedFuture.complete(null);
+    }
+
+    private byte[] gzipDecompressor(byte[] bytes) throws IOException {
+        ByteArrayInputStream bais = new ByteArrayInputStream(bytes);
+        GZIPInputStream gis;
+        gis = new GZIPInputStream(bais);
+        InputStreamReader reader = new InputStreamReader(gis);
+        BufferedReader bufferedIn = new BufferedReader(reader);
+        byte[] decompressedResponse = IOUtils.toByteArray(bufferedIn);
+        return decompressedResponse;
     }
 
 }

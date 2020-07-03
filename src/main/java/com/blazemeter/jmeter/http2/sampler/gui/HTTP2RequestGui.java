@@ -24,6 +24,7 @@ public class HTTP2RequestGui extends AbstractSamplerGui {
     private JCheckBox retrieveEmbeddedResources;
     private HTTP2RequestPanel http2RequestPanel;
     private JCheckBox useMD5;
+    private JCheckBox useGzipDecompressor;
     private JLabeledTextField embeddedResourceUrlRegexFilter;
     private JTextField sourceIpAddr;
     private JComboBox<String> sourceIpType = new JComboBox<>(HTTPSamplerBase.getSourceTypeList());
@@ -81,11 +82,14 @@ public class HTTP2RequestGui extends AbstractSamplerGui {
     }
 
     private JPanel createOptionalTasksPanel() {
+        useGzipDecompressor = new JCheckBox("Decompress Gzip response ?");
+        useMD5 = new JCheckBox(JMeterUtils.getResString("response_save_as_md5")); // $NON-NLS-1$
+
         final JPanel checkBoxPanel = new VerticalPanel();
         checkBoxPanel.setBorder(BorderFactory.createTitledBorder(BorderFactory.createEtchedBorder(), JMeterUtils
                 .getResString("optional_tasks"))); // $NON-NLS-1$
-        useMD5 = new JCheckBox(JMeterUtils.getResString("response_save_as_md5")); // $NON-NLS-1$
         checkBoxPanel.add(useMD5);
+        checkBoxPanel.add(useGzipDecompressor);
         return checkBoxPanel;
     }
 
@@ -116,6 +120,7 @@ public class HTTP2RequestGui extends AbstractSamplerGui {
         http2RequestPanel.configure(element);
         retrieveEmbeddedResources.setSelected(http2sampler.isEmbeddedResources());
         embeddedResourceUrlRegexFilter.setText(http2sampler.getEmbeddedUrlRE());
+        useGzipDecompressor.setSelected(http2sampler.isGzip());
     }
 
     @Override
@@ -126,6 +131,7 @@ public class HTTP2RequestGui extends AbstractSamplerGui {
         //TODO
         http2Sample.setEmbeddedResources(retrieveEmbeddedResources.isSelected());
         http2Sample.setEmbeddedUrlRE(embeddedResourceUrlRegexFilter.getText());
+        http2Sample.setGzipDecompressor(useGzipDecompressor.isSelected());
         super.configureTestElement(sampler);
     }
 
@@ -139,6 +145,7 @@ public class HTTP2RequestGui extends AbstractSamplerGui {
         super.clearGui();
         retrieveEmbeddedResources.setSelected(false);
         useMD5.setSelected(false);
+        useGzipDecompressor.setSelected(false);
         embeddedResourceUrlRegexFilter.setText(""); // $NON-NLS-1$
         sourceIpAddr.setText(""); // $NON-NLS-1$
         sourceIpType.setSelectedIndex(HTTPSamplerBase.SourceType.HOSTNAME.ordinal()); //default: IP/Hostname

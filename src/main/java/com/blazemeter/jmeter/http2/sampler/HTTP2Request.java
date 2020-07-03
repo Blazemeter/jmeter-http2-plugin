@@ -1,15 +1,16 @@
 package com.blazemeter.jmeter.http2.sampler;
 
 import com.blazemeter.jmeter.http2.visualizers.ResultCollector;
-import java.io.ByteArrayOutputStream;
-import java.io.PrintStream;
-import java.io.UnsupportedEncodingException;
+
+import java.io.*;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.zip.GZIPInputStream;
+
 import org.apache.jmeter.config.Arguments;
 import org.apache.jmeter.engine.event.LoopIterationEvent;
 import org.apache.jmeter.engine.event.LoopIterationListener;
@@ -37,6 +38,7 @@ import org.apache.jmeter.threads.JMeterContextService;
 import org.apache.jmeter.threads.JMeterThread;
 import org.apache.jmeter.threads.SamplePackage;
 import org.apache.jmeter.util.JMeterUtils;
+import org.apache.tika.io.IOUtils;
 import org.eclipse.jetty.http.HttpFields;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -74,6 +76,7 @@ public class HTTP2Request extends AbstractSampler implements ThreadListener, Loo
     // Store MD5 hash instead of storing response
     public static final String MD5 = "HTTPSampler.md5"; // $NON-NLS-1$
     public static final String EMBEDDED_RESOURCES = "HTTPSampler.embedded_resources"; // $NON-NLS-1$
+    public static final String GZIP = "HTTPSampler.gzip";
     public static final int SOURCE_TYPE_DEFAULT = HTTPSamplerBase.SourceType.HOSTNAME.ordinal();
     public static final String ARGUMENTS = "HTTP2Request.Arguments"; // $NON-NLS-1$
     public static final String POST_BODY_RAW = "HTTP2Request.postBodyRaw"; // TODO - belongs elsewhere
@@ -195,6 +198,7 @@ public class HTTP2Request extends AbstractSampler implements ThreadListener, Loo
 
         sampleResult.setEmbebedResults(isEmbeddedResources());
         sampleResult.setEmbeddedUrlRE(getEmbeddedUrlRE());
+        sampleResult.setGzip(isGzip());
 
         try {
             int timeout = Integer.parseInt(DEFAULT_RESPONSE_TIMEOUT);
@@ -465,6 +469,8 @@ public class HTTP2Request extends AbstractSampler implements ThreadListener, Loo
         return getPropertyAsBoolean(EMBEDDED_RESOURCES);
     }
 
+    public Boolean isGzip() { return getPropertyAsBoolean(GZIP);}
+
     private Boolean isSyncRequest() {
         return getPropertyAsBoolean(SYNC_REQUEST);
     }
@@ -570,6 +576,10 @@ public class HTTP2Request extends AbstractSampler implements ThreadListener, Loo
 
     public void setEmbeddedResources(boolean embeddedResources) {
         setProperty(EMBEDDED_RESOURCES, embeddedResources, false);
+    }
+
+    public void setGzipDecompressor(boolean gzip) {
+        setProperty(GZIP,gzip,false);
     }
 
     public void setEmbeddedUrlRE(String regex) {
