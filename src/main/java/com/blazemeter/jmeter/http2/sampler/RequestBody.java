@@ -41,8 +41,10 @@ public class RequestBody {
     private static String buildPostBody(String method, String contentEncoding, Arguments args, boolean sendParamsAsBody)
             throws UnsupportedEncodingException {
         if ((HTTPConstants.POST.equals(method) 
-                || HTTPConstants.PATCH.equals(method) )
-                && !sendParamsAsBody) {
+            || HTTPConstants.PATCH.equals(method)
+            || HTTPConstants.PUT.equals(method))
+            && !sendParamsAsBody) {
+
             PropertyIterator iter = args.getArguments().iterator();
 
             if (!iter.hasNext()) {
