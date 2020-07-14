@@ -76,7 +76,7 @@ public class HTTP2Connection {
                                          HTTP2StreamHandler http2StreamHandler, RequestBody requestBody) throws Exception {
         session.newStream(headersFrame, streamPromise, http2StreamHandler);
         LOG.debug("sendMutExc().method= {}", method);
-        if (HTTPConstants.POST.equals(method) || HTTPConstants.PATCH.equals(method)) {
+        if (HTTPConstants.POST.equals(method) || HTTPConstants.PATCH.equals(method)|| HTTPConstants.PUT.equals(method)) {
             Stream actualStream = streamPromise.get();
             actualStream
                 .data(new DataFrame(actualStream.getId(), ByteBuffer.wrap(requestBody.getPayloadBytes()),
@@ -118,7 +118,7 @@ public class HTTP2Connection {
 
     private boolean getEndOfStream(String method) {
         //Currently the end of stream should be true if its GET, DELETE or Default value.
-        return !Arrays.asList(HTTPConstants.PATCH, HTTPConstants.POST)
+        return !Arrays.asList(HTTPConstants.PATCH, HTTPConstants.POST,HTTPConstants.PUT)
             .contains(method);
         
     }
