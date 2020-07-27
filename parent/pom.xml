@@ -135,14 +135,6 @@
 						</artifactItem>
 						<artifactItem>
 							<groupId>org.eclipse.jetty.http2</groupId>
-							<artifactId>http2-common</artifactId>
-							<version>${jetty.version}</version>
-							<type>jar</type>
-							<overWrite>false</overWrite>
-							<outputDirectory>${project.build.directory}/dependencies</outputDirectory>
-						</artifactItem>
-						<artifactItem>
-							<groupId>org.eclipse.jetty.http2</groupId>
 							<artifactId>http2-http-client-transport</artifactId>
 							<version>${jetty.version}</version>
 							<type>jar</type>
