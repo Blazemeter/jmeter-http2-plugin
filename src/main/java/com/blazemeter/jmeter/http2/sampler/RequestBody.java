@@ -6,7 +6,6 @@ import org.apache.jmeter.config.Arguments;
 import org.apache.jmeter.protocol.http.util.EncoderCache;
 import org.apache.jmeter.protocol.http.util.HTTPArgument;
 import org.apache.jmeter.protocol.http.util.HTTPConstants;
-import org.apache.jmeter.testelement.property.CollectionProperty;
 import org.apache.jmeter.testelement.property.JMeterProperty;
 import org.apache.jmeter.testelement.property.PropertyIterator;
 import org.apache.jorphan.util.JOrphanUtils;
@@ -30,14 +29,22 @@ public class RequestBody {
 
     public static RequestBody from(String method, String contentEncoding, Arguments args, boolean sendParamsAsBody)
             throws UnsupportedEncodingException {
-        return new RequestBody(buildPostBody(method, contentEncoding, args, sendParamsAsBody), contentEncoding);
+        switch(method) {
+            case HTTPConstants.GET:
+                return new RequestBody(buildGetRequest(contentEncoding, args), contentEncoding);
+            default:
+                return new RequestBody(buildPostBody(method, contentEncoding, args, sendParamsAsBody), contentEncoding);
+
+        }
     }
 
     private static String buildPostBody(String method, String contentEncoding, Arguments args, boolean sendParamsAsBody)
             throws UnsupportedEncodingException {
         if ((HTTPConstants.POST.equals(method) 
-                || HTTPConstants.PATCH.equals(method) )
-                && !sendParamsAsBody) {
+            || HTTPConstants.PATCH.equals(method)
+            || HTTPConstants.PUT.equals(method))
+            && !sendParamsAsBody) {
+
             PropertyIterator iter = args.getArguments().iterator();
 
             if (!iter.hasNext()) {
@@ -99,6 +106,33 @@ public class RequestBody {
             }
             return postBodyBuffer.toString();
         }
+    }
+
+    private static String buildGetRequest(String contentEncoding, Arguments args) throws UnsupportedEncodingException {
+        StringBuilder requestBuilder = new StringBuilder();
+        PropertyIterator iter = args.getArguments().iterator();
+
+        while(iter.hasNext()) {
+            HTTPArgument httpArgument = (HTTPArgument) iter.next().getObjectValue();
+            String argName = "",
+                   argValue = "",
+                   queryString = "";
+
+            if(httpArgument.isAlwaysEncoded()) {
+                argName = httpArgument.getEncodedName();
+                argValue = httpArgument.getEncodedValue(contentEncoding);
+            } else {
+                argName = httpArgument.getName();
+                argValue = httpArgument.getValue();
+            }
+
+            queryString = (iter.hasNext())
+                    ? "%s"+ ARG_VAL_SEP +"%s" + QRY_SEP
+                    : "%s"+ ARG_VAL_SEP +"%s";
+            requestBuilder.append(String.format(queryString, argName, argValue));
+        }
+
+        return requestBuilder.toString();
     }
 
     public String getPayload() {
