@@ -1,23 +1,21 @@
 package com.blazemeter.jmeter.http2.sampler.gui;
 
-import org.apache.jmeter.protocol.http.sampler.HTTPSamplerBase;
-import org.apache.jmeter.gui.util.HorizontalPanel;
-import org.apache.jmeter.gui.util.VerticalPanel;
-import org.apache.jmeter.samplers.gui.AbstractSamplerGui;
-import org.apache.jmeter.testelement.TestElement;
-import org.apache.jmeter.util.JMeterUtils;
-import org.apache.jorphan.gui.JLabeledTextField;
-
 import com.blazemeter.jmeter.http2.sampler.HTTP2Request;
-
-import java.awt.*;
-
+import java.awt.BorderLayout;
+import java.awt.Dimension;
 import javax.swing.BorderFactory;
 import javax.swing.JCheckBox;
 import javax.swing.JComboBox;
 import javax.swing.JPanel;
 import javax.swing.JTabbedPane;
 import javax.swing.JTextField;
+import org.apache.jmeter.gui.util.HorizontalPanel;
+import org.apache.jmeter.gui.util.VerticalPanel;
+import org.apache.jmeter.protocol.http.sampler.HTTPSamplerBase;
+import org.apache.jmeter.samplers.gui.AbstractSamplerGui;
+import org.apache.jmeter.testelement.TestElement;
+import org.apache.jmeter.util.JMeterUtils;
+import org.apache.jorphan.gui.JLabeledTextField;
 
 public class HTTP2RequestGui extends AbstractSamplerGui {
 
@@ -81,10 +79,11 @@ public class HTTP2RequestGui extends AbstractSamplerGui {
     }
 
     private JPanel createOptionalTasksPanel() {
+        useMD5 = new JCheckBox(JMeterUtils.getResString("response_save_as_md5")); // $NON-NLS-1$
+
         final JPanel checkBoxPanel = new VerticalPanel();
         checkBoxPanel.setBorder(BorderFactory.createTitledBorder(BorderFactory.createEtchedBorder(), JMeterUtils
                 .getResString("optional_tasks"))); // $NON-NLS-1$
-        useMD5 = new JCheckBox(JMeterUtils.getResString("response_save_as_md5")); // $NON-NLS-1$
         checkBoxPanel.add(useMD5);
         return checkBoxPanel;
     }
@@ -123,7 +122,6 @@ public class HTTP2RequestGui extends AbstractSamplerGui {
         sampler.clear();
         http2RequestPanel.modifyTestElement(sampler);
         final HTTP2Request http2Sample = (HTTP2Request) sampler;
-        //TODO
         http2Sample.setEmbeddedResources(retrieveEmbeddedResources.isSelected());
         http2Sample.setEmbeddedUrlRE(embeddedResourceUrlRegexFilter.getText());
         super.configureTestElement(sampler);
