@@ -239,16 +239,19 @@ public class HTTP2Request extends AbstractSampler implements ThreadListener, Loo
             }
 
             RequestBody body = null;
-            /*if (HTTPConstants.POST.equals(method) 
+            if (HTTPConstants.POST.equals(method) 
                 || HTTPConstants.PUT.equals(method) 
-                || HTTPConstants.PATCH.equals(method)) {*/
-            
-            if (!HttpMethod.fromString(getMethod()).equals(HttpMethod.GET) 
-                && !HttpMethod.fromString(getMethod()).equals(HttpMethod.HEAD)) {
+                || HTTPConstants.PATCH.equals(method)
+                || HTTPConstants.DELETE.equals(method)
+                || HTTPConstants.GET.equals(method) 
+                || HTTPConstants.HEAD.equals(method) ) {
+            	            	
                 body = RequestBody
                         .from(method, getContentEncoding(), getArguments(), getSendParameterValuesAsPostBody());
             }
 
+            LOG.debug("Payload: {}", body.getPayload());
+            
             http2Connection
                     .send(method, url, getHeaderManager(), getCookieManager(), body, sampleResult, timeout);
 
