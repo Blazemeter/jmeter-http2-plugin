@@ -142,8 +142,4 @@ public class RequestBody {
         return payload.getBytes(encoding);
     }
 
-    public static RequestBody fromNewPayload(String contentEncoding, String newPayload) {
-        return new RequestBody(newPayload, contentEncoding);
-    }
-
 }

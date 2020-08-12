@@ -124,7 +124,7 @@ public class HTTP2SampleResult extends HTTPSampleResult {
         return embebedResults;
     }
 
-    public boolean isGzipResponse() {return isGzip; }
+    public boolean isGzip() {return isGzip; }
 
     public String getEmbeddedUrlRE() {
         return embeddedUrlRE;
