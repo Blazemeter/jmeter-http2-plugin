@@ -24,4 +24,17 @@ public class RequestBodyTest {
         assertEquals(text, requestBody.getPayload());
     }
 
+    @Test
+    public void createGetRequestTest() throws UnsupportedEncodingException {
+        String assertText = "toto=test1&tata=test2";
+        Arguments args = new Arguments();
+        HTTPArgument httpArgument1 = new HTTPArgument("toto", "test1");
+        HTTPArgument httpArgument2 = new HTTPArgument("tata", "test2");
+        args.addArgument(httpArgument1);
+        args.addArgument(httpArgument2);
+        RequestBody requestBody = RequestBody.from(HTTPConstants.GET, HTTP2Request.ENCODING, args, false);
+
+        assertEquals(assertText, requestBody.getPayload());
+    }
+
 }
