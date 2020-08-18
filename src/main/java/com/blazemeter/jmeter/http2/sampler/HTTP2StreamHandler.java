@@ -175,8 +175,8 @@ public class HTTP2StreamHandler extends Stream.Listener.Adapter {
         result.setResponseHeaders(responseHeaders);
         result.setHeadersSize(rawHeaders.length());
         result.setHttpFieldsResponse(frame.getMetaData().getFields());
-        result.setGzip(frame.getMetaData().getFields().get(HttpHeader.CONTENT_ENCODING)
-            .equals(HTTPConstants.ENCODING_GZIP));
+        result.setGzip(HTTPConstants.ENCODING_GZIP.equals(frame.getMetaData().getFields()
+            .get(HttpHeader.CONTENT_ENCODING)));
         // Check if the stream has ended (as in the case of a 204)
         if (frame.isEndStream()) {
             result.setSuccessful(isSuccessCode(Integer.parseInt(result.getResponseCode())));
