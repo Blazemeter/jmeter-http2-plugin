@@ -38,8 +38,24 @@ public class HTTP2Connection {
     private String connectionId;
     private Session session;
     private HTTP2Client client;
-    private SslContextFactory sslContextFactory;
+    private SslContextFactory.Client sslContextFactory;
     private Queue<HTTP2StreamHandler> streamHandlers = new ConcurrentLinkedQueue<>();
+    
+    
+
+	final String HTTP2CLIENT_SSL_KEY_STORE = "http2client_ssl_keyStore"; 
+	
+	final String HTTP2CLIENT_SSL_KEY_STORE_PASSWORD = "http2client_ssl_keyStorePassword"; 
+
+	final String HTTP2CLIENT_SSL_KEY_STORE_TYPE = "http2client_ssl_keyStoreType"; 
+	
+	final String HTTP2CLIENT_SSL_TRUST_STORE = "http2client_ssl_trustStore"; 
+	
+	final String HTTP2CLIENT_SSL_TRUST_STORE_PASSWORD = "http2client_ssl_trustStorePassword"; 
+
+	final String HTTP2CLIENT_SSL_TRUST_STORE_TYPE = "http2client_ssl_trustStoreType"; 
+
+    
 
     public void setSession(Session session) {
         this.session = session;
@@ -50,8 +66,27 @@ public class HTTP2Connection {
         this.connectionId = connectionId;
         this.client = new HTTP2Client();
         this.sslContextFactory = null;
+        
+        
         if (isSSL) {
-            this.sslContextFactory = new SslContextFactory(true);
+           this.sslContextFactory = new SslContextFactory.Client(true);
+			
+           if(System.getProperty(HTTP2CLIENT_SSL_KEY_STORE) != null) {
+        	   
+        	   sslContextFactory.setKeyStorePath(System.getProperty(HTTP2CLIENT_SSL_KEY_STORE));
+    		   sslContextFactory.setKeyStorePassword(System.getProperty(HTTP2CLIENT_SSL_KEY_STORE_PASSWORD));	 
+    		   sslContextFactory.setKeyStoreType(System.getProperty(HTTP2CLIENT_SSL_KEY_STORE_TYPE,"PKCS12"));   
+           }
+           
+           if(System.getProperty(HTTP2CLIENT_SSL_TRUST_STORE) != null) {
+        	   
+        	   sslContextFactory.setTrustStorePath(System.getProperty(HTTP2CLIENT_SSL_TRUST_STORE));
+        	   sslContextFactory.setTrustStorePassword(System.getProperty(HTTP2CLIENT_SSL_TRUST_STORE_PASSWORD));
+        	   sslContextFactory.setTrustStoreType(System.getProperty(HTTP2CLIENT_SSL_TRUST_STORE_TYPE,"PKCS12"));
+        	   
+           } 
+		   LOG.info("The Keystore path is "+sslContextFactory.getKeyStorePath()+" and Keystore type is "+sslContextFactory.getKeyStoreType());
+		   LOG.info("The Truststore path is "+sslContextFactory.getTrustStorePath() +" and Truststore type is "+sslContextFactory.getTrustStoreType());
         }
         this.client.addBean(sslContextFactory);
         this.client.start();
