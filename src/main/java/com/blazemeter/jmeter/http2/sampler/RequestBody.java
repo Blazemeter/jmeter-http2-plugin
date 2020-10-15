@@ -29,6 +29,10 @@ public class RequestBody {
 
     public static RequestBody from(String method, String contentEncoding, Arguments args, boolean sendParamsAsBody)
             throws UnsupportedEncodingException {
+    	if(args.toString().equals("=()")) {
+    		args.clear();
+    		LOG.debug("Content of args is "+args);
+    	} 
         switch(method) {
             case HTTPConstants.GET:
                 return new RequestBody(buildGetRequest(contentEncoding, args), contentEncoding);

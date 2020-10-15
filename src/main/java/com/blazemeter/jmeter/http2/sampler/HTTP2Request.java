@@ -129,11 +129,10 @@ public class HTTP2Request extends AbstractSampler implements ThreadListener, Loo
     private HTTP2Connection http2Connection;
 
     public HTTP2Request() {
-        if (LOG.isDebugEnabled()) {
-            StdErrLog logger = new StdErrLog();
-            logger.setDebugEnabled(true);
-            Log.setLog(logger);
-        }
+		/*
+		 * if (LOG.isDebugEnabled()) { StdErrLog logger = new StdErrLog();
+		 * logger.setDebugEnabled(true); Log.setLog(logger); }
+		 */
         setName("HTTP2 Request");
     }
 
