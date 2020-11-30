@@ -28,11 +28,15 @@ public class RequestBody {
     }
 
     public static RequestBody from(String method, String contentEncoding, Arguments args, boolean sendParamsAsBody)
-            throws UnsupportedEncodingException {
-    	if(args.toString().equals("=()")) {
-    		args.clear();
-    		LOG.debug("Content of args is "+args);
-    	} 
+            throws UnsupportedEncodingException {   	   	
+    	if(args.getArguments().size() == 1 && 
+    		args.getArguments().get(0).getStringValue().equalsIgnoreCase("=")) {
+    		JMeterProperty prop = args.getArguments().get(0);
+    		
+    		args.removeArgument(0);
+    		LOG.debug("Removed JMeter Property: {}", prop);
+    	}
+    	
         switch(method) {
             case HTTPConstants.GET:
                 return new RequestBody(buildGetRequest(contentEncoding, args), contentEncoding);
