@@ -51,7 +51,7 @@
 		<!-- included libraries -->
 		<junit.version>4.12</junit.version>
 		<slf4j.version>1.7.30</slf4j.version>
-		<jetty.version>9.4.28.v20200408</jetty.version>
+		<jetty.version>9.4.32.v20200930</jetty.version>
 		<alpn-api.version>1.1.3.v20160715</alpn-api.version>
 	</properties>
 
