@@ -7,7 +7,7 @@
     <groupId>com.blazemeter</groupId>
     <artifactId>jmeter-bzm-http2</artifactId>
     <packaging>jar</packaging>
-    <version>1.6</version>
+    <version>1.6.1</version>
     <name>HTTP/2 Sampler</name>
     <description>HTTP/2 protocol sampler</description>
     <licenses>
@@ -37,7 +37,7 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <version.org.apache.jmeter.all>3.2</version.org.apache.jmeter.all>
-        <jetty.version>9.4.26.v20200117</jetty.version>
+        <jetty.version>9.4.35.v20201120</jetty.version>
         <alpn-boot.version>8.1.12.v20180117</alpn-boot.version>
     </properties>
 
