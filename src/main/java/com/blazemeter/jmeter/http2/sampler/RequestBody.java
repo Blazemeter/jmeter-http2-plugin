@@ -39,6 +39,7 @@ public class RequestBody {
     	
         switch(method) {
             case HTTPConstants.GET:
+            case HTTPConstants.DELETE:
                 return new RequestBody(buildGetRequest(contentEncoding, args), contentEncoding);
             default:
                 return new RequestBody(buildPostBody(method, contentEncoding, args, sendParamsAsBody), contentEncoding);
@@ -48,7 +49,7 @@ public class RequestBody {
 
     private static String buildPostBody(String method, String contentEncoding, Arguments args, boolean sendParamsAsBody)
             throws UnsupportedEncodingException {
-        if ((HTTPConstants.POST.equals(method) 
+        if ((HTTPConstants.POST.equals(method)
             || HTTPConstants.PATCH.equals(method)
             || HTTPConstants.PUT.equals(method))
             && !sendParamsAsBody) {
@@ -105,6 +106,7 @@ public class RequestBody {
                             contentEncoding);
                 }
             }
+        	LOG.debug("buildPostBody(): Body = {}", buf.toString());
             return buf.toString();
         } else {
             StringBuilder postBodyBuffer = new StringBuilder();
@@ -112,6 +114,7 @@ public class RequestBody {
                 HTTPArgument arg = (HTTPArgument) jMeterProperty.getObjectValue();
                 postBodyBuffer.append(arg.getEncodedValue(contentEncoding));
             }
+        	LOG.debug("buildPostBody() - (if not POST/PATCH/PUT) : {}", postBodyBuffer.toString());
             return postBodyBuffer.toString();
         }
     }

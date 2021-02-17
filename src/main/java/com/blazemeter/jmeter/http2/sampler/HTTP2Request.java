@@ -250,7 +250,7 @@ public class HTTP2Request extends AbstractSampler implements ThreadListener, Loo
                 LOG.debug("Payload: {}", body.getPayload());
             }
             
-            
+ 
             http2Connection
                     .send(method, url, getHeaderManager(), getCookieManager(), body, sampleResult, timeout);
 
