@@ -371,7 +371,8 @@ public class HTTP2Request extends AbstractSampler implements ThreadListener, Loo
             pathAndQuery.append("/"); // $NON-NLS-1$
         }
         pathAndQuery.append(path);
-
+        LOG.debug("Context Path is: {}", path);
+        
         if (HTTPConstants.GET.equals(method)
                || HTTPConstants.DELETE.equals(method)
                || HTTPConstants.OPTIONS.equals(method)) {
@@ -385,9 +386,21 @@ public class HTTP2Request extends AbstractSampler implements ThreadListener, Loo
             } catch (UnsupportedEncodingException e) {
                 LOG.debug("Content encoding not supported: {}", getContentEncoding(), e);
             }
+            
             if (queryString != null && !queryString.isEmpty()) {
-                pathAndQuery.append(path.contains(QRY_PFX) ? QRY_SEP : QRY_PFX);
-                pathAndQuery.append(queryString);
+            	if (queryString.startsWith("=")) {
+            		queryString.replaceFirst("=", System.lineSeparator());
+            		LOG.debug("Detected Body Payload in {} request; replaced query string {} containing '=' with New Line!", method, queryString);
+            	}
+            	else {
+            		LOG.debug("Adding Query separator '&' if query prefix '?' is present");
+            		pathAndQuery.append(path.contains(QRY_PFX) ? QRY_SEP : QRY_PFX);
+                	pathAndQuery.append(queryString);
+            	}
+            }
+            
+            if (LOG.isDebugEnabled()) {
+            	LOG.debug("For {} method, derived the path and query string: {}" , method, pathAndQuery);
             }
         }
 
