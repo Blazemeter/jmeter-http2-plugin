@@ -15,7 +15,7 @@ public class HTTP2Sampler extends HTTPSamplerBase {
   private static final Logger LOG = LoggerFactory.getLogger(HTTP2Sampler.class);
 
   public HTTP2Sampler() {
-    setName("HTTP Sampler");
+    setName("HTTP2 Sampler");
   }
 
   @Override
@@ -29,9 +29,6 @@ public class HTTP2Sampler extends HTTPSamplerBase {
       resultBuilder.withUrl(getUrl());
       ContentResponse contentResponse = client.doGet(getUrl());
       resultBuilder.withContentResponse(contentResponse);
-    } catch (MalformedURLException e) {
-      LOG.error("Error while parsing the URL", e);
-      resultBuilder.withFailure(e);
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
       LOG.error("The sampling has been interrupted", e);

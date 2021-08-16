@@ -36,10 +36,12 @@ public class HTTP2Client {
   }
 
   public ContentResponse doGet(URL url) throws Exception {
-    httpClient.start();
-    ContentResponse response = httpClient.GET(url.toURI());
-    httpClient.stop();
-    return response;
+    try {
+      httpClient.start();
+      return httpClient.GET(url.toURI());
+    } finally {
+      httpClient.stop();
+    }
   }
 
 }
