@@ -1,4 +1,4 @@
-image: 941618104661.dkr.ecr.us-east-1.amazonaws.com/jmeter-plugins-build:3.2
+image: 941618104661.dkr.ecr.us-east-1.amazonaws.com/jmeter-plugins-build:3.3
 
 build:
   stage: build
