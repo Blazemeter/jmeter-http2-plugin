@@ -2,7 +2,6 @@ package com.blazemeter.jmeter.http2.sampler;
 
 import com.blazemeter.jmeter.http2.core.HTTP2Client;
 import com.blazemeter.jmeter.http2.core.HTTP2SampleResultBuilder;
-import java.net.MalformedURLException;
 import java.net.URL;
 import org.apache.jmeter.protocol.http.sampler.HTTPSampleResult;
 import org.apache.jmeter.protocol.http.sampler.HTTPSamplerBase;
