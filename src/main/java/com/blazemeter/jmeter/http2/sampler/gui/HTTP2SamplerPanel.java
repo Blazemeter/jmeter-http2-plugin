@@ -83,7 +83,6 @@ public class HTTP2SamplerPanel extends JPanel {
     proxyPanel.setBorder(BorderFactory
         .createTitledBorder(JMeterUtils.getResString("web_proxy_server_title")));
     proxyPanel.add(createProxyServerPanel());
-    proxyPanel.add(createProxyLoginPanel());
     return proxyPanel;
   }
 
@@ -96,15 +95,6 @@ public class HTTP2SamplerPanel extends JPanel {
     proxyServerPanel.add(createPanelWithLabelForField(proxyPortField, JMeterUtils.getResString(
         "web_server_port")), BorderLayout.EAST);
     return proxyServerPanel;
-  }
-
-  private JPanel createProxyLoginPanel() {
-    JPanel proxyLoginPanel = new HorizontalPanel();
-    proxyLoginPanel
-        .add(createPanelWithLabelForField(proxyUserField, JMeterUtils.getResString("username")));
-    proxyLoginPanel
-        .add(createPanelWithLabelForField(proxyPassField, JMeterUtils.getResString("password")));
-    return proxyLoginPanel;
   }
 
   public void resetFields() {
