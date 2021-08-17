@@ -26,6 +26,13 @@ public class HTTP2SampleResultBuilder {
     return this;
   }
 
+  public HTTP2SampleResultBuilder withErrorMessage(String message, String code) {
+    result.setSuccessful(false);
+    result.setResponseCode(code);
+    result.setResponseMessage(message);
+    return this;
+  }
+
   public HTTP2SampleResultBuilder withUrl(URL url) {
     result.setURL(url);
     return this;

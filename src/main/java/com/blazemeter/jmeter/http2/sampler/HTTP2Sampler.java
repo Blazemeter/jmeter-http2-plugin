@@ -5,6 +5,7 @@ import com.blazemeter.jmeter.http2.core.HTTP2SampleResultBuilder;
 import java.net.URL;
 import org.apache.jmeter.protocol.http.sampler.HTTPSampleResult;
 import org.apache.jmeter.protocol.http.sampler.HTTPSamplerBase;
+import org.apache.jmeter.protocol.http.util.HTTPConstants;
 import org.eclipse.jetty.client.api.ContentResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -25,9 +26,15 @@ public class HTTP2Sampler extends HTTPSamplerBase {
       client.setProxy(getProxyHost(), getProxyPortInt(), getProxyScheme());
     }
     try {
-      resultBuilder.withUrl(getUrl());
-      ContentResponse contentResponse = client.doGet(getUrl());
-      resultBuilder.withContentResponse(contentResponse);
+      if (getMethod().equals(HTTPConstants.GET)) {
+        resultBuilder.withUrl(getUrl());
+        ContentResponse contentResponse = client.doGet(getUrl());
+        resultBuilder.withContentResponse(contentResponse);
+      } else {
+        String message = String.format("Method %s is not supported", getMethod());
+        LOG.warn(message);
+        resultBuilder.withErrorMessage(message, "Method not supported");
+      }
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
       LOG.error("The sampling has been interrupted", e);
