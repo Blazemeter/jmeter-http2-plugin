@@ -56,14 +56,19 @@ public class HTTP2SamplerGui extends AbstractSamplerGui {
       http2Sampler.setProxyPortInt(http2SamplerPanel.getProxyPort());
       http2Sampler.setProxyUser(http2SamplerPanel.getProxyUser());
       http2Sampler.setProxyPass(http2SamplerPanel.getProxyPass());
-      try {
-        final Properties properties = new Properties();
-        properties.load(this.getClass().getClassLoader().getResourceAsStream("project.properties"));
-        http2Sampler.setProperty("version", properties.getProperty("version"));
-      } catch (IOException e) {
-        LOG.warn("Could not write plugin version");
-      }
+      http2Sampler.setProperty("version", getPluginVersion());
       http2SamplerPanel.getUrlConfigGui().modifyTestElement(http2Sampler);
+    }
+  }
+
+  private String getPluginVersion() {
+    try {
+      final Properties properties = new Properties();
+      properties.load(this.getClass().getClassLoader().getResourceAsStream("project.properties"));
+      return properties.getProperty("version");
+    } catch (IOException e) {
+      LOG.warn("Could not write plugin version", e);
+      return "";
     }
   }
 
