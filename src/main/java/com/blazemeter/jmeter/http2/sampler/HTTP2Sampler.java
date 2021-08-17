@@ -3,7 +3,6 @@ package com.blazemeter.jmeter.http2.sampler;
 import com.blazemeter.jmeter.http2.core.HTTP2Client;
 import com.blazemeter.jmeter.http2.core.HTTP2SampleResultBuilder;
 import java.net.URL;
-import javax.mail.MethodNotSupportedException;
 import org.apache.jmeter.protocol.http.sampler.HTTPSampleResult;
 import org.apache.jmeter.protocol.http.sampler.HTTPSamplerBase;
 import org.apache.jmeter.protocol.http.util.HTTPConstants;
@@ -32,7 +31,7 @@ public class HTTP2Sampler extends HTTPSamplerBase {
         ContentResponse contentResponse = client.doGet(getUrl());
         resultBuilder.withContentResponse(contentResponse);
       } else {
-        throw new MethodNotSupportedException(
+        throw new UnsupportedOperationException(
             String.format("Method %s is not supported", getMethod()));
       }
     } catch (InterruptedException e) {
