@@ -7,7 +7,7 @@ build:
   except:
     - master
   script:
-    - update-java-alternatives --set --jre-headless --jre java-1.11.0-openjdk-amd64
+    - update-java-alternatives --jre-headless --jre --set java-1.11.0-openjdk-amd64
     - mvn -e -X clean install
     - update-java-alternatives --set java-1.8.0-openjdk-amd64
   artifacts:
