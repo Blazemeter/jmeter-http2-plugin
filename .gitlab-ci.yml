@@ -1,4 +1,4 @@
-image: 941618104661.dkr.ecr.us-east-1.amazonaws.com/jmeter-plugins-build:3.2
+image: 941618104661.dkr.ecr.us-east-1.amazonaws.com/jmeter-plugins-build:3.3
 
 build:
   stage: build
@@ -7,9 +7,23 @@ build:
   except:
     - master
   script:
+    - update-java-alternatives --set java-1.11.0-openjdk-amd64
     - mvn -e -X clean install
+    - update-java-alternatives --set java-1.8.0-openjdk-amd64
   artifacts:
     paths:
       - target/jmeter-bzm-http2-*.jar
+      - target/failsafe-reports
       - target/surefire-reports
     expire_in: 1 month
+release:
+  stage: deploy
+  tags:
+    - docker
+  only:
+    - master
+  when: manual
+  script: /release.sh
+  artifacts:
+    paths:
+      - target/jmeter-bzm-http2-*.jar
