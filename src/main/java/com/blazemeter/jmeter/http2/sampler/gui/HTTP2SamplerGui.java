@@ -2,11 +2,16 @@ package com.blazemeter.jmeter.http2.sampler.gui;
 
 import com.blazemeter.jmeter.http2.sampler.HTTP2Sampler;
 import java.awt.BorderLayout;
+import java.io.IOException;
+import java.util.Properties;
 import org.apache.jmeter.samplers.gui.AbstractSamplerGui;
 import org.apache.jmeter.testelement.TestElement;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class HTTP2SamplerGui extends AbstractSamplerGui {
 
+  private static final Logger LOG = LoggerFactory.getLogger(HTTP2SamplerGui.class);
   private final HTTP2SamplerPanel http2SamplerPanel;
 
   public HTTP2SamplerGui() {
@@ -51,7 +56,19 @@ public class HTTP2SamplerGui extends AbstractSamplerGui {
       http2Sampler.setProxyPortInt(http2SamplerPanel.getProxyPort());
       http2Sampler.setProxyUser(http2SamplerPanel.getProxyUser());
       http2Sampler.setProxyPass(http2SamplerPanel.getProxyPass());
+      http2Sampler.setProperty("version", getPluginVersion());
       http2SamplerPanel.getUrlConfigGui().modifyTestElement(http2Sampler);
+    }
+  }
+
+  private String getPluginVersion() {
+    try {
+      final Properties properties = new Properties();
+      properties.load(this.getClass().getClassLoader().getResourceAsStream("project.properties"));
+      return properties.getProperty("version");
+    } catch (IOException e) {
+      LOG.warn("Could not write plugin version", e);
+      return "";
     }
   }
 
