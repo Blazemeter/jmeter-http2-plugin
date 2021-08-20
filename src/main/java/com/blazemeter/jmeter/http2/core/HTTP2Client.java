@@ -1,6 +1,7 @@
 package com.blazemeter.jmeter.http2.core;
 
 import java.net.URL;
+import org.apache.jmeter.protocol.http.util.HTTPConstants;
 import org.eclipse.jetty.client.HttpClient;
 import org.eclipse.jetty.client.HttpClientTransport;
 import org.eclipse.jetty.client.HttpProxy;
@@ -31,7 +32,8 @@ public class HTTP2Client {
   }
 
   public void setProxy(String host, int port, String protocol) {
-    HttpProxy proxy = new HttpProxy(new Address(host, port), "https".equals(protocol));
+    HttpProxy proxy =
+        new HttpProxy(new Address(host, port), HTTPConstants.PROTOCOL_HTTPS.equals(protocol));
     httpClient.getProxyConfiguration().getProxies().add(proxy);
   }
 

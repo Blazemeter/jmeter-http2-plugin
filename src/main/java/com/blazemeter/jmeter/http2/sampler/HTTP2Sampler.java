@@ -2,6 +2,7 @@ package com.blazemeter.jmeter.http2.sampler;
 
 import com.blazemeter.jmeter.http2.core.HTTP2Client;
 import com.blazemeter.jmeter.http2.core.HTTP2SampleResultBuilder;
+import com.helger.commons.annotation.VisibleForTesting;
 import java.net.URL;
 import org.apache.jmeter.protocol.http.sampler.HTTPSampleResult;
 import org.apache.jmeter.protocol.http.sampler.HTTPSamplerBase;
@@ -13,15 +14,21 @@ import org.slf4j.LoggerFactory;
 public class HTTP2Sampler extends HTTPSamplerBase {
 
   private static final Logger LOG = LoggerFactory.getLogger(HTTP2Sampler.class);
+  private final HTTP2Client client;
 
   public HTTP2Sampler() {
+    this(new HTTP2Client());
+  }
+
+  @VisibleForTesting
+  public HTTP2Sampler (HTTP2Client client){
+    this.client = client;
     setName("HTTP2 Sampler");
   }
 
   @Override
   protected HTTPSampleResult sample(URL url, String s, boolean b, int i) {
     HTTP2SampleResultBuilder resultBuilder = new HTTP2SampleResultBuilder();
-    HTTP2Client client = new HTTP2Client();
     if (!getProxyHost().isEmpty()) {
       client.setProxy(getProxyHost(), getProxyPortInt(), getProxyScheme());
     }
