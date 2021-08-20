@@ -27,8 +27,9 @@ public class HTTP2Sampler extends HTTPSamplerBase {
     }
     try {
       if (getMethod().equals(HTTPConstants.GET)) {
-        resultBuilder.withUrl(getUrl());
-        ContentResponse contentResponse = client.doGet(getUrl());
+        resultBuilder.withUrl(getUrl()).withMethod(HTTPConstants.GET)
+            .withRequestHeaders(getHeaderManager());
+        ContentResponse contentResponse = client.doGet(getUrl(), getHeaderManager());
         resultBuilder.withContentResponse(contentResponse);
       } else {
         throw new UnsupportedOperationException(

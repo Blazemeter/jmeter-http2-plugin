@@ -3,8 +3,11 @@ package com.blazemeter.jmeter.http2.core;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.net.URL;
+import org.apache.jmeter.protocol.http.control.Header;
+import org.apache.jmeter.protocol.http.control.HeaderManager;
 import org.apache.jmeter.protocol.http.sampler.HTTPSampleResult;
 import org.apache.jmeter.samplers.SampleResult;
+import org.apache.jmeter.testelement.property.CollectionProperty;
 import org.eclipse.jetty.client.api.ContentResponse;
 
 public class HTTP2SampleResultBuilder {
@@ -31,6 +34,30 @@ public class HTTP2SampleResultBuilder {
     return this;
   }
 
+  public HTTP2SampleResultBuilder withMethod(String method) {
+    result.setHTTPMethod(method);
+    return this;
+  }
+
+  public HTTP2SampleResultBuilder withRequestHeaders(HeaderManager headerManager) {
+
+    StringBuilder sbHeaders = new StringBuilder(100);
+    CollectionProperty headers = headerManager.getHeaders();
+    headers.forEach(jMeterProperty -> {
+      Header header = (Header) jMeterProperty.getObjectValue();
+      String n = header.getName();
+      String v = header.getValue();
+      sbHeaders.append(n);
+      sbHeaders.append(": ");
+      sbHeaders.append(v);
+      sbHeaders.append("\n");
+    });
+
+    result.setRequestHeaders(sbHeaders.toString());
+
+    return this;
+  }
+
   public HTTPSampleResult build() {
     result.sampleEnd();
     return result;
@@ -41,5 +68,6 @@ public class HTTP2SampleResultBuilder {
     result.setResponseCode(String.valueOf(contentResponse.getStatus()));
     result.setResponseHeaders(contentResponse.getHeaders().asString());
     result.setResponseData(contentResponse.getContentAsString(), contentResponse.getEncoding());
+    result.setResponseHeaders(contentResponse.getHeaders().asString());
   }
 }

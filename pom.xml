@@ -138,6 +138,7 @@
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-failsafe-plugin</artifactId>
+        <version>2.22.2</version>
         <executions>
           <execution>
             <goals>
@@ -163,7 +164,7 @@
             <configuration>
               <includeArtifactIds>
                 http2-client, jetty-client, http2-http-client-transport, http2-common, http2-hpack,
-                jetty-http, jetty-alpn-client, jetty-alpn-java-client
+                jetty-http, jetty-alpn-client, jetty-alpn-java-client, jetty-io, jetty-util
               </includeArtifactIds>
               <outputDirectory>${project.build.directory}/jmeter-test/lib</outputDirectory>
               <stripVersion>true</stripVersion>
