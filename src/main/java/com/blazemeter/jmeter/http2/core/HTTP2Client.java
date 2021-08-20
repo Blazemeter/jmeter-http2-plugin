@@ -6,6 +6,7 @@ import org.apache.jmeter.protocol.http.control.Header;
 import org.apache.jmeter.protocol.http.control.HeaderManager;
 import org.apache.jmeter.testelement.property.CollectionProperty;
 import org.apache.jmeter.testelement.property.JMeterProperty;
+import org.apache.jmeter.protocol.http.util.HTTPConstants;
 import org.eclipse.jetty.client.HttpClient;
 import org.eclipse.jetty.client.HttpClientTransport;
 import org.eclipse.jetty.client.HttpProxy;
@@ -38,7 +39,8 @@ public class HTTP2Client {
   }
 
   public void setProxy(String host, int port, String protocol) {
-    HttpProxy proxy = new HttpProxy(new Address(host, port), "https".equals(protocol));
+    HttpProxy proxy =
+        new HttpProxy(new Address(host, port), HTTPConstants.PROTOCOL_HTTPS.equals(protocol));
     httpClient.getProxyConfiguration().getProxies().add(proxy);
   }
 
