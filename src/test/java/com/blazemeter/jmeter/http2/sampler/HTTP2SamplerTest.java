@@ -52,7 +52,7 @@ public class HTTP2SamplerTest {
     when(response.getContentAsString()).thenReturn(RESPONSE_CONTENT);
     when(response.getEncoding()).thenReturn(ENCODING);
     configureSampler(HTTPConstants.GET);
-    HTTPSampleResult result = sampler.sample(null,"",false,0);
+    HTTPSampleResult result = sampler.sample(null, "", false, 0);
     softly.assertThat(result.isSuccessful()).isEqualTo(true);
     softly.assertThat(result.getResponseCode()).isEqualTo("200");
     softly.assertThat(result.getResponseHeaders()).isEqualTo(RESPONSE_HEADERS);
@@ -60,9 +60,25 @@ public class HTTP2SamplerTest {
   }
 
   @Test
+  public void shouldReturnFailureSampleResultWhenResponse400() throws Exception {
+    when(client.doGet(any())).thenReturn(response);
+    when(response.getStatus()).thenReturn(400);
+    when(responseHeaders.asString()).thenReturn(RESPONSE_HEADERS);
+    when(response.getHeaders()).thenReturn(responseHeaders);
+    when(response.getContentAsString()).thenReturn(RESPONSE_CONTENT);
+    when(response.getEncoding()).thenReturn(ENCODING);
+    configureSampler(HTTPConstants.GET);
+    HTTPSampleResult result = sampler.sample(null, "", false, 0);
+    softly.assertThat(result.isSuccessful()).isEqualTo(false);
+    softly.assertThat(result.getResponseCode()).isEqualTo("400");
+    softly.assertThat(result.getResponseHeaders()).isEqualTo(RESPONSE_HEADERS);
+    softly.assertThat(result.getResponseDataAsString()).isEqualTo(RESPONSE_CONTENT);
+  }
+
+  @Test
   public void shouldResponseErrorMessageWhenMethodIsNotGET() {
     configureSampler(HTTPConstants.POST);
-    HTTPSampleResult result = sampler.sample(null,"",false,0);
+    HTTPSampleResult result = sampler.sample(null, "", false, 0);
     validateErrorResponse(result, UnsupportedOperationException.class.getName());
   }
 
@@ -70,7 +86,7 @@ public class HTTP2SamplerTest {
   public void shouldResponseErrorMessageWhenThreadIsInterrupted() throws Exception {
     when(client.doGet(any())).thenThrow(new InterruptedException());
     configureSampler(HTTPConstants.GET);
-    HTTPSampleResult result = sampler.sample(null,"",false,0);
+    HTTPSampleResult result = sampler.sample(null, "", false, 0);
     validateErrorResponse(result, InterruptedException.class.getName());
   }
 
@@ -78,7 +94,7 @@ public class HTTP2SamplerTest {
   public void shouldResponseErrorMessageWhenClientThrowException() throws Exception {
     when(client.doGet(any())).thenThrow(new Exception());
     configureSampler(HTTPConstants.GET);
-    HTTPSampleResult result = sampler.sample(null,"",false,0);
+    HTTPSampleResult result = sampler.sample(null, "", false, 0);
     validateErrorResponse(result, Exception.class.getName());
   }
 
@@ -87,7 +103,7 @@ public class HTTP2SamplerTest {
     softly.assertThat(result.getResponseCode()).isEqualTo(code);
   }
 
-  public void configureSampler(String method){
+  public void configureSampler(String method) {
     sampler.setMethod(method);
     sampler.setDomain("server");
     sampler.setProtocol(HTTPConstants.PROTOCOL_HTTPS);
