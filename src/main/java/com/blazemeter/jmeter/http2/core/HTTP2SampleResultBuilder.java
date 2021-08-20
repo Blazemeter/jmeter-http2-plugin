@@ -41,19 +41,21 @@ public class HTTP2SampleResultBuilder {
 
   public HTTP2SampleResultBuilder withRequestHeaders(HeaderManager headerManager) {
 
-    StringBuilder sbHeaders = new StringBuilder(100);
-    CollectionProperty headers = headerManager.getHeaders();
-    headers.forEach(jMeterProperty -> {
-      Header header = (Header) jMeterProperty.getObjectValue();
-      String n = header.getName();
-      String v = header.getValue();
-      sbHeaders.append(n);
-      sbHeaders.append(": ");
-      sbHeaders.append(v);
-      sbHeaders.append("\n");
-    });
+    if (headerManager != null) {
+      StringBuilder sbHeaders = new StringBuilder(100);
+      CollectionProperty headers = headerManager.getHeaders();
+      headers.forEach(jMeterProperty -> {
+        Header header = (Header) jMeterProperty.getObjectValue();
+        String n = header.getName();
+        String v = header.getValue();
+        sbHeaders.append(n);
+        sbHeaders.append(": ");
+        sbHeaders.append(v);
+        sbHeaders.append("\n");
+      });
 
-    result.setRequestHeaders(sbHeaders.toString());
+      result.setRequestHeaders(sbHeaders.toString());
+    }
 
     return this;
   }

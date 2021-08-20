@@ -43,14 +43,15 @@ public class HTTP2ClientTest {
   public void shouldGetResponseWhenGetMethodIsSent() throws Exception {
     startServer(createGetServerResponse());
     ContentResponse response = client.doGet(
-        new URL(HTTPConstants.PROTOCOL_HTTPS, "localhost", connector.getLocalPort(), SERVER_PATH));
+        new URL(HTTPConstants.PROTOCOL_HTTPS, "localhost", connector.getLocalPort(), SERVER_PATH)
+        , null);
     assertThat(response.getContentAsString()).isEqualTo(SERVER_RESPONSE);
   }
 
   @Test(expected = ExecutionException.class)
   public void shouldThrowConnectExceptionWhenServerIsInaccessible() throws Exception {
     client.doGet(
-        new URL(HTTPConstants.PROTOCOL_HTTPS, "localhost", 80, SERVER_PATH));
+        new URL(HTTPConstants.PROTOCOL_HTTPS, "localhost", 80, SERVER_PATH), null);
   }
 
   private HttpServlet createGetServerResponse() {

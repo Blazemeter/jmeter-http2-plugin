@@ -1,6 +1,7 @@
 package com.blazemeter.jmeter.http2.sampler;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.when;
 
 import com.blazemeter.jmeter.http2.core.HTTP2Client;
@@ -45,7 +46,7 @@ public class HTTP2SamplerTest {
 
   @Test
   public void shouldReturnSuccessSampleResultWhenSuccessRequest() throws Exception {
-    when(client.doGet(any())).thenReturn(response);
+    when(client.doGet(any(), isNull())).thenReturn(response);
     when(response.getStatus()).thenReturn(200);
     when(responseHeaders.asString()).thenReturn(RESPONSE_HEADERS);
     when(response.getHeaders()).thenReturn(responseHeaders);
@@ -61,7 +62,7 @@ public class HTTP2SamplerTest {
 
   @Test
   public void shouldReturnFailureSampleResultWhenResponse400() throws Exception {
-    when(client.doGet(any())).thenReturn(response);
+    when(client.doGet(any(), isNull())).thenReturn(response);
     when(response.getStatus()).thenReturn(400);
     when(responseHeaders.asString()).thenReturn(RESPONSE_HEADERS);
     when(response.getHeaders()).thenReturn(responseHeaders);
@@ -84,7 +85,7 @@ public class HTTP2SamplerTest {
 
   @Test
   public void shouldResponseErrorMessageWhenThreadIsInterrupted() throws Exception {
-    when(client.doGet(any())).thenThrow(new InterruptedException());
+    when(client.doGet(any(), isNull())).thenThrow(new InterruptedException());
     configureSampler(HTTPConstants.GET);
     HTTPSampleResult result = sampler.sample(null, "", false, 0);
     validateErrorResponse(result, InterruptedException.class.getName());
@@ -92,7 +93,7 @@ public class HTTP2SamplerTest {
 
   @Test
   public void shouldResponseErrorMessageWhenClientThrowException() throws Exception {
-    when(client.doGet(any())).thenThrow(new Exception());
+    when(client.doGet(any(), isNull())).thenThrow(new Exception());
     configureSampler(HTTPConstants.GET);
     HTTPSampleResult result = sampler.sample(null, "", false, 0);
     validateErrorResponse(result, Exception.class.getName());
