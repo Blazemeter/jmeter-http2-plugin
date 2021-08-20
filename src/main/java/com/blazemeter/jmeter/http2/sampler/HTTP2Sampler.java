@@ -21,7 +21,7 @@ public class HTTP2Sampler extends HTTPSamplerBase {
   }
 
   @VisibleForTesting
-  public HTTP2Sampler (HTTP2Client client){
+  public HTTP2Sampler(HTTP2Client client) {
     this.client = client;
     setName("HTTP2 Sampler");
   }
