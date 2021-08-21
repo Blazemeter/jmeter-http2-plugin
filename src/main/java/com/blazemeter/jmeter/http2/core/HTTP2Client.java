@@ -2,12 +2,14 @@ package com.blazemeter.jmeter.http2.core;
 
 import java.net.URISyntaxException;
 import java.net.URL;
+import org.apache.jmeter.protocol.http.control.HeaderManager;
 import org.apache.jmeter.protocol.http.util.HTTPConstants;
 import org.eclipse.jetty.client.HttpClient;
 import org.eclipse.jetty.client.HttpClientTransport;
 import org.eclipse.jetty.client.HttpProxy;
 import org.eclipse.jetty.client.HttpRequest;
 import org.eclipse.jetty.client.Origin.Address;
+import org.eclipse.jetty.client.api.ContentResponse;
 import org.eclipse.jetty.client.api.Request;
 import org.eclipse.jetty.client.dynamic.HttpClientTransportDynamic;
 import org.eclipse.jetty.client.http.HttpClientConnectionFactory;
@@ -63,6 +65,59 @@ public class HTTP2Client {
 
   public void stop() throws Exception {
     httpClient.stop();
+  }
+
+  public ContentResponse doPost(URL url, HeaderManager headerManager, Arguments arguments) throws Exception {
+    try {
+      httpClient.start();
+      Request request = httpClient.newRequest(url.toURI()).method(HttpMethod.POST);
+
+      // start - setting headermanager
+      Header[] arrayOfHeaders = null;
+      if (headerManager != null) {
+        CollectionProperty headers = headerManager.getHeaders();
+        if (headers != null) {
+          int i = 0;
+          arrayOfHeaders = new Header[headers.size()];
+          for (JMeterProperty jMeterProperty : headers) {
+            Header header = (Header) jMeterProperty.getObjectValue();
+            String name = header.getName();
+            String value = header.getValue();
+            arrayOfHeaders[i++] = header;
+            request.headers(httpFields -> httpFields.put(name, value));
+          }
+        } else {
+           System.out.print("Headers null");
+        }
+
+      } else {
+        System.out.print("Headermanager null");
+      }
+      // end - setting headermanager
+
+      // start - setting body - parameters
+      if (arguments != null && arguments.getArgumentCount() > 0){
+        String requestBody = "";
+        for (int i=0; i<arguments.getArgumentCount(); i++){
+          Argument argument = arguments.getArgument(i);
+          System.out.print("Arguments - name : " + argument.getName() + " value : " + argument.getValue());
+          String name = argument.getName();
+          String value = argument.getValue();
+          //request.param(name,value);
+          requestBody += name+"="+value+"&";
+        }
+        request.body(new StringRequestContent("text/plain", requestBody));
+      } else {
+         System.out.print("Arguments null or size equal zero");
+      }
+      // end - setting body - parameters
+
+      return request.send();
+
+    } finally {
+      httpClient.stop();
+    }
+
   }
 
   public void setHTTP2StateListener(HTTP2StateListener http2StateListener) {
