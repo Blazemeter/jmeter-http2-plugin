@@ -67,7 +67,7 @@ public class HTTP2Client {
     httpClient.stop();
   }
 
-  public ContentResponse doPost(URL url, HeaderManager headerManager, Arguments arguments) throws Exception {
+  public ContentResponse doPost(URL url, HeaderManager headerManager, Arguments arguments, String path) throws Exception {
     try {
       httpClient.start();
       Request request = httpClient.newRequest(url.toURI()).method(HttpMethod.POST);
@@ -98,13 +98,17 @@ public class HTTP2Client {
 
       // start - setting body - parameters
       if (arguments != null && arguments.getArgumentCount() > 0){
+        String requestBody = "";
         for (int i=0; i<arguments.getArgumentCount(); i++){
           Argument argument = arguments.getArgument(i);
           System.out.print("Arguments - name : " + argument.getName() + " value : " + argument.getValue());
           String name = argument.getName();
           String value = argument.getValue();
           request.param(name,value);
+          requestBody += name+"="+value+"&";
         }
+        request.path(path);
+        request.body(new StringRequestContent("text/plain", requestBody));
       } else {
          System.out.print("Arguments null or size equal zero");
       }
