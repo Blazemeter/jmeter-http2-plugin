@@ -95,18 +95,16 @@ public class HTTP2Client {
       }
       // end - setting headermanager
 
+
       // start - setting body - parameters
       if (arguments != null && arguments.getArgumentCount() > 0){
-        String requestBody = "";
         for (int i=0; i<arguments.getArgumentCount(); i++){
           Argument argument = arguments.getArgument(i);
           System.out.print("Arguments - name : " + argument.getName() + " value : " + argument.getValue());
           String name = argument.getName();
           String value = argument.getValue();
-          //request.param(name,value);
-          requestBody += name+"="+value+"&";
+          request.param(name,value);
         }
-        request.body(new StringRequestContent("text/plain", requestBody));
       } else {
          System.out.print("Arguments null or size equal zero");
       }
