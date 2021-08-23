@@ -9,6 +9,7 @@ import org.apache.jmeter.protocol.http.util.HTTPConstants;
 import org.assertj.core.api.JUnitSoftAssertions;
 import org.eclipse.jetty.client.api.ContentResponse;
 import org.eclipse.jetty.http.HttpFields;
+import org.eclipse.jetty.http.HttpStatus;
 import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Rule;
@@ -46,61 +47,63 @@ public class HTTP2SamplerTest {
   @Test
   public void shouldReturnSuccessSampleResultWhenSuccessRequest() throws Exception {
     when(client.doGet(any())).thenReturn(response);
-    when(response.getStatus()).thenReturn(200);
+    when(response.getStatus()).thenReturn(HttpStatus.OK_200);
     when(responseHeaders.asString()).thenReturn(RESPONSE_HEADERS);
     when(response.getHeaders()).thenReturn(responseHeaders);
     when(response.getContentAsString()).thenReturn(RESPONSE_CONTENT);
     when(response.getEncoding()).thenReturn(ENCODING);
     configureSampler(HTTPConstants.GET);
-    HTTPSampleResult result = sampler.sample(null, "", false, 0);
-    softly.assertThat(result.isSuccessful()).isEqualTo(true);
-    softly.assertThat(result.getResponseCode()).isEqualTo("200");
-    softly.assertThat(result.getResponseHeaders()).isEqualTo(RESPONSE_HEADERS);
-    softly.assertThat(result.getResponseDataAsString()).isEqualTo(RESPONSE_CONTENT);
+    HTTPSampleResult result = sampler.sample();
+    validateResponse(result);
+  }
+
+  private void validateResponse(HTTPSampleResult result) {
+    softly.assertThat(result.isSuccessful())
+        .isEqualTo(response.getStatus() >= 200 && response.getStatus() <= 399);
+    softly.assertThat(result.getResponseCode()).isEqualTo(String.valueOf(response.getStatus()));
+    softly.assertThat(result.getResponseHeaders()).isEqualTo(response.getHeaders().asString());
+    softly.assertThat(result.getResponseDataAsString()).isEqualTo(response.getContentAsString());
   }
 
   @Test
   public void shouldReturnFailureSampleResultWhenResponse400() throws Exception {
     when(client.doGet(any())).thenReturn(response);
-    when(response.getStatus()).thenReturn(400);
+    when(response.getStatus()).thenReturn(HttpStatus.BAD_REQUEST_400);
     when(responseHeaders.asString()).thenReturn(RESPONSE_HEADERS);
     when(response.getHeaders()).thenReturn(responseHeaders);
     when(response.getContentAsString()).thenReturn(RESPONSE_CONTENT);
     when(response.getEncoding()).thenReturn(ENCODING);
     configureSampler(HTTPConstants.GET);
-    HTTPSampleResult result = sampler.sample(null, "", false, 0);
-    softly.assertThat(result.isSuccessful()).isEqualTo(false);
-    softly.assertThat(result.getResponseCode()).isEqualTo("400");
-    softly.assertThat(result.getResponseHeaders()).isEqualTo(RESPONSE_HEADERS);
-    softly.assertThat(result.getResponseDataAsString()).isEqualTo(RESPONSE_CONTENT);
+    HTTPSampleResult result = sampler.sample();
+    validateResponse(result);
   }
 
   @Test
-  public void shouldResponseErrorMessageWhenMethodIsNotGET() {
+  public void shouldReturnErrorMessageWhenMethodIsNotGET() {
     configureSampler(HTTPConstants.POST);
-    HTTPSampleResult result = sampler.sample(null, "", false, 0);
+    HTTPSampleResult result = sampler.sample();
     validateErrorResponse(result, UnsupportedOperationException.class.getName());
-  }
-
-  @Test
-  public void shouldResponseErrorMessageWhenThreadIsInterrupted() throws Exception {
-    when(client.doGet(any())).thenThrow(new InterruptedException());
-    configureSampler(HTTPConstants.GET);
-    HTTPSampleResult result = sampler.sample(null, "", false, 0);
-    validateErrorResponse(result, InterruptedException.class.getName());
-  }
-
-  @Test
-  public void shouldResponseErrorMessageWhenClientThrowException() throws Exception {
-    when(client.doGet(any())).thenThrow(new Exception());
-    configureSampler(HTTPConstants.GET);
-    HTTPSampleResult result = sampler.sample(null, "", false, 0);
-    validateErrorResponse(result, Exception.class.getName());
   }
 
   public void validateErrorResponse(HTTPSampleResult result, String code) {
     softly.assertThat(result.isSuccessful()).isEqualTo(false);
     softly.assertThat(result.getResponseCode()).isEqualTo(code);
+  }
+
+  @Test
+  public void shouldReturnErrorMessageWhenThreadIsInterrupted() throws Exception {
+    when(client.doGet(any())).thenThrow(new InterruptedException());
+    configureSampler(HTTPConstants.GET);
+    HTTPSampleResult result = sampler.sample();
+    validateErrorResponse(result, InterruptedException.class.getName());
+  }
+
+  @Test
+  public void shouldReturnErrorMessageWhenClientThrowException() throws Exception {
+    when(client.doGet(any())).thenThrow(new Exception());
+    configureSampler(HTTPConstants.GET);
+    HTTPSampleResult result = sampler.sample();
+    validateErrorResponse(result, Exception.class.getName());
   }
 
   public void configureSampler(String method) {
