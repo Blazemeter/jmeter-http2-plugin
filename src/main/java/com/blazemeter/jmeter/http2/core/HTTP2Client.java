@@ -67,57 +67,35 @@ public class HTTP2Client {
     httpClient.stop();
   }
 
-  public ContentResponse doPost(URL url, HeaderManager headerManager, Arguments arguments, String path) throws Exception {
+  public ContentResponse doPost(URL url, HeaderManager headerManager, Arguments arguments,
+      String path) throws Exception {
     try {
       httpClient.start();
       Request request = httpClient.newRequest(url.toURI()).method(HttpMethod.POST);
 
-      // start - setting headermanager
-      Header[] arrayOfHeaders = null;
-      if (headerManager != null) {
-        CollectionProperty headers = headerManager.getHeaders();
-        if (headers != null) {
-          int i = 0;
-          arrayOfHeaders = new Header[headers.size()];
-          for (JMeterProperty jMeterProperty : headers) {
-            Header header = (Header) jMeterProperty.getObjectValue();
-            String name = header.getName();
-            String value = header.getValue();
-            arrayOfHeaders[i++] = header;
-            request.headers(httpFields -> httpFields.put(name, value));
-          }
-        } else {
-           System.out.print("Headers null");
-        }
-
-      } else {
-        System.out.print("Headermanager null");
-      }
-      // end - setting headermanager
-
-
       // start - setting body - parameters
-      if (arguments != null && arguments.getArgumentCount() > 0){
+      if (arguments != null && arguments.getArgumentCount() > 0) {
         /*String requestBody = "";
         for (int i=0; i<arguments.getArgumentCount(); i++){
           Argument argument = arguments.getArgument(i);
-          System.out.print("Arguments - name : " + argument.getName() + " value : " + argument.getValue());
+          System.out.print("Arguments - name : " + argument.getName() + " value : " + argument
+          .getValue());
           String name = argument.getName();
           String value = argument.getValue();
           request.param(name,value);
           requestBody += name+"="+value+"&";
         }*/
-       for (JMeterProperty jMeterProperty : arguments.getArguments()) {
+        for (JMeterProperty jMeterProperty : arguments.getArguments()) {
           HTTPArgument arg = (HTTPArgument) jMeterProperty.getObjectValue();
           String name = arg.getName();
           String value = arg.getValue();
           String contentType = arg.getContentType();
-          request.body(new StringRequestContent(contentType, name+"="+value));
+          request.body(new StringRequestContent(contentType, name + "=" + value));
         }
         request.path(path);
         //request.body(new StringRequestContent("text/plain", requestBody));
       } else {
-         System.out.print("Arguments null or size equal zero");
+        System.out.print("Arguments null or size equal zero");
       }
       // end - setting body - parameters
 
