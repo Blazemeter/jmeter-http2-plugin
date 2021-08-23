@@ -89,9 +89,10 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
         resultBuilder.withContentResponse(contentResponse);
       } else if (getMethod().equals(HTTPConstants.POST)) {
         resultBuilder.withUrl(getUrl());
-        if(getPostBodyRaw() && hasArguments()){
+        if(hasArguments()){
           LOG.debug("There ara data to be built");
           ContentResponse contentResponse = client.doPost(getUrl(), getHeaderManager(), getArguments(), getPath());
+          setPostBodyRaw(true);
           resultBuilder.withContentResponse(contentResponse);
         } else {
           LOG.debug("There are no data to be built");

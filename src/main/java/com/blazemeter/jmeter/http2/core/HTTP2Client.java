@@ -98,7 +98,7 @@ public class HTTP2Client {
 
       // start - setting body - parameters
       if (arguments != null && arguments.getArgumentCount() > 0){
-        String requestBody = "";
+        /*String requestBody = "";
         for (int i=0; i<arguments.getArgumentCount(); i++){
           Argument argument = arguments.getArgument(i);
           System.out.print("Arguments - name : " + argument.getName() + " value : " + argument.getValue());
@@ -106,9 +106,16 @@ public class HTTP2Client {
           String value = argument.getValue();
           request.param(name,value);
           requestBody += name+"="+value+"&";
+        }*/
+       for (JMeterProperty jMeterProperty : arguments.getArguments()) {
+          HTTPArgument arg = (HTTPArgument) jMeterProperty.getObjectValue();
+          String name = arg.getName();
+          String value = arg.getValue();
+          String contentType = arg.getContentType();
+          request.body(new StringRequestContent(contentType, name+"="+value));
         }
         request.path(path);
-        request.body(new StringRequestContent("text/plain", requestBody));
+        //request.body(new StringRequestContent("text/plain", requestBody));
       } else {
          System.out.print("Arguments null or size equal zero");
       }
