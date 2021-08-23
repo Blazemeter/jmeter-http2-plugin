@@ -67,7 +67,7 @@ public class HTTP2Client {
     httpClient.stop();
   }
 
-  public ContentResponse doPost(URL url, HeaderManager headerManager, Arguments arguments,
+  public ContentResponse doPost(URL url, Arguments arguments,
       String path) throws Exception {
     try {
       httpClient.start();
