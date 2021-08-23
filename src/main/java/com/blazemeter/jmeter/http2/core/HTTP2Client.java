@@ -82,6 +82,7 @@ public class HTTP2Client {
           requestBody.append(arg.getValue());
           String contentType = arg.getContentType();
           request.body(new StringRequestContent(contentType, requestBody.toString()));
+          request.param(arg.getName(), arg.getValue());
         }
         request.path(path);
       } else {
