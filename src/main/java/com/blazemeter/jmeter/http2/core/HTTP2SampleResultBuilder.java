@@ -31,15 +31,47 @@ public class HTTP2SampleResultBuilder {
     return this;
   }
 
+  public HTTP2SampleResultBuilder withMethod(String method) {
+    result.setHTTPMethod(method);
+    return this;
+  }
+
+  public HTTP2SampleResultBuilder withLabel(String label) {
+    result.setSampleLabel(label);
+    return this;
+  }
+
   public HTTPSampleResult build() {
     result.sampleEnd();
     return result;
   }
 
-  public void withContentResponse(ContentResponse contentResponse) {
+  public HTTP2SampleResultBuilder withContentResponse(ContentResponse contentResponse) {
     result.setSuccessful(contentResponse.getStatus() >= 200 && contentResponse.getStatus() <= 399);
     result.setResponseCode(String.valueOf(contentResponse.getStatus()));
+    result
+        .setResponseMessage(contentResponse.getReason() != null ? contentResponse.getReason() : "");
     result.setResponseHeaders(contentResponse.getHeaders().asString());
     result.setResponseData(contentResponse.getContentAsString(), contentResponse.getEncoding());
+    return this;
+  }
+
+  public HTTP2SampleResultBuilder withConnectionEnd() {
+    result.connectEnd();
+    return this;
+  }
+
+  public HTTP2SampleResultBuilder withLatencyEnd() {
+    result.latencyEnd();
+    return this;
+  }
+
+  public boolean isRenameSampleLabel() {
+    return result.isRenameSampleLabel();
+  }
+
+  public HTTP2SampleResultBuilder withRequestHeaders(String headers) {
+    result.setRequestHeaders(headers);
+    return this;
   }
 }
