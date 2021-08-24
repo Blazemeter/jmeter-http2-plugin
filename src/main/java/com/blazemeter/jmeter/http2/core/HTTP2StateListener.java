@@ -2,8 +2,8 @@ package com.blazemeter.jmeter.http2.core;
 
 public interface HTTP2StateListener {
 
-  void onConnectionEnds();
+  void onConnectionEnd();
 
-  void onLatencyEnds();
+  void onLatencyEnd();
 
 }

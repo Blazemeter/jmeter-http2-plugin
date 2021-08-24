@@ -7,6 +7,7 @@ import com.blazemeter.jmeter.http2.core.HTTP2Client;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.concurrent.TimeoutException;
+import java.util.function.Supplier;
 import org.apache.jmeter.protocol.http.sampler.HTTPSampleResult;
 import org.apache.jmeter.protocol.http.util.HTTPConstants;
 import org.assertj.core.api.JUnitSoftAssertions;
@@ -48,7 +49,7 @@ public class HTTP2SamplerTest {
 
   @Before
   public void setup() {
-    sampler = new HTTP2Sampler(client);
+    sampler = new HTTP2Sampler(() -> client);
   }
 
   @Test

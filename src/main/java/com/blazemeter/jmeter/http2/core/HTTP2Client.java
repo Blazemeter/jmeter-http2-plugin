@@ -41,17 +41,10 @@ public class HTTP2Client {
 
   public Request createRequest(URL url) throws URISyntaxException {
     Request request = httpClient.newRequest(url.toURI());
-    request.onRequestBegin(l -> {
-          if (http2StateListener != null) {
-            http2StateListener.onConnectionEnds();
-          }
-        }
-    );
-    request.onResponseBegin(l -> {
-      if (http2StateListener != null) {
-        http2StateListener.onLatencyEnds();
-      }
-    });
+    if (http2StateListener != null) {
+      request.onRequestBegin(l -> http2StateListener.onConnectionEnd());
+      request.onResponseBegin(l -> http2StateListener.onLatencyEnd());
+    }
     return request;
   }
 

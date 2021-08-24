@@ -9,6 +9,7 @@ import java.net.URL;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.Callable;
 import org.apache.jmeter.engine.event.LoopIterationEvent;
 import org.apache.jmeter.engine.event.LoopIterationListener;
 import org.apache.jmeter.protocol.http.sampler.HTTPSampleResult;
@@ -27,16 +28,16 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
   private static final Logger LOG = LoggerFactory.getLogger(HTTP2Sampler.class);
   private static final ThreadLocal<Map<HTTP2ClientKey, HTTP2Client>> CONNECTIONS = ThreadLocal
       .withInitial(HashMap::new);
-  private HTTP2Client client;
+  private final Callable<HTTP2Client> clientFactory;
 
   public HTTP2Sampler() {
     setName("HTTP2 Sampler");
+    clientFactory = this::getClient;
   }
 
   @VisibleForTesting
-  public HTTP2Sampler(HTTP2Client client) {
-    this();
-    this.client = client;
+  public HTTP2Sampler(Callable<HTTP2Client> clientFactory) {
+    this.clientFactory = clientFactory;
   }
 
   @Override
@@ -50,20 +51,18 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
     try {
       resultBuilder.withLabel(getSampleLabel(resultBuilder)).withMethod(getMethod())
           .withUrl(getUrl());
-      if (client == null) {
-        client = getClient();
-        client.setHTTP2StateListener(new HTTP2StateListener() {
-          @Override
-          public void onConnectionEnds() {
-            resultBuilder.withConnectionEnd();
-          }
+      HTTP2Client client = clientFactory.call();
+      client.setHTTP2StateListener(new HTTP2StateListener() {
+        @Override
+        public void onConnectionEnd() {
+          resultBuilder.withConnectionEnd();
+        }
 
-          @Override
-          public void onLatencyEnds() {
-            resultBuilder.withLatencyEnd();
-          }
-        });
-      }
+        @Override
+        public void onLatencyEnd() {
+          resultBuilder.withLatencyEnd();
+        }
+      });
       if (!getProxyHost().isEmpty()) {
         client.setProxy(getProxyHost(), getProxyPortInt(), getProxyScheme());
       }
@@ -90,11 +89,7 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
 
   private String getSampleLabel(HTTP2SampleResultBuilder resultBuilder)
       throws MalformedURLException {
-    if (resultBuilder.isRenameSampleLabel()) {
-      return getName();
-    } else {
-      return getUrl().toString();
-    }
+    return resultBuilder.isRenameSampleLabel() ? getName() : getUrl().toString();
   }
 
   private HTTP2Client buildClient() throws Exception {
