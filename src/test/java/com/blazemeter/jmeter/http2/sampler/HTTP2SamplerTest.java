@@ -87,7 +87,7 @@ public class HTTP2SamplerTest {
   }
 
   @Test
-  public void shouldReturnSuccessSampleResultWhenSuccessRequestwithHeaders() throws Exception {
+  public void shouldReturnSuccessSampleResultWhenSuccessRequestWithHeaders() throws Exception {
     ContentResponse response = createResponse(HttpStatus.OK_200);
     when(client.doGet(any(), any())).thenReturn(response);
     configureSampler(HTTPConstants.GET);
