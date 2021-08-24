@@ -1,21 +1,19 @@
 package com.blazemeter.jmeter.http2.sampler;
 
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.when;
 
 import com.blazemeter.jmeter.http2.core.HTTP2Client;
-import org.apache.jmeter.protocol.http.control.Header;
-import org.apache.jmeter.protocol.http.control.HeaderManager;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
+import org.apache.jmeter.protocol.http.control.Header;
+import org.apache.jmeter.protocol.http.control.HeaderManager;
 import org.apache.jmeter.protocol.http.sampler.HTTPSampleResult;
 import org.apache.jmeter.protocol.http.util.HTTPConstants;
 import org.assertj.core.api.JUnitSoftAssertions;
 import org.eclipse.jetty.client.HttpContentResponse;
 import org.eclipse.jetty.client.HttpResponse;
 import org.eclipse.jetty.client.api.ContentResponse;
-import org.eclipse.jetty.http.HttpFields;
 import org.eclipse.jetty.http.HttpStatus;
 import org.eclipse.jetty.http.MimeTypes;
 import org.junit.Before;
@@ -34,10 +32,7 @@ public class HTTP2SamplerTest {
   public final JUnitSoftAssertions softly = new JUnitSoftAssertions();
   @Mock
   private HTTP2Client client;
-  @Mock
-  private ContentResponse response;
-  @Mock
-  private HttpFields responseHeaders;
+
   private HTTP2Sampler sampler;
 
   @BeforeClass
@@ -53,10 +48,68 @@ public class HTTP2SamplerTest {
   @Test
   public void shouldReturnSuccessSampleResultWhenSuccessRequest() throws Exception {
     ContentResponse response = createResponse(HttpStatus.OK_200);
-    when(client.doGet(any())).thenReturn(response);
+    when(client.doGet(any(), any())).thenReturn(response);
     configureSampler(HTTPConstants.GET);
     HTTPSampleResult result = sampler.sample();
     validateResponse(result, response);
+  }
+
+  @Test
+  public void shouldReturnFailureSampleResultWhenResponse400() throws Exception {
+    ContentResponse response = createResponse(HttpStatus.BAD_REQUEST_400);
+    when(client.doGet(any(), any())).thenReturn(response);
+    configureSampler(HTTPConstants.GET);
+    HTTPSampleResult result = sampler.sample();
+    validateResponse(result, response);
+  }
+
+  @Test
+  public void shouldReturnErrorMessageWhenMethodIsNotGET() {
+    configureSampler(HTTPConstants.POST);
+    HTTPSampleResult result = sampler.sample();
+    validateErrorResponse(result, UnsupportedOperationException.class.getName());
+  }
+
+  @Test
+  public void shouldReturnErrorMessageWhenThreadIsInterrupted() throws Exception {
+    when(client.doGet(any(), any())).thenThrow(new InterruptedException());
+    configureSampler(HTTPConstants.GET);
+    HTTPSampleResult result = sampler.sample();
+    validateErrorResponse(result, InterruptedException.class.getName());
+  }
+
+  @Test
+  public void shouldReturnErrorMessageWhenClientThrowException() throws Exception {
+    when(client.doGet(any(), any())).thenThrow(new Exception());
+    configureSampler(HTTPConstants.GET);
+    HTTPSampleResult result = sampler.sample();
+    validateErrorResponse(result, Exception.class.getName());
+  }
+
+  @Test
+  public void shouldReturnSuccessSampleResultWhenSuccessRequestwithHeaders() throws Exception {
+    ContentResponse response = createResponse(HttpStatus.OK_200);
+    when(client.doGet(any(), any())).thenReturn(response);
+    configureSampler(HTTPConstants.GET);
+    configureHeaderManagerToSampler();
+    HTTPSampleResult result = sampler.sample();
+    validateResponse(result, response);
+  }
+
+  public void configureSampler(String method) {
+    sampler.setMethod(method);
+    sampler.setDomain("server");
+    sampler.setProtocol(HTTPConstants.PROTOCOL_HTTPS);
+    sampler.setPort(80);
+    sampler.setPath("");
+  }
+
+  public void configureHeaderManagerToSampler() {
+    HeaderManager hm = new HeaderManager();
+    hm.add(new Header("Header1", "value1"));
+    hm.add(new Header("Header2", "value2"));
+
+    sampler.setHeaderManager(hm);
   }
 
   private ContentResponse createResponse(int statusCode) {
@@ -75,72 +128,9 @@ public class HTTP2SamplerTest {
     softly.assertThat(result.getResponseDataAsString()).isEqualTo(response.getContentAsString());
   }
 
-  @Test
-  public void shouldReturnFailureSampleResultWhenResponse400() throws Exception {
-    ContentResponse response = createResponse(HttpStatus.BAD_REQUEST_400);
-    when(client.doGet(any())).thenReturn(response);
-    configureSampler(HTTPConstants.GET);
-    HTTPSampleResult result = sampler.sample();
-    validateResponse(result, response);
-  }
-
-  @Test
-  public void shouldReturnErrorMessageWhenMethodIsNotGET() {
-    configureSampler(HTTPConstants.POST);
-    HTTPSampleResult result = sampler.sample();
-    validateErrorResponse(result, UnsupportedOperationException.class.getName());
-  }
-
   public void validateErrorResponse(HTTPSampleResult result, String code) {
     softly.assertThat(result.isSuccessful()).isEqualTo(false);
     softly.assertThat(result.getResponseCode()).isEqualTo(code);
-  }
-
-  @Test
-  public void shouldReturnErrorMessageWhenThreadIsInterrupted() throws Exception {
-    when(client.doGet(any())).thenThrow(new InterruptedException());
-    configureSampler(HTTPConstants.GET);
-    HTTPSampleResult result = sampler.sample();
-    validateErrorResponse(result, InterruptedException.class.getName());
-  }
-
-  @Test
-  public void shouldReturnErrorMessageWhenClientThrowException() throws Exception {
-    when(client.doGet(any())).thenThrow(new Exception());
-    configureSampler(HTTPConstants.GET);
-    HTTPSampleResult result = sampler.sample();
-    validateErrorResponse(result, Exception.class.getName());
-  }
-
-  @Test
-  public void shouldReturnSuccessSampleResultWhenSuccessRequestwithHeaders() throws Exception {
-    when(client.doGet(any(), isNull())).thenReturn(response);
-    when(response.getStatus()).thenReturn(200);
-    when(responseHeaders.asString()).thenReturn(RESPONSE_HEADERS);
-    when(response.getHeaders()).thenReturn(responseHeaders);
-    when(response.getContentAsString()).thenReturn(RESPONSE_CONTENT);
-    when(response.getEncoding()).thenReturn(ENCODING);
-    configureSampler(HTTPConstants.GET);
-    configureHeaderManagerToSampler();
-    HTTPSampleResult result = sampler.sample(null, "", false, 0);
-    softly.assertThat(result.isSuccessful()).isEqualTo(true);
-    softly.assertThat(result.getResponseCode()).isEqualTo("200");
-    softly.assertThat(result.getResponseHeaders()).isEqualTo(RESPONSE_HEADERS);
-    softly.assertThat(result.getResponseDataAsString()).isEqualTo(RESPONSE_CONTENT);
-  }
-
-  public void configureSampler(String method) {
-    sampler.setMethod(method);
-    sampler.setDomain("server");
-    sampler.setProtocol(HTTPConstants.PROTOCOL_HTTPS);
-    sampler.setPort(80);
-    sampler.setPath("");
-  }
-
-  public void configureHeaderManagerToSampler() {
-    HeaderManager hm = new HeaderManager();
-    hm.add(new Header("valu1","value2"));
-    sampler.setHeaderManager(hm);
   }
 
 }

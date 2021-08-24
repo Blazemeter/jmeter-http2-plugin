@@ -3,7 +3,6 @@ package com.blazemeter.jmeter.http2.sampler;
 import com.blazemeter.jmeter.http2.core.HTTP2Client;
 import com.blazemeter.jmeter.http2.core.HTTP2SampleResultBuilder;
 import com.helger.commons.annotation.VisibleForTesting;
-import freemarker.core._ArrayEnumeration;
 import java.net.URL;
 import org.apache.jmeter.protocol.http.sampler.HTTPSampleResult;
 import org.apache.jmeter.protocol.http.sampler.HTTPSamplerBase;
@@ -28,7 +27,7 @@ public class HTTP2Sampler extends HTTPSamplerBase {
   }
 
   @Override
-  public HTTPSampleResult sample (){
+  public HTTPSampleResult sample() {
     return sample(null, "", false, 0);
   }
 
