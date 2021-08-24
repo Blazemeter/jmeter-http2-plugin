@@ -6,6 +6,7 @@ import static org.mockito.Mockito.when;
 import com.blazemeter.jmeter.http2.core.HTTP2Client;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
+import java.util.concurrent.TimeoutException;
 import org.apache.jmeter.protocol.http.sampler.HTTPSampleResult;
 import org.apache.jmeter.protocol.http.util.HTTPConstants;
 import org.assertj.core.api.JUnitSoftAssertions;
@@ -103,10 +104,10 @@ public class HTTP2SamplerTest {
 
   @Test
   public void shouldReturnErrorMessageWhenClientThrowException() throws Exception {
-    when(client.doGet(any())).thenThrow(new Exception());
+    when(client.doGet(any())).thenThrow(new TimeoutException());
     configureSampler(HTTPConstants.GET);
     HTTPSampleResult result = sampler.sample();
-    validateErrorResponse(result, Exception.class.getName());
+    validateErrorResponse(result, TimeoutException.class.getName());
   }
 
   public void configureSampler(String method) {

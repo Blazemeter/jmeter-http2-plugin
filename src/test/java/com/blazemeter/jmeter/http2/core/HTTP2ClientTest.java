@@ -23,6 +23,7 @@ import org.eclipse.jetty.servlet.ServletContextHandler;
 import org.eclipse.jetty.servlet.ServletHolder;
 import org.eclipse.jetty.util.resource.Resource;
 import org.eclipse.jetty.util.ssl.SslContextFactory;
+import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -35,8 +36,14 @@ public class HTTP2ClientTest {
   private HTTP2Client client;
 
   @Before
-  public void setup() {
+  public void setup() throws Exception {
     client = new HTTP2Client();
+    client.start();
+  }
+
+  @After
+  public void teardown() throws Exception {
+    client.stop();
   }
 
   @Test

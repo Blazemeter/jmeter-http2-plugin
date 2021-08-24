@@ -1,6 +1,9 @@
 package com.blazemeter.jmeter.http2.core;
 
+import java.net.URISyntaxException;
 import java.net.URL;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeoutException;
 import org.apache.jmeter.protocol.http.util.HTTPConstants;
 import org.eclipse.jetty.client.HttpClient;
 import org.eclipse.jetty.client.HttpClientTransport;
@@ -37,13 +40,16 @@ public class HTTP2Client {
     httpClient.getProxyConfiguration().getProxies().add(proxy);
   }
 
-  public ContentResponse doGet(URL url) throws Exception {
-    try {
-      httpClient.start();
-      return httpClient.GET(url.toURI());
-    } finally {
-      httpClient.stop();
-    }
+  public ContentResponse doGet(URL url)
+      throws URISyntaxException, InterruptedException, ExecutionException, TimeoutException {
+    return httpClient.GET(url.toURI());
   }
 
+  public void start() throws Exception {
+    httpClient.start();
+  }
+
+  public void stop() throws Exception {
+    httpClient.stop();
+  }
 }
