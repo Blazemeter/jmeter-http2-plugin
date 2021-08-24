@@ -56,7 +56,8 @@ public class HTTP2Client {
 
   private Request setHeaders(Request request, HeaderManager headerManager,
       CacheManager cacheManager) {
-    Header[] arrayOfHeaders = null;
+    Header[] arrayOfHeaders = null; // This could be useful when working on the cache manager
+    // feature.
     if (headerManager != null) {
       CollectionProperty headers = headerManager.getHeaders();
       if (headers != null) {
@@ -66,11 +67,12 @@ public class HTTP2Client {
           Header header = (Header) jMeterProperty.getObjectValue();
           String n = header.getName();
           String v = header.getValue();
-          arrayOfHeaders[i++] = header;
+          arrayOfHeaders[i++] = header; // This could be useful when working on the cache manager
           request.headers(httpFields -> httpFields.put(n, v));
         }
       }
     }
+    // This section could be useful when working on the cache manager
     // if (cacheManager != null) {
     // cacheManager.setHeaders(conn, arrayOfHeaders, u);
     // }

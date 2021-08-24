@@ -46,12 +46,11 @@ public class HTTP2SampleResultBuilder {
       CollectionProperty headers = headerManager.getHeaders();
       headers.forEach(jMeterProperty -> {
         Header header = (Header) jMeterProperty.getObjectValue();
-        String n = header.getName();
-        String v = header.getValue();
-        sbHeaders.append(n);
-        sbHeaders.append(": ");
-        sbHeaders.append(v);
-        sbHeaders.append("\n");
+        sbHeaders
+            .append(header.getName())
+            .append(": ")
+            .append(header.getValue())
+            .append("\n");
       });
 
       result.setRequestHeaders(sbHeaders.toString());
