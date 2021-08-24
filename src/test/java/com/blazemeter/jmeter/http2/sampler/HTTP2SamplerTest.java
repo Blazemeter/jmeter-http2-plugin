@@ -6,12 +6,15 @@ import static org.mockito.Mockito.when;
 import com.blazemeter.jmeter.http2.core.HTTP2Client;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
+import java.util.concurrent.TimeoutException;
+import java.util.function.Supplier;
 import org.apache.jmeter.protocol.http.sampler.HTTPSampleResult;
 import org.apache.jmeter.protocol.http.util.HTTPConstants;
 import org.assertj.core.api.JUnitSoftAssertions;
 import org.eclipse.jetty.client.HttpContentResponse;
 import org.eclipse.jetty.client.HttpResponse;
 import org.eclipse.jetty.client.api.ContentResponse;
+import org.eclipse.jetty.client.api.Request;
 import org.eclipse.jetty.http.HttpFields;
 import org.eclipse.jetty.http.HttpStatus;
 import org.eclipse.jetty.http.MimeTypes;
@@ -34,6 +37,8 @@ public class HTTP2SamplerTest {
   @Mock
   private ContentResponse response;
   @Mock
+  private Request request;
+  @Mock
   private HttpFields responseHeaders;
   private HTTP2Sampler sampler;
 
@@ -44,13 +49,14 @@ public class HTTP2SamplerTest {
 
   @Before
   public void setup() {
-    sampler = new HTTP2Sampler(client);
+    sampler = new HTTP2Sampler(() -> client);
   }
 
   @Test
   public void shouldReturnSuccessSampleResultWhenSuccessRequest() throws Exception {
     ContentResponse response = createResponse(HttpStatus.OK_200);
-    when(client.doGet(any())).thenReturn(response);
+    when(client.createRequest(any())).thenReturn(request);
+    when(request.send()).thenReturn(response);
     configureSampler(HTTPConstants.GET);
     HTTPSampleResult result = sampler.sample();
     validateResponse(result, response);
@@ -75,7 +81,8 @@ public class HTTP2SamplerTest {
   @Test
   public void shouldReturnFailureSampleResultWhenResponse400() throws Exception {
     ContentResponse response = createResponse(HttpStatus.BAD_REQUEST_400);
-    when(client.doGet(any())).thenReturn(response);
+    when(client.createRequest(any())).thenReturn(request);
+    when(request.send()).thenReturn(response);
     configureSampler(HTTPConstants.GET);
     HTTPSampleResult result = sampler.sample();
     validateResponse(result, response);
@@ -95,7 +102,8 @@ public class HTTP2SamplerTest {
 
   @Test
   public void shouldReturnErrorMessageWhenThreadIsInterrupted() throws Exception {
-    when(client.doGet(any())).thenThrow(new InterruptedException());
+    when(client.createRequest(any())).thenReturn(request);
+    when(request.send()).thenThrow(new InterruptedException());
     configureSampler(HTTPConstants.GET);
     HTTPSampleResult result = sampler.sample();
     validateErrorResponse(result, InterruptedException.class.getName());
@@ -103,10 +111,11 @@ public class HTTP2SamplerTest {
 
   @Test
   public void shouldReturnErrorMessageWhenClientThrowException() throws Exception {
-    when(client.doGet(any())).thenThrow(new Exception());
+    when(client.createRequest(any())).thenReturn(request);
+    when(request.send()).thenThrow(new TimeoutException());
     configureSampler(HTTPConstants.GET);
     HTTPSampleResult result = sampler.sample();
-    validateErrorResponse(result, Exception.class.getName());
+    validateErrorResponse(result, TimeoutException.class.getName());
   }
 
   public void configureSampler(String method) {

@@ -23,6 +23,7 @@ import org.eclipse.jetty.servlet.ServletContextHandler;
 import org.eclipse.jetty.servlet.ServletHolder;
 import org.eclipse.jetty.util.resource.Resource;
 import org.eclipse.jetty.util.ssl.SslContextFactory;
+import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -35,22 +36,28 @@ public class HTTP2ClientTest {
   private HTTP2Client client;
 
   @Before
-  public void setup() {
+  public void setup() throws Exception {
     client = new HTTP2Client();
+    client.start();
+  }
+
+  @After
+  public void teardown() throws Exception {
+    client.stop();
   }
 
   @Test
   public void shouldGetResponseWhenGetMethodIsSent() throws Exception {
     startServer(createGetServerResponse());
-    ContentResponse response = client.doGet(
-        new URL(HTTPConstants.PROTOCOL_HTTPS, "localhost", connector.getLocalPort(), SERVER_PATH));
+    ContentResponse response = client.createRequest(new URL(HTTPConstants.PROTOCOL_HTTPS,
+        "localhost", connector.getLocalPort(), SERVER_PATH)).send();
     assertThat(response.getContentAsString()).isEqualTo(SERVER_RESPONSE);
   }
 
   @Test(expected = ExecutionException.class)
   public void shouldThrowConnectExceptionWhenServerIsInaccessible() throws Exception {
-    client.doGet(
-        new URL(HTTPConstants.PROTOCOL_HTTPS, "localhost", 80, SERVER_PATH));
+    client.createRequest(new URL(HTTPConstants.PROTOCOL_HTTPS, "localhost", 80, SERVER_PATH))
+        .send();
   }
 
   private HttpServlet createGetServerResponse() {

@@ -1,12 +1,13 @@
 package com.blazemeter.jmeter.http2.core;
 
+import java.net.URISyntaxException;
 import java.net.URL;
 import org.apache.jmeter.protocol.http.util.HTTPConstants;
 import org.eclipse.jetty.client.HttpClient;
 import org.eclipse.jetty.client.HttpClientTransport;
 import org.eclipse.jetty.client.HttpProxy;
 import org.eclipse.jetty.client.Origin.Address;
-import org.eclipse.jetty.client.api.ContentResponse;
+import org.eclipse.jetty.client.api.Request;
 import org.eclipse.jetty.client.dynamic.HttpClientTransportDynamic;
 import org.eclipse.jetty.client.http.HttpClientConnectionFactory;
 import org.eclipse.jetty.http2.client.http.ClientConnectionFactoryOverHTTP2;
@@ -16,6 +17,7 @@ import org.eclipse.jetty.util.ssl.SslContextFactory;
 public class HTTP2Client {
 
   private final HttpClient httpClient;
+  private HTTP2StateListener http2StateListener;
 
   public HTTP2Client() {
     ClientConnector clientConnector = new ClientConnector();
@@ -37,13 +39,24 @@ public class HTTP2Client {
     httpClient.getProxyConfiguration().getProxies().add(proxy);
   }
 
-  public ContentResponse doGet(URL url) throws Exception {
-    try {
-      httpClient.start();
-      return httpClient.GET(url.toURI());
-    } finally {
-      httpClient.stop();
+  public Request createRequest(URL url) throws URISyntaxException {
+    Request request = httpClient.newRequest(url.toURI());
+    if (http2StateListener != null) {
+      request.onRequestBegin(l -> http2StateListener.onConnectionEnd());
+      request.onResponseBegin(l -> http2StateListener.onLatencyEnd());
     }
+    return request;
   }
 
+  public void start() throws Exception {
+    httpClient.start();
+  }
+
+  public void stop() throws Exception {
+    httpClient.stop();
+  }
+
+  public void setHTTP2StateListener(HTTP2StateListener http2StateListener) {
+    this.http2StateListener = http2StateListener;
+  }
 }
