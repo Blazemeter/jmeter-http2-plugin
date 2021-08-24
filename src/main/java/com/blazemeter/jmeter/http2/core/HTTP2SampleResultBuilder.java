@@ -69,6 +69,5 @@ public class HTTP2SampleResultBuilder {
     result.setResponseCode(String.valueOf(contentResponse.getStatus()));
     result.setResponseHeaders(contentResponse.getHeaders().asString());
     result.setResponseData(contentResponse.getContentAsString(), contentResponse.getEncoding());
-    result.setResponseHeaders(contentResponse.getHeaders().asString());
   }
 }

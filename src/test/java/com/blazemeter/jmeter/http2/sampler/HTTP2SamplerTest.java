@@ -28,6 +28,7 @@ import org.mockito.junit.MockitoJUnitRunner;
 public class HTTP2SamplerTest {
 
   public static final String RESPONSE_CONTENT = "Dummy Response";
+  public static final String REQUEST_HEADER = "Header1: value1\nHeader2: value2\n";
   @Rule
   public final JUnitSoftAssertions softly = new JUnitSoftAssertions();
   @Mock
@@ -94,9 +95,10 @@ public class HTTP2SamplerTest {
     configureHeaderManagerToSampler();
     HTTPSampleResult result = sampler.sample();
     validateResponse(result, response);
+    validateHeaders(result);
   }
 
-  public void configureSampler(String method) {
+  private void configureSampler(String method) {
     sampler.setMethod(method);
     sampler.setDomain("server");
     sampler.setProtocol(HTTPConstants.PROTOCOL_HTTPS);
@@ -104,7 +106,7 @@ public class HTTP2SamplerTest {
     sampler.setPath("");
   }
 
-  public void configureHeaderManagerToSampler() {
+  private void configureHeaderManagerToSampler() {
     HeaderManager hm = new HeaderManager();
     hm.add(new Header("Header1", "value1"));
     hm.add(new Header("Header2", "value2"));
@@ -126,6 +128,10 @@ public class HTTP2SamplerTest {
     softly.assertThat(result.getResponseCode()).isEqualTo(String.valueOf(response.getStatus()));
     softly.assertThat(result.getResponseHeaders()).isEqualTo(response.getHeaders().asString());
     softly.assertThat(result.getResponseDataAsString()).isEqualTo(response.getContentAsString());
+  }
+
+  private void validateHeaders(HTTPSampleResult result) {
+    softly.assertThat(result.getRequestHeaders()).isEqualTo(REQUEST_HEADER);
   }
 
   public void validateErrorResponse(HTTPSampleResult result, String code) {
