@@ -27,7 +27,7 @@ public class HTTP2Sampler extends HTTPSamplerBase {
   }
 
   @Override
-  public HTTPSampleResult sample (){
+  public HTTPSampleResult sample() {
     return sample(null, "", false, 0);
   }
 
