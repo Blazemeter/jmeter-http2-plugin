@@ -51,9 +51,6 @@ public class HTTP2ClientTest {
     startServer(createGetServerResponse());
     ContentResponse response = client.createRequest(new URL(HTTPConstants.PROTOCOL_HTTPS,
         "localhost", connector.getLocalPort(), SERVER_PATH)).send();
-    ContentResponse response = client.doGet(
-        new URL(HTTPConstants.PROTOCOL_HTTPS, "localhost", connector.getLocalPort(), SERVER_PATH)
-        , null);
     assertThat(response.getContentAsString()).isEqualTo(SERVER_RESPONSE);
   }
 
@@ -61,8 +58,6 @@ public class HTTP2ClientTest {
   public void shouldThrowConnectExceptionWhenServerIsInaccessible() throws Exception {
     client.createRequest(new URL(HTTPConstants.PROTOCOL_HTTPS, "localhost", 80, SERVER_PATH))
         .send();
-    client.doGet(
-        new URL(HTTPConstants.PROTOCOL_HTTPS, "localhost", 80, SERVER_PATH), null);
   }
 
   private HttpServlet createGetServerResponse() {

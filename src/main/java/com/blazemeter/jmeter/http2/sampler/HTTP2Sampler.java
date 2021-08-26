@@ -12,10 +12,12 @@ import java.util.Objects;
 import java.util.concurrent.Callable;
 import org.apache.jmeter.engine.event.LoopIterationEvent;
 import org.apache.jmeter.engine.event.LoopIterationListener;
+import org.apache.jmeter.protocol.http.control.Header;
 import org.apache.jmeter.protocol.http.sampler.HTTPSampleResult;
 import org.apache.jmeter.protocol.http.sampler.HTTPSamplerBase;
 import org.apache.jmeter.protocol.http.util.HTTPConstants;
 import org.apache.jmeter.testelement.ThreadListener;
+import org.apache.jmeter.testelement.property.CollectionProperty;
 import org.apache.jmeter.threads.JMeterContextService;
 import org.apache.jmeter.threads.JMeterVariables;
 import org.eclipse.jetty.client.api.ContentResponse;
@@ -51,6 +53,7 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
     try {
       resultBuilder.withLabel(getSampleLabel(resultBuilder)).withMethod(getMethod())
           .withUrl(getUrl());
+
       HTTP2Client client = clientFactory.call();
       client.setHTTP2StateListener(new HTTP2StateListener() {
         @Override
@@ -63,18 +66,22 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
           resultBuilder.withLatencyEnd();
         }
       });
+
       if (!getProxyHost().isEmpty()) {
         client.setProxy(getProxyHost(), getProxyPortInt(), getProxyScheme());
       }
+
       if (getMethod().equals(HTTPConstants.GET)) {
         Request request = client.createRequest(getUrl());
-        resultBuilder.withRequestHeaders(
-            request.getHeaders() != null ? request.getHeaders().asString() : "");
+        resultBuilder.withRequestHeaders(getHeaders(request));
+
+        if (getHeaderManager() != null) {
+          client.setHeaders(request, getHeaderManager());
+        }
+
         ContentResponse contentResponse = request.send();
-        resultBuilder.withUrl(getUrl()).withMethod(HTTPConstants.GET)
-            .withRequestHeaders(getHeaderManager());
-        ContentResponse contentResponse = client.doGet(getUrl(), getHeaderManager());
         resultBuilder.withContentResponse(contentResponse);
+
       } else {
         throw new UnsupportedOperationException(
             String.format("Method %s is not supported", getMethod()));
@@ -114,13 +121,45 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
         : buildClient();
   }
 
+  private String getHeaders(Request request) {
+    StringBuilder headers = new StringBuilder(
+        request.getHeaders() != null
+            ? request.getHeaders().asString()
+            : "");
+
+    if (headers.length() != 0) {
+      headers.delete(headers.length() - 2, headers.length());
+    }
+
+    if (getHeaderManager() != null) {
+      headers.append(getHeaderManagerAsString());
+    }
+
+    return headers.toString();
+  }
+
+  private String getHeaderManagerAsString() {
+    StringBuilder buffer = new StringBuilder();
+
+    CollectionProperty headers = getHeaderManager().getHeaders();
+    headers.forEach(jMeterProperty -> {
+      Header header = (Header) jMeterProperty.getObjectValue();
+      buffer
+          .append(header.getName())
+          .append(": ")
+          .append(header.getValue())
+          .append("\r\n");
+    });
+
+    return buffer.toString();
+  }
+
   @Override
   public void iterationStart(LoopIterationEvent iterEvent) {
     JMeterVariables jMeterVariables = JMeterContextService.getContext().getVariables();
     if (!jMeterVariables.isSameUserOnNextIteration()) {
       closeConnections();
     }
-
   }
 
   private void closeConnections() {
