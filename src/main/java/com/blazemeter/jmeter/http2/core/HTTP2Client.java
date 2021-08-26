@@ -1,5 +1,6 @@
 package com.blazemeter.jmeter.http2.core;
 
+import java.net.URISyntaxException;
 import java.net.URL;
 import org.apache.jmeter.protocol.http.control.CacheManager;
 import org.apache.jmeter.protocol.http.control.Header;
@@ -23,6 +24,7 @@ import org.eclipse.jetty.util.ssl.SslContextFactory;
 public class HTTP2Client {
 
   private final HttpClient httpClient;
+  private HTTP2StateListener http2StateListener;
 
   public HTTP2Client() {
     ClientConnector clientConnector = new ClientConnector();
@@ -44,6 +46,11 @@ public class HTTP2Client {
     httpClient.getProxyConfiguration().getProxies().add(proxy);
   }
 
+  public Request createRequest(URL url) throws URISyntaxException {
+    Request request = httpClient.newRequest(url.toURI());
+    if (http2StateListener != null) {
+      request.onRequestBegin(l -> http2StateListener.onConnectionEnd());
+      request.onResponseBegin(l -> http2StateListener.onLatencyEnd());
   public ContentResponse doGet(URL url, HeaderManager headerManager) throws Exception {
     try {
       httpClient.start();
@@ -52,6 +59,7 @@ public class HTTP2Client {
     } finally {
       httpClient.stop();
     }
+    return request;
   }
 
   private Request setHeaders(Request request, HeaderManager headerManager,
@@ -80,4 +88,15 @@ public class HTTP2Client {
     return request;
   }
 
+  public void start() throws Exception {
+    httpClient.start();
+  }
+
+  public void stop() throws Exception {
+    httpClient.stop();
+  }
+
+  public void setHTTP2StateListener(HTTP2StateListener http2StateListener) {
+    this.http2StateListener = http2StateListener;
+  }
 }
