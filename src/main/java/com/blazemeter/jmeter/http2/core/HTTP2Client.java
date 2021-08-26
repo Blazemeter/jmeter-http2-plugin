@@ -2,11 +2,7 @@ package com.blazemeter.jmeter.http2.core;
 
 import java.net.URISyntaxException;
 import java.net.URL;
-import org.apache.jmeter.protocol.http.control.Header;
-import org.apache.jmeter.protocol.http.control.HeaderManager;
 import org.apache.jmeter.protocol.http.util.HTTPConstants;
-import org.apache.jmeter.testelement.property.CollectionProperty;
-import org.apache.jmeter.testelement.property.JMeterProperty;
 import org.eclipse.jetty.client.HttpClient;
 import org.eclipse.jetty.client.HttpClientTransport;
 import org.eclipse.jetty.client.HttpProxy;
@@ -51,19 +47,6 @@ public class HTTP2Client {
     }
 
     return request;
-  }
-
-  public void setHeaders(Request request, HeaderManager headerManager) {
-    CollectionProperty headers = headerManager.getHeaders();
-    if (headers != null) {
-      int i = 0;
-      for (JMeterProperty jMeterProperty : headers) {
-        Header header = (Header) jMeterProperty.getObjectValue();
-        String n = header.getName();
-        String v = header.getValue();
-        request.headers(httpFields -> httpFields.put(n, v));
-      }
-    }
   }
 
   public void start() throws Exception {

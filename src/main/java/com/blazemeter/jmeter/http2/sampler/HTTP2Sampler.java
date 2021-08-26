@@ -10,9 +10,12 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.Callable;
+import java.util.regex.Pattern;
+import java.util.stream.StreamSupport;
 import org.apache.jmeter.engine.event.LoopIterationEvent;
 import org.apache.jmeter.engine.event.LoopIterationListener;
 import org.apache.jmeter.protocol.http.control.Header;
+import org.apache.jmeter.protocol.http.control.HeaderManager;
 import org.apache.jmeter.protocol.http.sampler.HTTPSampleResult;
 import org.apache.jmeter.protocol.http.sampler.HTTPSamplerBase;
 import org.apache.jmeter.protocol.http.util.HTTPConstants;
@@ -27,6 +30,7 @@ import org.slf4j.LoggerFactory;
 
 public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListener, ThreadListener {
 
+  private static final Pattern PORT_PATTERN = Pattern.compile("\\d+");
   private static final Logger LOG = LoggerFactory.getLogger(HTTP2Sampler.class);
   private static final ThreadLocal<Map<HTTP2ClientKey, HTTP2Client>> CONNECTIONS = ThreadLocal
       .withInitial(HashMap::new);
@@ -76,7 +80,7 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
         resultBuilder.withRequestHeaders(getHeaders(request));
 
         if (getHeaderManager() != null) {
-          client.setHeaders(request, getHeaderManager());
+          setHeaders(request, getHeaderManager(), getUrl());
         }
 
         ContentResponse contentResponse = request.send();
@@ -152,6 +156,47 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
     });
 
     return buffer.toString();
+  }
+
+  private void setHeaders(Request request, HeaderManager headerManager, URL url) {
+    CollectionProperty headers = headerManager.getHeaders();
+
+    StreamSupport.stream(headerManager.getHeaders().spliterator(), false)
+        .map(prop -> (Header) prop.getObjectValue())
+        .forEach(header -> {
+          String n = header.getName();
+
+          if (!HTTPConstants.HEADER_CONTENT_LENGTH.equalsIgnoreCase(n)) {
+            String v = header.getValue();
+            if (HTTPConstants.HEADER_HOST.equalsIgnoreCase(n)) {
+              int port = getPortFromHostHeader(v, url.getPort());
+              // remove any port specification
+              String newValue = v.replaceFirst(":\\d+$", "");  // $NON-NLS-1$ $NON-NLS-2$
+              if (port != -1 && port == url.getDefaultPort()) {
+                port = -1; // no need to specify the port if it is the default
+              }
+              if (port == -1) {
+                request.headers(httpFields -> httpFields.put(HEADER_HOST, newValue));
+              } else {
+                int p = port;
+                request.headers(httpFields -> httpFields.put(HEADER_HOST, newValue + ":" + p));
+              }
+            } else {
+              request.headers(httpFields -> httpFields.put(n, v));
+            }
+          }
+        });
+  }
+
+  private int getPortFromHostHeader(String hostHeaderValue, int defaultValue) {
+    String[] hostParts = hostHeaderValue.split(":");
+    if (hostParts.length > 1) {
+      String portString = hostParts[hostParts.length - 1];
+      if (PORT_PATTERN.matcher(portString).matches()) {
+        return Integer.parseInt(portString);
+      }
+    }
+    return defaultValue;
   }
 
   @Override

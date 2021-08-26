@@ -31,6 +31,8 @@ public class HTTP2SamplerTest {
 
   public static final String RESPONSE_CONTENT = "Dummy Response";
   public static final String REQUEST_HEADER = "Header1: value1\nHeader2: value2\n";
+  public static final String HEADER_MANAGER = "Header1: value1\r\nHeader2: value2\r\n";
+
   @Rule
   public final JUnitSoftAssertions softly = new JUnitSoftAssertions();
   @Mock
@@ -103,6 +105,7 @@ public class HTTP2SamplerTest {
     configureHeaderManagerToSampler();
     HTTPSampleResult result = sampler.sample();
     validateResponse(result, response);
+    validateHeaders(result);
   }
 
   private void configureSampler(String method) {
@@ -138,7 +141,7 @@ public class HTTP2SamplerTest {
   }
 
   private void validateHeaders(HTTPSampleResult result) {
-    softly.assertThat(result.getRequestHeaders()).isEqualTo(REQUEST_HEADER);
+    softly.assertThat(result.getRequestHeaders()).isEqualTo(HEADER_MANAGER);
   }
 
   public void validateErrorResponse(HTTPSampleResult result, String code) {
