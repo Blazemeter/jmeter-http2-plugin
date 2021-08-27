@@ -13,9 +13,10 @@ import org.apache.jmeter.protocol.http.sampler.HTTPSampleResult;
 import org.apache.jmeter.protocol.http.util.HTTPConstants;
 import org.assertj.core.api.JUnitSoftAssertions;
 import org.eclipse.jetty.client.HttpContentResponse;
+import org.eclipse.jetty.client.HttpRequest;
 import org.eclipse.jetty.client.HttpResponse;
 import org.eclipse.jetty.client.api.ContentResponse;
-import org.eclipse.jetty.client.api.Request;
+import org.eclipse.jetty.http.HttpField;
 import org.eclipse.jetty.http.HttpStatus;
 import org.eclipse.jetty.http.MimeTypes;
 import org.junit.Before;
@@ -38,7 +39,7 @@ public class HTTP2SamplerTest {
   @Mock
   private HTTP2Client client;
   @Mock
-  private Request request;
+  private HttpRequest request;
   private HTTP2Sampler sampler;
 
   @BeforeClass
@@ -127,7 +128,8 @@ public class HTTP2SamplerTest {
   private ContentResponse createResponse(int statusCode) {
     return new HttpContentResponse(
         new HttpResponse(null, Collections.emptyList()).status(statusCode)
-            .headers(headers -> headers.put("Header1", "value1").put("Header2", "value2")),
+            .addHeader(new HttpField("Header1", "value1"))
+            .addHeader(new HttpField("Header2", "value2")),
         RESPONSE_CONTENT.getBytes(StandardCharsets.UTF_8), MimeTypes.Type.TEXT_PLAIN.toString(),
         StandardCharsets.UTF_8.name());
   }

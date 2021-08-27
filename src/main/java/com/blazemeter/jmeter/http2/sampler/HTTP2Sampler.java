@@ -20,11 +20,11 @@ import org.apache.jmeter.protocol.http.sampler.HTTPSampleResult;
 import org.apache.jmeter.protocol.http.sampler.HTTPSamplerBase;
 import org.apache.jmeter.protocol.http.util.HTTPConstants;
 import org.apache.jmeter.testelement.ThreadListener;
-import org.apache.jmeter.testelement.property.CollectionProperty;
 import org.apache.jmeter.threads.JMeterContextService;
 import org.apache.jmeter.threads.JMeterVariables;
+import org.eclipse.jetty.client.HttpRequest;
 import org.eclipse.jetty.client.api.ContentResponse;
-import org.eclipse.jetty.client.api.Request;
+import org.eclipse.jetty.http.HttpField;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -76,12 +76,13 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
       }
 
       if (getMethod().equals(HTTPConstants.GET)) {
-        Request request = client.createRequest(getUrl());
-        resultBuilder.withRequestHeaders(getHeaders(request));
+        HttpRequest request = client.createRequest(getUrl());
 
         if (getHeaderManager() != null) {
           setHeaders(request, getHeaderManager(), getUrl());
         }
+
+        resultBuilder.withRequestHeaders(request.getHeaders().asString());
 
         ContentResponse contentResponse = request.send();
         resultBuilder.withContentResponse(contentResponse);
@@ -125,65 +126,27 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
         : buildClient();
   }
 
-  private String getHeaders(Request request) {
-    StringBuilder headers = new StringBuilder(
-        request.getHeaders() != null
-            ? request.getHeaders().asString()
-            : "");
-
-    if (headers.length() != 0) {
-      headers.delete(headers.length() - 2, headers.length());
-    }
-
-    if (getHeaderManager() != null) {
-      headers.append(getHeaderManagerAsString());
-    }
-
-    return headers.toString();
-  }
-
-  private String getHeaderManagerAsString() {
-    StringBuilder buffer = new StringBuilder();
-
-    CollectionProperty headers = getHeaderManager().getHeaders();
-    headers.forEach(jMeterProperty -> {
-      Header header = (Header) jMeterProperty.getObjectValue();
-      buffer
-          .append(header.getName())
-          .append(": ")
-          .append(header.getValue())
-          .append("\r\n");
-    });
-
-    return buffer.toString();
-  }
-
-  private void setHeaders(Request request, HeaderManager headerManager, URL url) {
-    CollectionProperty headers = headerManager.getHeaders();
-
+  private void setHeaders(HttpRequest request, HeaderManager headerManager, URL url) {
     StreamSupport.stream(headerManager.getHeaders().spliterator(), false)
         .map(prop -> (Header) prop.getObjectValue())
+        .filter(header -> !HTTPConstants.HEADER_CONTENT_LENGTH.equalsIgnoreCase(header.getName()))
         .forEach(header -> {
-          String n = header.getName();
-
-          if (!HTTPConstants.HEADER_CONTENT_LENGTH.equalsIgnoreCase(n)) {
-            String v = header.getValue();
-            if (HTTPConstants.HEADER_HOST.equalsIgnoreCase(n)) {
-              int port = getPortFromHostHeader(v, url.getPort());
-              // remove any port specification
-              String newValue = v.replaceFirst(":\\d+$", "");  // $NON-NLS-1$ $NON-NLS-2$
-              if (port != -1 && port == url.getDefaultPort()) {
-                port = -1; // no need to specify the port if it is the default
-              }
-              if (port == -1) {
-                request.headers(httpFields -> httpFields.put(HEADER_HOST, newValue));
-              } else {
-                int p = port;
-                request.headers(httpFields -> httpFields.put(HEADER_HOST, newValue + ":" + p));
-              }
-            } else {
-              request.headers(httpFields -> httpFields.put(n, v));
+          String headerName = header.getName();
+          String headerValue = header.getValue();
+          if (HTTPConstants.HEADER_HOST.equalsIgnoreCase(headerName)) {
+            int port = getPortFromHostHeader(headerValue, url.getPort());
+            // remove any port specification
+            headerValue = headerValue.replaceFirst(":\\d+$", "");  // $NON-NLS-1$ $NON-NLS-2$
+            if (port != -1 && port == url.getDefaultPort()) {
+              port = -1; // no need to specify the port if it is the default
             }
+            if (port == -1) {
+              request.addHeader(new HttpField(HEADER_HOST, headerValue));
+            } else {
+              request.addHeader(new HttpField(HEADER_HOST, headerValue + ":" + port));
+            }
+          } else {
+            request.addHeader(new HttpField(headerName, headerValue));
           }
         });
   }

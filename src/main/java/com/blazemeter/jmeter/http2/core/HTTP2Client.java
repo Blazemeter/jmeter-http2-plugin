@@ -6,6 +6,7 @@ import org.apache.jmeter.protocol.http.util.HTTPConstants;
 import org.eclipse.jetty.client.HttpClient;
 import org.eclipse.jetty.client.HttpClientTransport;
 import org.eclipse.jetty.client.HttpProxy;
+import org.eclipse.jetty.client.HttpRequest;
 import org.eclipse.jetty.client.Origin.Address;
 import org.eclipse.jetty.client.api.Request;
 import org.eclipse.jetty.client.dynamic.HttpClientTransportDynamic;
@@ -39,14 +40,21 @@ public class HTTP2Client {
     httpClient.getProxyConfiguration().getProxies().add(proxy);
   }
 
-  public Request createRequest(URL url) throws URISyntaxException {
+  public HttpRequest createRequest(URL url) throws URISyntaxException, IllegalArgumentException {
+    HttpRequest rq;
     Request request = httpClient.newRequest(url.toURI());
-    if (http2StateListener != null) {
-      request.onRequestBegin(l -> http2StateListener.onConnectionEnd());
-      request.onResponseBegin(l -> http2StateListener.onLatencyEnd());
+
+    if (request instanceof HttpRequest) {
+      rq = (HttpRequest) request;
+      if (http2StateListener != null) {
+        rq.onRequestBegin(l -> http2StateListener.onConnectionEnd());
+        rq.onResponseBegin(l -> http2StateListener.onLatencyEnd());
+      }
+    } else {
+      throw new IllegalArgumentException("HttpRequest is expected");
     }
 
-    return request;
+    return rq;
   }
 
   public void start() throws Exception {
