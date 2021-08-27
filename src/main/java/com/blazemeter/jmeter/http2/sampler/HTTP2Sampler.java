@@ -7,7 +7,6 @@ import com.helger.commons.annotation.VisibleForTesting;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.HashMap;
-import java.util.*;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.Callable;
@@ -83,7 +82,8 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
           setHeaders(request, getHeaderManager(), getUrl());
         }
 
-        resultBuilder.withRequestHeaders(request.getHeaders().asString());
+        resultBuilder.withRequestHeaders(
+            request.getHeaders() != null ? request.getHeaders().asString() : "");
 
         ContentResponse contentResponse = request.send();
         resultBuilder.withContentResponse(contentResponse);
@@ -150,7 +150,6 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
             request.addHeader(new HttpField(headerName, headerValue));
           }
         });
-    System.out.println(request.getHeaders().asString());
   }
 
   private int getPortFromHostHeader(String hostHeaderValue, int defaultValue) {

@@ -4,7 +4,6 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
 import com.blazemeter.jmeter.http2.core.HTTP2Client;
-import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.concurrent.TimeoutException;
@@ -13,7 +12,6 @@ import org.apache.jmeter.protocol.http.control.HeaderManager;
 import org.apache.jmeter.protocol.http.sampler.HTTPSampleResult;
 import org.apache.jmeter.protocol.http.util.HTTPConstants;
 import org.assertj.core.api.JUnitSoftAssertions;
-import org.eclipse.jetty.client.HttpClient;
 import org.eclipse.jetty.client.HttpContentResponse;
 import org.eclipse.jetty.client.HttpRequest;
 import org.eclipse.jetty.client.HttpResponse;
@@ -28,20 +26,19 @@ import org.junit.Rule;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.Mock;
-import org.mockito.Mockito;
 import org.mockito.junit.MockitoJUnitRunner;
 
 @RunWith(MockitoJUnitRunner.class)
 public class HTTP2SamplerTest {
 
   public static final String RESPONSE_CONTENT = "Dummy Response";
-  public static final String REQUEST_HEADER = "Header1: value1\nHeader2: value2\n";
-  public static final String HEADER_MANAGER = "Header1: value1\r\nHeader2: value2\r\n";
+  public static final String HEADER_MANAGER = "Header1: value1\r\nHeader2: value2\r\n\r\n";
 
   @Rule
   public final JUnitSoftAssertions softly = new JUnitSoftAssertions();
   @Mock
   private HTTP2Client client;
+  @Mock
   private HttpRequest request;
   private HTTP2Sampler sampler;
 
@@ -52,9 +49,6 @@ public class HTTP2SamplerTest {
 
   @Before
   public void setup() {
-    HttpClient httpClient = Mockito.mock(HttpClient.class);
-    request = new HttpRequest(httpClient, null, URI.create("http://localhost")) {
-    };
     sampler = new HTTP2Sampler(() -> client);
   }
 
@@ -107,7 +101,8 @@ public class HTTP2SamplerTest {
   public void shouldReturnSuccessSampleResultWhenSuccessRequestWithHeaders() throws Exception {
     ContentResponse response = createResponse(HttpStatus.OK_200);
     when(client.createRequest(any())).thenReturn(request);
-    when(request.getHeaders()).thenReturn(HttpFields.build().put("string", "String"));
+    when(request.getHeaders()).thenReturn(HttpFields.build().put("Header1", "value1").put(
+        "Header2", "value2"));
     when(request.send()).thenReturn(response);
     configureSampler(HTTPConstants.GET);
     configureHeaderManagerToSampler();
@@ -150,6 +145,7 @@ public class HTTP2SamplerTest {
   }
 
   private void validateHeaders(HTTPSampleResult result) {
+    softly.assertThat(request.getHeaders().asString()).isEqualTo(HEADER_MANAGER);
     softly.assertThat(result.getRequestHeaders()).isEqualTo(HEADER_MANAGER);
   }
 
