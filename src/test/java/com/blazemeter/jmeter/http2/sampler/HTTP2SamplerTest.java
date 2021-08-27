@@ -4,6 +4,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
 import com.blazemeter.jmeter.http2.core.HTTP2Client;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.concurrent.TimeoutException;
@@ -12,11 +13,13 @@ import org.apache.jmeter.protocol.http.control.HeaderManager;
 import org.apache.jmeter.protocol.http.sampler.HTTPSampleResult;
 import org.apache.jmeter.protocol.http.util.HTTPConstants;
 import org.assertj.core.api.JUnitSoftAssertions;
+import org.eclipse.jetty.client.HttpClient;
 import org.eclipse.jetty.client.HttpContentResponse;
 import org.eclipse.jetty.client.HttpRequest;
 import org.eclipse.jetty.client.HttpResponse;
 import org.eclipse.jetty.client.api.ContentResponse;
 import org.eclipse.jetty.http.HttpField;
+import org.eclipse.jetty.http.HttpFields;
 import org.eclipse.jetty.http.HttpStatus;
 import org.eclipse.jetty.http.MimeTypes;
 import org.junit.Before;
@@ -25,6 +28,7 @@ import org.junit.Rule;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.Mock;
+import org.mockito.Mockito;
 import org.mockito.junit.MockitoJUnitRunner;
 
 @RunWith(MockitoJUnitRunner.class)
@@ -38,7 +42,6 @@ public class HTTP2SamplerTest {
   public final JUnitSoftAssertions softly = new JUnitSoftAssertions();
   @Mock
   private HTTP2Client client;
-  @Mock
   private HttpRequest request;
   private HTTP2Sampler sampler;
 
@@ -49,6 +52,9 @@ public class HTTP2SamplerTest {
 
   @Before
   public void setup() {
+    HttpClient httpClient = Mockito.mock(HttpClient.class);
+    request = new HttpRequest(httpClient, null, URI.create("http://localhost")) {
+    };
     sampler = new HTTP2Sampler(() -> client);
   }
 
@@ -101,6 +107,7 @@ public class HTTP2SamplerTest {
   public void shouldReturnSuccessSampleResultWhenSuccessRequestWithHeaders() throws Exception {
     ContentResponse response = createResponse(HttpStatus.OK_200);
     when(client.createRequest(any())).thenReturn(request);
+    when(request.getHeaders()).thenReturn(HttpFields.build().put("string", "String"));
     when(request.send()).thenReturn(response);
     configureSampler(HTTPConstants.GET);
     configureHeaderManagerToSampler();
