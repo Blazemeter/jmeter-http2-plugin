@@ -57,7 +57,7 @@ public class HTTP2SamplerTest {
     ContentResponse response = createResponse(HttpStatus.OK_200);
     when(client.createRequest(any())).thenReturn(request);
     when(request.send()).thenReturn(response);
-    configureSampler(HTTPConstants.GET);
+    configureSampler(HTTPConstants.POST);
     HTTPSampleResult result = sampler.sample();
     validateResponse(result, response);
   }
@@ -67,7 +67,7 @@ public class HTTP2SamplerTest {
     ContentResponse response = createResponse(HttpStatus.BAD_REQUEST_400);
     when(client.createRequest(any())).thenReturn(request);
     when(request.send()).thenReturn(response);
-    configureSampler(HTTPConstants.GET);
+    configureSampler(HTTPConstants.POST);
     HTTPSampleResult result = sampler.sample();
     validateResponse(result, response);
   }
@@ -92,7 +92,7 @@ public class HTTP2SamplerTest {
   public void shouldReturnErrorMessageWhenClientThrowException() throws Exception {
     when(client.createRequest(any())).thenReturn(request);
     when(request.send()).thenThrow(new TimeoutException());
-    configureSampler(HTTPConstants.GET);
+    configureSampler(HTTPConstants.POST);
     HTTPSampleResult result = sampler.sample();
     validateErrorResponse(result, TimeoutException.class.getName());
   }
