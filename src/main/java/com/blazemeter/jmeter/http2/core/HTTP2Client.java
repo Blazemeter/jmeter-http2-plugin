@@ -73,22 +73,17 @@ public class HTTP2Client {
       httpClient.start();
       Request request = httpClient.newRequest(url.toURI()).method(HttpMethod.POST);
 
-      // start - setting body - parameters
-      if (arguments != null && arguments.getArgumentCount() > 0) {
-        for (JMeterProperty jMeterProperty : arguments.getArguments()) {
-          HTTPArgument arg = (HTTPArgument) jMeterProperty.getObjectValue();
-          StringBuilder requestBody = new StringBuilder();
-          requestBody.append(arg.getName());
-          requestBody.append(arg.getValue());
-          String contentType = arg.getContentType();
-          request.body(new StringRequestContent(contentType, requestBody.toString()));
-          request.param(arg.getName(), arg.getValue());
-        }
-        request.path(path);
-      } else {
-        System.out.print("Arguments null or size equal zero");
+      StringBuilder requestBody = new StringBuilder(1000);
+
+      String contentType = "";
+      for (JMeterProperty jMeterProperty : arguments.getArguments()) {
+        HTTPArgument arg = (HTTPArgument) jMeterProperty.getObjectValue();
+        requestBody.append(arg.getName());
+        requestBody.append(arg.getValue());
+        contentType = arg.getContentType();
       }
-      // end - setting body - parameters
+      request.path(path);
+      request.body(new StringRequestContent(contentType, requestBody.toString()));
 
       return request.send();
 

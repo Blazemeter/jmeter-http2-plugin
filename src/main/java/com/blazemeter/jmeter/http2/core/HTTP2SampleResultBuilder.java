@@ -41,7 +41,7 @@ public class HTTP2SampleResultBuilder {
 
   public HTTP2SampleResultBuilder withContent(Arguments arguments) {
     if (arguments != null && arguments.getArgumentCount() > 0) {
-      StringBuilder content = new StringBuilder(100);
+      StringBuilder content = new StringBuilder(1000);
       for (JMeterProperty jMeterProperty : arguments.getArguments()) {
         HTTPArgument arg = (HTTPArgument) jMeterProperty.getObjectValue();
         content.append(arg.getName());
@@ -52,6 +52,9 @@ public class HTTP2SampleResultBuilder {
       result.setSamplerData(content.toString());
     } else {
       System.out.print("Arguments null or size equal zero");
+      StringBuilder content = new StringBuilder();
+      content.append("");
+      result.setSamplerData(content.toString());
     }
 
     return this;
