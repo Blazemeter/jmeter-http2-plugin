@@ -47,7 +47,7 @@ public class HTTP2ClientTest {
   }
 
   @Test
-  public void shouldGetResponseWhenPostMethodIsSent() throws Exception {
+  public void shouldGetResponseWhenGetMethodIsSent() throws Exception {
     startServer(createGetServerResponse());
     ContentResponse response = client.createRequest(new URL(HTTPConstants.PROTOCOL_HTTPS,
         "localhost", connector.getLocalPort(), SERVER_PATH)).send();
