@@ -10,21 +10,27 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.Callable;
+import java.util.regex.Pattern;
+import java.util.stream.StreamSupport;
 import org.apache.jmeter.engine.event.LoopIterationEvent;
 import org.apache.jmeter.engine.event.LoopIterationListener;
+import org.apache.jmeter.protocol.http.control.Header;
+import org.apache.jmeter.protocol.http.control.HeaderManager;
 import org.apache.jmeter.protocol.http.sampler.HTTPSampleResult;
 import org.apache.jmeter.protocol.http.sampler.HTTPSamplerBase;
 import org.apache.jmeter.protocol.http.util.HTTPConstants;
 import org.apache.jmeter.testelement.ThreadListener;
 import org.apache.jmeter.threads.JMeterContextService;
 import org.apache.jmeter.threads.JMeterVariables;
+import org.eclipse.jetty.client.HttpRequest;
 import org.eclipse.jetty.client.api.ContentResponse;
-import org.eclipse.jetty.client.api.Request;
+import org.eclipse.jetty.http.HttpField;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListener, ThreadListener {
 
+  private static final Pattern PORT_PATTERN = Pattern.compile("\\d+");
   private static final Logger LOG = LoggerFactory.getLogger(HTTP2Sampler.class);
   private static final ThreadLocal<Map<HTTP2ClientKey, HTTP2Client>> CONNECTIONS = ThreadLocal
       .withInitial(HashMap::new);
@@ -51,6 +57,7 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
     try {
       resultBuilder.withLabel(getSampleLabel(resultBuilder)).withMethod(getMethod())
           .withUrl(getUrl());
+
       HTTP2Client client = clientFactory.call();
       client.setHTTP2StateListener(new HTTP2StateListener() {
         @Override
@@ -63,15 +70,24 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
           resultBuilder.withLatencyEnd();
         }
       });
+
       if (!getProxyHost().isEmpty()) {
         client.setProxy(getProxyHost(), getProxyPortInt(), getProxyScheme());
       }
+
       if (getMethod().equals(HTTPConstants.GET)) {
-        Request request = client.createRequest(getUrl());
+        HttpRequest request = client.createRequest(getUrl());
+
+        if (getHeaderManager() != null) {
+          setHeaders(request, getHeaderManager(), getUrl());
+        }
+
         resultBuilder.withRequestHeaders(
             request.getHeaders() != null ? request.getHeaders().asString() : "");
+
         ContentResponse contentResponse = request.send();
         resultBuilder.withContentResponse(contentResponse);
+
       } else {
         throw new UnsupportedOperationException(
             String.format("Method %s is not supported", getMethod()));
@@ -111,13 +127,48 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
         : buildClient();
   }
 
+  private void setHeaders(HttpRequest request, HeaderManager headerManager, URL url) {
+    StreamSupport.stream(headerManager.getHeaders().spliterator(), false)
+        .map(prop -> (Header) prop.getObjectValue())
+        .filter(header -> !HTTPConstants.HEADER_CONTENT_LENGTH.equalsIgnoreCase(header.getName()))
+        .forEach(header -> {
+          String headerName = header.getName();
+          String headerValue = header.getValue();
+          if (HTTPConstants.HEADER_HOST.equalsIgnoreCase(headerName)) {
+            int port = getPortFromHostHeader(headerValue, url.getPort());
+            // remove any port specification
+            headerValue = headerValue.replaceFirst(":\\d+$", "");  // $NON-NLS-1$ $NON-NLS-2$
+            if (port != -1 && port == url.getDefaultPort()) {
+              port = -1; // no need to specify the port if it is the default
+            }
+            if (port == -1) {
+              request.addHeader(new HttpField(HEADER_HOST, headerValue));
+            } else {
+              request.addHeader(new HttpField(HEADER_HOST, headerValue + ":" + port));
+            }
+          } else {
+            request.addHeader(new HttpField(headerName, headerValue));
+          }
+        });
+  }
+
+  private int getPortFromHostHeader(String hostHeaderValue, int defaultValue) {
+    String[] hostParts = hostHeaderValue.split(":");
+    if (hostParts.length > 1) {
+      String portString = hostParts[hostParts.length - 1];
+      if (PORT_PATTERN.matcher(portString).matches()) {
+        return Integer.parseInt(portString);
+      }
+    }
+    return defaultValue;
+  }
+
   @Override
   public void iterationStart(LoopIterationEvent iterEvent) {
     JMeterVariables jMeterVariables = JMeterContextService.getContext().getVariables();
     if (!jMeterVariables.isSameUserOnNextIteration()) {
       closeConnections();
     }
-
   }
 
   private void closeConnections() {

@@ -41,6 +41,11 @@ public class HTTP2SampleResultBuilder {
     return this;
   }
 
+  public HTTP2SampleResultBuilder withRequestHeaders(String headers) {
+    result.setRequestHeaders(headers);
+    return this;
+  }
+
   public HTTPSampleResult build() {
     result.sampleEnd();
     return result;
@@ -68,10 +73,5 @@ public class HTTP2SampleResultBuilder {
 
   public boolean isRenameSampleLabel() {
     return result.isRenameSampleLabel();
-  }
-
-  public HTTP2SampleResultBuilder withRequestHeaders(String headers) {
-    result.setRequestHeaders(headers);
-    return this;
   }
 }
