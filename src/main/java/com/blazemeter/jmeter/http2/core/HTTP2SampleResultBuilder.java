@@ -3,11 +3,8 @@ package com.blazemeter.jmeter.http2.core;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.net.URL;
-import org.apache.jmeter.config.Arguments;
 import org.apache.jmeter.protocol.http.sampler.HTTPSampleResult;
-import org.apache.jmeter.protocol.http.util.HTTPArgument;
 import org.apache.jmeter.samplers.SampleResult;
-import org.apache.jmeter.testelement.property.JMeterProperty;
 import org.eclipse.jetty.client.api.ContentResponse;
 
 public class HTTP2SampleResultBuilder {
@@ -39,29 +36,8 @@ public class HTTP2SampleResultBuilder {
     return this;
   }
 
-  public HTTP2SampleResultBuilder withContent(Arguments arguments) {
-    if (arguments != null && arguments.getArgumentCount() > 0) {
-      StringBuilder content = new StringBuilder(1000);
-      for (JMeterProperty jMeterProperty : arguments.getArguments()) {
-        HTTPArgument arg = (HTTPArgument) jMeterProperty.getObjectValue();
-        content.append(arg.getName());
-        content.append(": ");
-        content.append(arg.getValue());
-        content.append("\n");
-      }
-      result.setSamplerData(content.toString());
-    } else {
-      System.out.print("Arguments null or size equal zero");
-      StringBuilder content = new StringBuilder();
-      content.append("");
-      result.setSamplerData(content.toString());
-    }
-
-    return this;
-  }
-
-  public HTTP2SampleResultBuilder withMethod(String method) {
-    result.setHTTPMethod(method);
+  public HTTP2SampleResultBuilder withContent(String content) {
+    result.setQueryString(content);
     return this;
   }
 

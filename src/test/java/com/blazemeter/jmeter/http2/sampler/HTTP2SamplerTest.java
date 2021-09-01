@@ -149,7 +149,7 @@ public class HTTP2SamplerTest {
     softly.assertThat(result.getRequestHeaders()).isEqualTo(HEADER_MANAGER);
   }
 
-  public void validateErrorResponse(HTTPSampleResult result, String code) {
+  private void validateErrorResponse(HTTPSampleResult result, String code) {
     softly.assertThat(result.isSuccessful()).isEqualTo(false);
     softly.assertThat(result.getResponseCode()).isEqualTo(code);
   }

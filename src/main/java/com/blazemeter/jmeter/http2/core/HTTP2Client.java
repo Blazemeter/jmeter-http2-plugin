@@ -2,14 +2,12 @@ package com.blazemeter.jmeter.http2.core;
 
 import java.net.URISyntaxException;
 import java.net.URL;
-import org.apache.jmeter.protocol.http.control.HeaderManager;
 import org.apache.jmeter.protocol.http.util.HTTPConstants;
 import org.eclipse.jetty.client.HttpClient;
 import org.eclipse.jetty.client.HttpClientTransport;
 import org.eclipse.jetty.client.HttpProxy;
 import org.eclipse.jetty.client.HttpRequest;
 import org.eclipse.jetty.client.Origin.Address;
-import org.eclipse.jetty.client.api.ContentResponse;
 import org.eclipse.jetty.client.api.Request;
 import org.eclipse.jetty.client.dynamic.HttpClientTransportDynamic;
 import org.eclipse.jetty.client.http.HttpClientConnectionFactory;
@@ -43,20 +41,18 @@ public class HTTP2Client {
   }
 
   public HttpRequest createRequest(URL url) throws URISyntaxException, IllegalArgumentException {
-    HttpRequest rq;
     Request request = httpClient.newRequest(url.toURI());
-
+    HttpRequest httpRequest;
     if (request instanceof HttpRequest) {
-      rq = (HttpRequest) request;
+      httpRequest = (HttpRequest) request;
       if (http2StateListener != null) {
-        rq.onRequestBegin(l -> http2StateListener.onConnectionEnd());
-        rq.onResponseBegin(l -> http2StateListener.onLatencyEnd());
+        httpRequest.onRequestBegin(l -> http2StateListener.onConnectionEnd());
+        httpRequest.onResponseBegin(l -> http2StateListener.onLatencyEnd());
       }
     } else {
       throw new IllegalArgumentException("HttpRequest is expected");
     }
-
-    return rq;
+    return httpRequest;
   }
 
   public void start() throws Exception {
@@ -65,32 +61,6 @@ public class HTTP2Client {
 
   public void stop() throws Exception {
     httpClient.stop();
-  }
-
-  public ContentResponse doPost(URL url, Arguments arguments,
-      String path) throws Exception {
-    try {
-      httpClient.start();
-      Request request = httpClient.newRequest(url.toURI()).method(HttpMethod.POST);
-
-      StringBuilder requestBody = new StringBuilder(1000);
-
-      String contentType = "";
-      for (JMeterProperty jMeterProperty : arguments.getArguments()) {
-        HTTPArgument arg = (HTTPArgument) jMeterProperty.getObjectValue();
-        requestBody.append(arg.getName());
-        requestBody.append(arg.getValue());
-        contentType = arg.getContentType();
-      }
-      request.path(path);
-      request.body(new StringRequestContent(contentType, requestBody.toString()));
-
-      return request.send();
-
-    } finally {
-      httpClient.stop();
-    }
-
   }
 
   public void setHTTP2StateListener(HTTP2StateListener http2StateListener) {
