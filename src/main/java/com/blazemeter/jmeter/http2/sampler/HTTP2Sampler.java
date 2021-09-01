@@ -168,7 +168,10 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
           fields.add(parameterName, parameterValue);
         }
       }
-      resultBuilder.withContent(fields.toString());
+      StringBuilder responsePostBody = new StringBuilder();
+      fields.forEach(f -> responsePostBody.append(f.getName()).append("=").append(f.getValue())
+          .append("&"));
+      resultBuilder.withContent(responsePostBody.substring(0, responsePostBody.length() - 1));
       if (contentEncoding.isEmpty()) {
         requestContent = new FormRequestContent(fields);
       } else {
