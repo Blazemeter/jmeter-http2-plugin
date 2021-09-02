@@ -83,32 +83,37 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
       if (!getProxyHost().isEmpty()) {
         client.setProxy(getProxyHost(), getProxyPortInt(), getProxyScheme());
       }
+
       HttpRequest request = client.createRequest(getUrl());
       request.method(getMethod());
+
       if (getHeaderManager() != null) {
         setHeaders(request, getHeaderManager(), getUrl());
       }
+
       if (getMethod().equals(HTTPConstants.POST)) {
         setBody(request, resultBuilder);
       }
+
       if (isSupportedMethod(getMethod())) {
         ContentResponse contentResponse = request.send();
         resultBuilder.withContentResponse(contentResponse);
-        resultBuilder.withRedirectLocation(
-            request.getHeaders() != null
-                ? request.getHeaders().get(HTTPConstants.HEADER_LOCATION)
-                : null);
-
       } else {
         throw new UnsupportedOperationException(
             String.format("Method %s is not supported", getMethod()));
       }
 
-      resultBuilder = new HTTP2SampleResultBuilder(resultProcessing(b, i,
-          resultBuilder.getResult()));
+      resultBuilder.withRedirectLocation(
+          request.getHeaders() != null
+              ? request.getHeaders().get(HTTPConstants.HEADER_LOCATION)
+              : null);
 
       resultBuilder.withRequestHeaders(
           request.getHeaders() != null ? request.getHeaders().asString() : "");
+
+      resultBuilder = new HTTP2SampleResultBuilder(resultProcessing(b, i,
+          resultBuilder.getResult()));
+
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
       LOG.error("The sampling has been interrupted", e);
