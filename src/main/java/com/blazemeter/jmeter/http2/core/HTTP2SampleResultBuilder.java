@@ -55,6 +55,11 @@ public class HTTP2SampleResultBuilder {
     return this;
   }
 
+  public HTTP2SampleResultBuilder withContent(String content) {
+    result.setQueryString(content);
+    return this;
+  }
+
   public HTTP2SampleResultBuilder withLabel(String label) {
     result.setSampleLabel(label);
     return this;

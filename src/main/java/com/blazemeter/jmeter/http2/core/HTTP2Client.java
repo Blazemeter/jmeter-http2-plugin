@@ -41,20 +41,18 @@ public class HTTP2Client {
   }
 
   public HttpRequest createRequest(URL url) throws URISyntaxException, IllegalArgumentException {
-    HttpRequest rq;
     Request request = httpClient.newRequest(url.toURI());
-
+    HttpRequest httpRequest;
     if (request instanceof HttpRequest) {
-      rq = (HttpRequest) request;
+      httpRequest = (HttpRequest) request;
       if (http2StateListener != null) {
-        rq.onRequestBegin(l -> http2StateListener.onConnectionEnd());
-        rq.onResponseBegin(l -> http2StateListener.onLatencyEnd());
+        httpRequest.onRequestBegin(l -> http2StateListener.onConnectionEnd());
+        httpRequest.onResponseBegin(l -> http2StateListener.onLatencyEnd());
       }
     } else {
       throw new IllegalArgumentException("HttpRequest is expected");
     }
-
-    return rq;
+    return httpRequest;
   }
 
   public void start() throws Exception {
