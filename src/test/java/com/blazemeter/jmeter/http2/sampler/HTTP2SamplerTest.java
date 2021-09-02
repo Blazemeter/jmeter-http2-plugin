@@ -4,6 +4,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
 import com.blazemeter.jmeter.http2.core.HTTP2Client;
+import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.concurrent.TimeoutException;
@@ -73,8 +74,9 @@ public class HTTP2SamplerTest {
   }
 
   @Test
-  public void shouldReturnErrorMessageWhenMethodIsNotGET() {
-    configureSampler(HTTPConstants.POST);
+  public void shouldReturnErrorMessageWhenMethodIsNotSupported() throws URISyntaxException {
+    when(client.createRequest(any())).thenReturn(request);
+    configureSampler("MethodNotSupported");
     HTTPSampleResult result = sampler.sample();
     validateErrorResponse(result, UnsupportedOperationException.class.getName());
   }
@@ -149,7 +151,7 @@ public class HTTP2SamplerTest {
     softly.assertThat(result.getRequestHeaders()).isEqualTo(HEADER_MANAGER);
   }
 
-  public void validateErrorResponse(HTTPSampleResult result, String code) {
+  private void validateErrorResponse(HTTPSampleResult result, String code) {
     softly.assertThat(result.isSuccessful()).isEqualTo(false);
     softly.assertThat(result.getResponseCode()).isEqualTo(code);
   }

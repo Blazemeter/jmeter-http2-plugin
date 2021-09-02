@@ -4,11 +4,18 @@ import com.blazemeter.jmeter.http2.core.HTTP2Client;
 import com.blazemeter.jmeter.http2.core.HTTP2SampleResultBuilder;
 import com.blazemeter.jmeter.http2.core.HTTP2StateListener;
 import com.helger.commons.annotation.VisibleForTesting;
+import java.io.UnsupportedEncodingException;
 import java.net.MalformedURLException;
 import java.net.URL;
+import java.net.URLDecoder;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.regex.Pattern;
 import java.util.stream.StreamSupport;
@@ -18,18 +25,30 @@ import org.apache.jmeter.protocol.http.control.Header;
 import org.apache.jmeter.protocol.http.control.HeaderManager;
 import org.apache.jmeter.protocol.http.sampler.HTTPSampleResult;
 import org.apache.jmeter.protocol.http.sampler.HTTPSamplerBase;
+import org.apache.jmeter.protocol.http.util.HTTPArgument;
 import org.apache.jmeter.protocol.http.util.HTTPConstants;
 import org.apache.jmeter.testelement.ThreadListener;
+import org.apache.jmeter.testelement.property.JMeterProperty;
+import org.apache.jmeter.testelement.property.PropertyIterator;
 import org.apache.jmeter.threads.JMeterContextService;
 import org.apache.jmeter.threads.JMeterVariables;
+import org.apache.jmeter.util.JMeterUtils;
 import org.eclipse.jetty.client.HttpRequest;
 import org.eclipse.jetty.client.api.ContentResponse;
+import org.eclipse.jetty.client.api.Request.Content;
+import org.eclipse.jetty.client.util.FormRequestContent;
+import org.eclipse.jetty.client.util.StringRequestContent;
 import org.eclipse.jetty.http.HttpField;
+import org.eclipse.jetty.util.Fields;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListener, ThreadListener {
 
+  private static final Set<String> SUPPORTED_METHODS =
+      new HashSet<>(Arrays.asList(HTTPConstants.GET, HTTPConstants.POST));
+  private static final boolean ADD_CONTENT_TYPE_TO_POST_IF_MISSING = JMeterUtils.getPropDefault(
+      "http.post_add_content_type_if_missing", false);
   private static final Pattern PORT_PATTERN = Pattern.compile("\\d+");
   private static final Logger LOG = LoggerFactory.getLogger(HTTP2Sampler.class);
   private static final ThreadLocal<Map<HTTP2ClientKey, HTTP2Client>> CONNECTIONS = ThreadLocal
@@ -38,6 +57,7 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
 
   public HTTP2Sampler() {
     setName("HTTP2 Sampler");
+    setMethod(HTTPConstants.GET);
     clientFactory = this::getClient;
   }
 
@@ -57,7 +77,6 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
     try {
       resultBuilder.withLabel(getSampleLabel(resultBuilder)).withMethod(getMethod())
           .withUrl(getUrl());
-
       HTTP2Client client = clientFactory.call();
       client.setHTTP2StateListener(new HTTP2StateListener() {
         @Override
@@ -70,28 +89,26 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
           resultBuilder.withLatencyEnd();
         }
       });
-
       if (!getProxyHost().isEmpty()) {
         client.setProxy(getProxyHost(), getProxyPortInt(), getProxyScheme());
       }
-
-      if (getMethod().equals(HTTPConstants.GET)) {
-        HttpRequest request = client.createRequest(getUrl());
-
-        if (getHeaderManager() != null) {
-          setHeaders(request, getHeaderManager(), getUrl());
-        }
-
-        resultBuilder.withRequestHeaders(
-            request.getHeaders() != null ? request.getHeaders().asString() : "");
-
+      HttpRequest request = client.createRequest(getUrl());
+      request.method(getMethod());
+      if (getHeaderManager() != null) {
+        setHeaders(request, getHeaderManager(), getUrl());
+      }
+      if (getMethod().equals(HTTPConstants.POST)) {
+        setBody(request, resultBuilder);
+      }
+      if (isSupportedMethod(getMethod())) {
         ContentResponse contentResponse = request.send();
         resultBuilder.withContentResponse(contentResponse);
-
       } else {
         throw new UnsupportedOperationException(
             String.format("Method %s is not supported", getMethod()));
       }
+      resultBuilder.withRequestHeaders(
+          request.getHeaders() != null ? request.getHeaders().asString() : "");
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
       LOG.error("The sampling has been interrupted", e);
@@ -101,6 +118,56 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
       resultBuilder.withFailure(e);
     }
     return resultBuilder.build();
+  }
+
+  private void setBody(HttpRequest request, HTTP2SampleResultBuilder resultBuilder)
+      throws UnsupportedEncodingException {
+    final String contentEncoding = getContentEncoding();
+    Charset contentCharset =
+        !contentEncoding.isEmpty() ? Charset.forName(contentEncoding) : StandardCharsets.UTF_8;
+    String contentTypeHeader = request.getHeaders().get(HTTPConstants.HEADER_CONTENT_TYPE);
+    boolean hasContentTypeHeader = contentTypeHeader != null && contentTypeHeader.isEmpty();
+    if (!hasContentTypeHeader && ADD_CONTENT_TYPE_TO_POST_IF_MISSING) {
+      request.addHeader(new HttpField(HTTPConstants.HEADER_CONTENT_TYPE,
+          HTTPConstants.APPLICATION_X_WWW_FORM_URLENCODED));
+    }
+    StringBuilder postBody = new StringBuilder();
+    Content requestContent;
+    if (getSendParameterValuesAsPostBody()) {
+      for (JMeterProperty jMeterProperty : getArguments()) {
+        HTTPArgument arg = (HTTPArgument) jMeterProperty.getObjectValue();
+        postBody.append(arg.getEncodedValue(contentCharset.name()));
+      }
+      requestContent = new StringRequestContent(contentTypeHeader, postBody.toString(),
+          contentCharset);
+      resultBuilder.withContent(postBody.toString());
+      request.body(requestContent);
+    } else {
+      PropertyIterator args = getArguments().iterator();
+      Fields fields = new Fields();
+      while (args.hasNext()) {
+        HTTPArgument arg = (HTTPArgument) args.next().getObjectValue();
+        String parameterName = arg.getName();
+        if (!arg.isSkippable(parameterName)) {
+          String parameterValue = arg.getValue();
+          if (!arg.isAlwaysEncoded()) {
+            // The FormRequestContent always urlencodes both name and value, in this case the value
+            // is already encoded by the user so is needed to decode the value now, so that when the
+            // httpclient encodes it, we end up with the same value as the user had entered.
+            parameterName = URLDecoder.decode(parameterName, contentCharset.name());
+            parameterValue = URLDecoder.decode(parameterValue, contentCharset.name());
+          }
+          fields.add(parameterName, parameterValue);
+        }
+      }
+      requestContent = new FormRequestContent(fields, contentCharset);
+      resultBuilder.withContent(FormRequestContent.convert(fields));
+    }
+    request.body(requestContent);
+  }
+
+  private boolean isSupportedMethod(String method) {
+    return SUPPORTED_METHODS.contains(method);
   }
 
   private String getSampleLabel(HTTP2SampleResultBuilder resultBuilder)
@@ -137,16 +204,17 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
           if (HTTPConstants.HEADER_HOST.equalsIgnoreCase(headerName)) {
             int port = getPortFromHostHeader(headerValue, url.getPort());
             // remove any port specification
-            headerValue = headerValue.replaceFirst(":\\d+$", "");  // $NON-NLS-1$ $NON-NLS-2$
+            headerValue = headerValue.replaceFirst(":\\d+$", "");
             if (port != -1 && port == url.getDefaultPort()) {
-              port = -1; // no need to specify the port if it is the default
+              // no need to specify the port if it is the default
+              port = -1;
             }
             if (port == -1) {
               request.addHeader(new HttpField(HEADER_HOST, headerValue));
             } else {
               request.addHeader(new HttpField(HEADER_HOST, headerValue + ":" + port));
             }
-          } else {
+          } else if (!headerName.isEmpty()) {
             request.addHeader(new HttpField(headerName, headerValue));
           }
         });
