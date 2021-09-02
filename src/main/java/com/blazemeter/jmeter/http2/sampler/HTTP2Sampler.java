@@ -9,6 +9,7 @@ import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLDecoder;
 import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -24,7 +25,6 @@ import org.apache.jmeter.protocol.http.control.Header;
 import org.apache.jmeter.protocol.http.control.HeaderManager;
 import org.apache.jmeter.protocol.http.sampler.HTTPSampleResult;
 import org.apache.jmeter.protocol.http.sampler.HTTPSamplerBase;
-import org.apache.jmeter.protocol.http.util.EncoderCache;
 import org.apache.jmeter.protocol.http.util.HTTPArgument;
 import org.apache.jmeter.protocol.http.util.HTTPConstants;
 import org.apache.jmeter.testelement.ThreadListener;
@@ -123,8 +123,10 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
   private void setBody(HttpRequest request, HTTP2SampleResultBuilder resultBuilder)
       throws UnsupportedEncodingException {
     final String contentEncoding = getContentEncoding();
+    Charset contentCharset =
+        !contentEncoding.isEmpty() ? Charset.forName(contentEncoding) : StandardCharsets.UTF_8;
     String contentTypeHeader = request.getHeaders().get(HTTPConstants.HEADER_CONTENT_TYPE);
-    boolean hasContentTypeHeader = contentTypeHeader != null && contentTypeHeader.length() > 0;
+    boolean hasContentTypeHeader = contentTypeHeader != null && contentTypeHeader.isEmpty();
     if (!hasContentTypeHeader && ADD_CONTENT_TYPE_TO_POST_IF_MISSING) {
       request.addHeader(new HttpField(HTTPConstants.HEADER_CONTENT_TYPE,
           HTTPConstants.APPLICATION_X_WWW_FORM_URLENCODED));
@@ -134,26 +136,15 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
     if (getSendParameterValuesAsPostBody()) {
       for (JMeterProperty jMeterProperty : getArguments()) {
         HTTPArgument arg = (HTTPArgument) jMeterProperty.getObjectValue();
-        if (!contentEncoding.isEmpty()) {
-          postBody.append(arg.getEncodedValue(contentEncoding));
-        } else {
-          postBody.append(arg.getEncodedValue());
-        }
+        postBody.append(arg.getEncodedValue(contentCharset.name()));
       }
-      if (contentEncoding.isEmpty()) {
-        requestContent = new StringRequestContent(contentTypeHeader, postBody.toString());
-      } else {
-        requestContent = new StringRequestContent(contentTypeHeader, postBody.toString(),
-            Charset.forName(contentEncoding));
-      }
+      requestContent = new StringRequestContent(contentTypeHeader, postBody.toString(),
+          contentCharset);
       resultBuilder.withContent(postBody.toString());
       request.body(requestContent);
     } else {
-      //UrlEncodedFormEntity entity = createUrlEncodedFormEntity(urlContentEncoding);
       PropertyIterator args = getArguments().iterator();
       Fields fields = new Fields();
-      String urlContentEncoding = contentEncoding.isEmpty() ? EncoderCache.URL_ARGUMENT_ENCODING
-          : contentEncoding;
       while (args.hasNext()) {
         HTTPArgument arg = (HTTPArgument) args.next().getObjectValue();
         String parameterName = arg.getName();
@@ -163,21 +154,14 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
             // The FormRequestContent always urlencodes both name and value, in this case the value
             // is already encoded by the user so is needed to decode the value now, so that when the
             // httpclient encodes it, we end up with the same value as the user had entered.
-            parameterName = URLDecoder.decode(parameterName, urlContentEncoding);
-            parameterValue = URLDecoder.decode(parameterValue, urlContentEncoding);
+            parameterName = URLDecoder.decode(parameterName, contentCharset.name());
+            parameterValue = URLDecoder.decode(parameterValue, contentCharset.name());
           }
           fields.add(parameterName, parameterValue);
         }
       }
-      StringBuilder responsePostBody = new StringBuilder();
-      fields.forEach(f -> responsePostBody.append(f.getName()).append("=").append(f.getValue())
-          .append("&"));
-      resultBuilder.withContent(responsePostBody.substring(0, responsePostBody.length() - 1));
-      if (contentEncoding.isEmpty()) {
-        requestContent = new FormRequestContent(fields);
-      } else {
-        requestContent = new FormRequestContent(fields, Charset.forName(contentEncoding));
-      }
+      requestContent = new FormRequestContent(fields, contentCharset);
+      resultBuilder.withContent(FormRequestContent.convert(fields));
     }
     request.body(requestContent);
   }
