@@ -57,6 +57,7 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
 
   public HTTP2Sampler() {
     setName("HTTP2 Sampler");
+    setMethod(HTTPConstants.GET);
     clientFactory = this::getClient;
   }
 
@@ -96,8 +97,6 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
       if (getHeaderManager() != null) {
         setHeaders(request, getHeaderManager(), getUrl());
       }
-      resultBuilder.withRequestHeaders(
-          request.getHeaders() != null ? request.getHeaders().asString() : "");
       if (getMethod().equals(HTTPConstants.POST)) {
         setBody(request, resultBuilder);
       }
@@ -108,6 +107,8 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
         throw new UnsupportedOperationException(
             String.format("Method %s is not supported", getMethod()));
       }
+      resultBuilder.withRequestHeaders(
+          request.getHeaders() != null ? request.getHeaders().asString() : "");
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
       LOG.error("The sampling has been interrupted", e);
