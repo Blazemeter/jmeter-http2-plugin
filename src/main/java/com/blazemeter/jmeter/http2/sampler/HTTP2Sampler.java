@@ -58,18 +58,7 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
       resultBuilder.withLabel(getSampleLabel(resultBuilder)).withMethod(getMethod())
           .withUrl(getUrl());
 
-      HTTP2Client client = clientFactory.call();
-      client.setHTTP2StateListener(new HTTP2StateListener() {
-        @Override
-        public void onConnectionEnd() {
-          resultBuilder.withConnectionEnd();
-        }
-
-        @Override
-        public void onLatencyEnd() {
-          resultBuilder.withLatencyEnd();
-        }
-      });
+      HTTP2Client client = getHttp2Client(resultBuilder);
 
       if (!getProxyHost().isEmpty()) {
         client.setProxy(getProxyHost(), getProxyPortInt(), getProxyScheme());
@@ -87,11 +76,19 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
 
         ContentResponse contentResponse = request.send();
         resultBuilder.withContentResponse(contentResponse);
+        resultBuilder.withRedirectLocation(
+            request.getHeaders() != null
+                ? request.getHeaders().get(HTTPConstants.HEADER_LOCATION)
+                : null);
 
       } else {
         throw new UnsupportedOperationException(
             String.format("Method %s is not supported", getMethod()));
       }
+
+      resultBuilder = new HTTP2SampleResultBuilder(resultProcessing(b, i,
+          resultBuilder.getResult()));
+
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
       LOG.error("The sampling has been interrupted", e);
@@ -101,6 +98,22 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
       resultBuilder.withFailure(e);
     }
     return resultBuilder.build();
+  }
+
+  private HTTP2Client getHttp2Client(HTTP2SampleResultBuilder resultBuilder) throws Exception {
+    HTTP2Client client = clientFactory.call();
+    client.setHTTP2StateListener(new HTTP2StateListener() {
+      @Override
+      public void onConnectionEnd() {
+        resultBuilder.withConnectionEnd();
+      }
+
+      @Override
+      public void onLatencyEnd() {
+        resultBuilder.withLatencyEnd();
+      }
+    });
+    return client;
   }
 
   private String getSampleLabel(HTTP2SampleResultBuilder resultBuilder)

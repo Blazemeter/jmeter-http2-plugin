@@ -16,6 +16,25 @@ public class HTTP2SampleResultBuilder {
     result.sampleStart();
   }
 
+  public HTTP2SampleResultBuilder(HTTPSampleResult httpSampleResult) {
+    result = new HTTPSampleResult(httpSampleResult);
+  }
+
+  public HTTP2SampleResultBuilder withRedirectLocation(String redirectLocation) {
+    if (result.isRedirect()) {
+      if (redirectLocation == null) { // HTTP protocol violation, but avoids NPE
+        throw new IllegalArgumentException("Missing location header in redirect");
+      }
+      result.setRedirectLocation(redirectLocation);
+    }
+
+    return this;
+  }
+
+  public HTTPSampleResult getResult() {
+    return result;
+  }
+
   public HTTP2SampleResultBuilder withFailure(Exception e) {
     result.setSuccessful(false);
     result.setResponseCode(e.getClass().getName());
