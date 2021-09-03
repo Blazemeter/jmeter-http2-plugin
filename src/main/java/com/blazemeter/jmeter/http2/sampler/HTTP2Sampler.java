@@ -76,7 +76,7 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
     HTTP2SampleResultBuilder resultBuilder = new HTTP2SampleResultBuilder();
     try {
       URL newURL = url != null ? url : getUrl();
-      resultBuilder.withLabel(getSampleLabel(resultBuilder)).withMethod(getMethod())
+      resultBuilder.withLabel(getSampleLabel(resultBuilder, newURL)).withMethod(getMethod())
           .withUrl(getUrl());
 
       HTTP2Client client = getHttp2Client(resultBuilder);
@@ -113,21 +113,11 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
             String.format("Method %s is not supported", getMethod()));
       }
 
-      resultBuilder
-          .withRequestHeaders(
-              request.getHeaders() != null
-                  ? request.getHeaders().asString()
-                  : "");
-          // .build();
-
       resultBuilder.withRequestHeaders(
           request.getHeaders() != null ? request.getHeaders().asString() : "");
 
       resultBuilder = new HTTP2SampleResultBuilder(resultProcessing(b, i,
           resultBuilder.getResult()));
-
-      // HTTPSampleResult newHttpSampleResult = resultProcessing(b, i, resultBuilder.getResult());
-      // resultBuilder.setResult(newHttpSampleResult);
 
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
@@ -206,9 +196,9 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
     return SUPPORTED_METHODS.contains(method);
   }
 
-  private String getSampleLabel(HTTP2SampleResultBuilder resultBuilder)
+  private String getSampleLabel(HTTP2SampleResultBuilder resultBuilder, URL url)
       throws MalformedURLException {
-    return resultBuilder.isRenameSampleLabel() ? getName() : getUrl().toString();
+    return resultBuilder.isRenameSampleLabel() ? getName() : url.toString();
   }
 
   private HTTP2Client buildClient() throws Exception {
