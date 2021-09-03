@@ -21,12 +21,10 @@ public class HTTP2SampleResultBuilder {
   }
 
   public HTTP2SampleResultBuilder withRedirectLocation(String redirectLocation) {
-    if (result.isRedirect()) {
-      if (redirectLocation == null) { // HTTP protocol violation, but avoids NPE
-        throw new IllegalArgumentException("Missing location header in redirect");
-      }
-      result.setRedirectLocation(redirectLocation);
+    if (redirectLocation == null) { // HTTP protocol violation, but avoids NPE
+      throw new IllegalArgumentException("Missing location header in redirect");
     }
+    result.setRedirectLocation(redirectLocation);
 
     return this;
   }

@@ -75,6 +75,7 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
   protected HTTPSampleResult sample(URL url, String s, boolean b, int i) {
     HTTP2SampleResultBuilder resultBuilder = new HTTP2SampleResultBuilder();
     try {
+      URL newURL = url != null ? url : getUrl();
       resultBuilder.withLabel(getSampleLabel(resultBuilder)).withMethod(getMethod())
           .withUrl(getUrl());
 
@@ -84,11 +85,14 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
         client.setProxy(getProxyHost(), getProxyPortInt(), getProxyScheme());
       }
 
-      HttpRequest request = client.createRequest(getUrl());
+      HttpRequest request = client.createRequest(newURL);
+      if (getFollowRedirects()) {
+        request.followRedirects(false);
+      }
       request.method(getMethod());
 
       if (getHeaderManager() != null) {
-        setHeaders(request, getHeaderManager(), getUrl());
+        setHeaders(request, getHeaderManager(), newURL);
       }
 
       if (getMethod().equals(HTTPConstants.POST)) {
@@ -98,21 +102,32 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
       if (isSupportedMethod(getMethod())) {
         ContentResponse contentResponse = request.send();
         resultBuilder.withContentResponse(contentResponse);
+        if (resultBuilder.getResult().isRedirect()) {
+          resultBuilder.withRedirectLocation(
+              request.getHeaders() != null
+                  ? contentResponse.getHeaders().get(HTTPConstants.HEADER_LOCATION)
+                  : null);
+        }
       } else {
         throw new UnsupportedOperationException(
             String.format("Method %s is not supported", getMethod()));
       }
 
-      resultBuilder.withRedirectLocation(
-          request.getHeaders() != null
-              ? request.getHeaders().get(HTTPConstants.HEADER_LOCATION)
-              : null);
+      resultBuilder
+          .withRequestHeaders(
+              request.getHeaders() != null
+                  ? request.getHeaders().asString()
+                  : "");
+          // .build();
 
       resultBuilder.withRequestHeaders(
           request.getHeaders() != null ? request.getHeaders().asString() : "");
 
       resultBuilder = new HTTP2SampleResultBuilder(resultProcessing(b, i,
           resultBuilder.getResult()));
+
+      // HTTPSampleResult newHttpSampleResult = resultProcessing(b, i, resultBuilder.getResult());
+      // resultBuilder.setResult(newHttpSampleResult);
 
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
