@@ -149,8 +149,9 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
     final String contentEncoding = getContentEncoding();
     Charset contentCharset =
         !contentEncoding.isEmpty() ? Charset.forName(contentEncoding) : StandardCharsets.UTF_8;
-    String contentTypeHeader = request.getHeaders() != null ?
-        request.getHeaders().get(HTTPConstants.HEADER_CONTENT_TYPE) : null;
+    String contentTypeHeader =
+        request.getHeaders() != null ? request.getHeaders().get(HTTPConstants.HEADER_CONTENT_TYPE)
+            : null;
     boolean hasContentTypeHeader = contentTypeHeader != null && contentTypeHeader.isEmpty();
     if (!hasContentTypeHeader && ADD_CONTENT_TYPE_TO_POST_IF_MISSING) {
       request.addHeader(new HttpField(HTTPConstants.HEADER_CONTENT_TYPE,
