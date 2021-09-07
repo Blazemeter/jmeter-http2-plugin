@@ -77,7 +77,7 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
     try {
       URL newURL = url != null ? url : getUrl();
       resultBuilder.withLabel(getSampleLabel(resultBuilder, newURL)).withMethod(getMethod())
-          .withUrl(getUrl());
+          .withUrl(newURL);
 
       HTTP2Client client = getHttp2Client(resultBuilder);
 
