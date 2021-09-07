@@ -104,7 +104,7 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
         resultBuilder.withContentResponse(contentResponse);
         if (resultBuilder.getResult().isRedirect()) {
           resultBuilder.withRedirectLocation(
-              request.getHeaders() != null
+              contentResponse.getHeaders() != null
                   ? contentResponse.getHeaders().get(HTTPConstants.HEADER_LOCATION)
                   : null);
         }
@@ -113,11 +113,12 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
             String.format("Method %s is not supported", getMethod()));
       }
 
-      resultBuilder.withRequestHeaders(
-          request.getHeaders() != null ? request.getHeaders().asString() : "");
+      resultBuilder
+          .withRequestHeaders(
+              request.getHeaders() != null ? request.getHeaders().asString() : "")
+          .build();
 
-      resultBuilder = new HTTP2SampleResultBuilder(resultProcessing(b, i,
-          resultBuilder.getResult()));
+      resultBuilder.setResult(resultProcessing(b, i, resultBuilder.getResult()));
 
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
@@ -127,7 +128,7 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
       LOG.error("Error while sampling", e);
       resultBuilder.withFailure(e);
     }
-    return resultBuilder.build();
+    return resultBuilder.getResult();
   }
 
   private HTTP2Client getHttp2Client(HTTP2SampleResultBuilder resultBuilder) throws Exception {

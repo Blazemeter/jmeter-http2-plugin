@@ -9,7 +9,7 @@ import org.eclipse.jetty.client.api.ContentResponse;
 
 public class HTTP2SampleResultBuilder {
 
-  private final HTTPSampleResult result;
+  private HTTPSampleResult result;
 
   public HTTP2SampleResultBuilder() {
     result = new HTTPSampleResult();
@@ -21,7 +21,7 @@ public class HTTP2SampleResultBuilder {
   }
 
   public HTTP2SampleResultBuilder withRedirectLocation(String redirectLocation) {
-    if (redirectLocation == null) { // HTTP protocol violation, but avoids NPE
+    if (redirectLocation == null) {
       throw new IllegalArgumentException("Missing location header in redirect");
     }
     result.setRedirectLocation(redirectLocation);
@@ -31,6 +31,10 @@ public class HTTP2SampleResultBuilder {
 
   public HTTPSampleResult getResult() {
     return result;
+  }
+
+  public void setResult(HTTPSampleResult result) {
+    this.result = result;
   }
 
   public HTTP2SampleResultBuilder withFailure(Exception e) {

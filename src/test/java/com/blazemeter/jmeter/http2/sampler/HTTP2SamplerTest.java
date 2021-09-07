@@ -1,6 +1,7 @@
 package com.blazemeter.jmeter.http2.sampler;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.blazemeter.jmeter.http2.core.HTTP2Client;
@@ -113,6 +114,36 @@ public class HTTP2SamplerTest {
     validateHeaders(result);
   }
 
+  @Test
+  public void shouldReturnSuccessSampleResultWhenHttpGetRedirectEnds() throws Exception {
+    ContentResponse response = createResponse(HttpStatus.FOUND_302);
+    ContentResponse secondResponse = createResponse(HttpStatus.OK_200);
+    when(client.createRequest(any())).thenReturn(request);
+    when(request.getHeaders())
+        .thenReturn(HttpFields.build().put("location", "www.google.com"));
+    when(request.isFollowRedirects()).thenReturn(false);
+    when(request.send()).thenReturn(response, secondResponse);
+    configureSampler(HTTPConstants.GET);
+    configureFollowRedirectToSampler();
+    HTTPSampleResult result = sampler.sample();
+    validateRedirects(result, secondResponse);
+  }
+
+  @Test
+  public void shouldReturnNoSubSampleResultWhenHttpGetRedirectEnds() throws Exception {
+    ContentResponse response = createResponse(HttpStatus.FOUND_302);
+    when(client.createRequest(any())).thenReturn(request);
+    when(request.getHeaders())
+        .thenReturn(HttpFields.build().put("location", "www.google.com"));
+    when(request.isFollowRedirects()).thenReturn(false);
+    when(request.send()).thenReturn(response);
+    configureSampler(HTTPConstants.GET);
+    HTTPSampleResult result = sampler.sample();
+    softly.assertThat(result.isSuccessful())
+        .isEqualTo(response.getStatus() >= 200 && response.getStatus() <= 399);
+    softly.assertThat(result.getSubResults().length).isEqualTo(0);
+  }
+
   private void configureSampler(String method) {
     sampler.setMethod(method);
     sampler.setDomain("server");
@@ -129,11 +160,16 @@ public class HTTP2SamplerTest {
     sampler.setHeaderManager(hm);
   }
 
+  private void configureFollowRedirectToSampler() {
+    sampler.setFollowRedirects(true);
+  }
+
   private ContentResponse createResponse(int statusCode) {
     return new HttpContentResponse(
         new HttpResponse(null, Collections.emptyList()).status(statusCode)
             .addHeader(new HttpField("Header1", "value1"))
-            .addHeader(new HttpField("Header2", "value2")),
+            .addHeader(new HttpField("Header2", "value2"))
+            .addHeader(new HttpField("location", "www.google.com")),
         RESPONSE_CONTENT.getBytes(StandardCharsets.UTF_8), MimeTypes.Type.TEXT_PLAIN.toString(),
         StandardCharsets.UTF_8.name());
   }
@@ -144,6 +180,17 @@ public class HTTP2SamplerTest {
     softly.assertThat(result.getResponseCode()).isEqualTo(String.valueOf(response.getStatus()));
     softly.assertThat(result.getResponseHeaders()).isEqualTo(response.getHeaders().asString());
     softly.assertThat(result.getResponseDataAsString()).isEqualTo(response.getContentAsString());
+  }
+
+  private void validateRedirects(HTTPSampleResult result, ContentResponse response) {
+    softly.assertThat(result.isSuccessful())
+        .isEqualTo(response.getStatus() >= 200 && response.getStatus() <= 399);
+    softly.assertThat(result.getResponseCode()).isEqualTo(String.valueOf(response.getStatus()));
+    softly.assertThat(result.getResponseHeaders()).isEqualTo(response.getHeaders().asString());
+    softly.assertThat(result.getResponseDataAsString()).isEqualTo(response.getContentAsString());
+    softly.assertThat(result.getSubResults().length).isGreaterThan(0);
+    softly.assertThat(result.getRedirectLocation())
+        .isEqualTo(response.getHeaders().get(HTTPConstants.HEADER_LOCATION));
   }
 
   private void validateHeaders(HTTPSampleResult result) {
