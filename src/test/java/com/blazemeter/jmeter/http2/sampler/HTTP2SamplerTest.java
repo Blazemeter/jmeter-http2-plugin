@@ -121,7 +121,6 @@ public class HTTP2SamplerTest {
     when(client.createRequest(any())).thenReturn(request);
     when(request.getHeaders())
         .thenReturn(HttpFields.build().put("location", "www.google.com"));
-    when(request.isFollowRedirects()).thenReturn(false);
     when(request.send()).thenReturn(response, secondResponse);
     configureSampler(HTTPConstants.GET);
     configureFollowRedirectToSampler();
@@ -135,7 +134,6 @@ public class HTTP2SamplerTest {
     when(client.createRequest(any())).thenReturn(request);
     when(request.getHeaders())
         .thenReturn(HttpFields.build().put("location", "www.google.com"));
-    when(request.isFollowRedirects()).thenReturn(false);
     when(request.send()).thenReturn(response);
     configureSampler(HTTPConstants.GET);
     HTTPSampleResult result = sampler.sample();
