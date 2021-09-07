@@ -1,7 +1,6 @@
 package com.blazemeter.jmeter.http2.sampler;
 
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.blazemeter.jmeter.http2.core.HTTP2Client;
@@ -57,53 +56,48 @@ public class HTTP2SamplerTest {
   @Test
   public void shouldReturnSuccessSampleResultWhenSuccessRequest() throws Exception {
     ContentResponse response = createResponse(HttpStatus.OK_200);
-    when(client.createRequest(any())).thenReturn(request);
+    createMockRequest();
     when(request.send()).thenReturn(response);
     configureSampler(HTTPConstants.GET);
-    HTTPSampleResult result = sampler.sample();
-    validateResponse(result, response);
+    validateResponse(sampler.sample(), response);
   }
 
   @Test
   public void shouldReturnFailureSampleResultWhenResponse400() throws Exception {
     ContentResponse response = createResponse(HttpStatus.BAD_REQUEST_400);
-    when(client.createRequest(any())).thenReturn(request);
+    createMockRequest();
     when(request.send()).thenReturn(response);
     configureSampler(HTTPConstants.GET);
-    HTTPSampleResult result = sampler.sample();
-    validateResponse(result, response);
+    validateResponse(sampler.sample(), response);
   }
 
   @Test
   public void shouldReturnErrorMessageWhenMethodIsNotSupported() throws URISyntaxException {
-    when(client.createRequest(any())).thenReturn(request);
+    createMockRequest();
     configureSampler("MethodNotSupported");
-    HTTPSampleResult result = sampler.sample();
-    validateErrorResponse(result, UnsupportedOperationException.class.getName());
+    validateErrorResponse(sampler.sample(), UnsupportedOperationException.class.getName());
   }
 
   @Test
   public void shouldReturnErrorMessageWhenThreadIsInterrupted() throws Exception {
-    when(client.createRequest(any())).thenReturn(request);
+    createMockRequest();
     when(request.send()).thenThrow(new InterruptedException());
     configureSampler(HTTPConstants.GET);
-    HTTPSampleResult result = sampler.sample();
-    validateErrorResponse(result, InterruptedException.class.getName());
+    validateErrorResponse(sampler.sample(), InterruptedException.class.getName());
   }
 
   @Test
   public void shouldReturnErrorMessageWhenClientThrowException() throws Exception {
-    when(client.createRequest(any())).thenReturn(request);
+    createMockRequest();
     when(request.send()).thenThrow(new TimeoutException());
     configureSampler(HTTPConstants.GET);
-    HTTPSampleResult result = sampler.sample();
-    validateErrorResponse(result, TimeoutException.class.getName());
+    validateErrorResponse(sampler.sample(), TimeoutException.class.getName());
   }
 
   @Test
   public void shouldReturnSuccessSampleResultWhenSuccessRequestWithHeaders() throws Exception {
     ContentResponse response = createResponse(HttpStatus.OK_200);
-    when(client.createRequest(any())).thenReturn(request);
+    createMockRequest();
     when(request.getHeaders()).thenReturn(HttpFields.build().put("Header1", "value1").put(
         "Header2", "value2"));
     when(request.send()).thenReturn(response);
@@ -115,31 +109,34 @@ public class HTTP2SamplerTest {
   }
 
   @Test
-  public void shouldReturnSuccessSampleResultWhenHttpGetRedirectEnds() throws Exception {
+  public void shouldGetRedirectedResultWithSubSampleWhenFollowRedirectEnabledAndRedirected()
+      throws Exception {
+
     ContentResponse response = createResponse(HttpStatus.FOUND_302);
     ContentResponse secondResponse = createResponse(HttpStatus.OK_200);
-    when(client.createRequest(any())).thenReturn(request);
-    when(request.getHeaders())
-        .thenReturn(HttpFields.build().put("location", "www.google.com"));
+    createMockRequest();
     when(request.send()).thenReturn(response, secondResponse);
     configureSampler(HTTPConstants.GET);
-    configureFollowRedirectToSampler();
-    HTTPSampleResult result = sampler.sample();
-    validateRedirects(result, secondResponse);
+    sampler.setFollowRedirects(true);
+    validateRedirects(sampler.sample(), secondResponse);
   }
 
   @Test
-  public void shouldReturnNoSubSampleResultWhenHttpGetRedirectEnds() throws Exception {
+  public void shouldGetOnlyRedirectedResultWhenFollowRedirectDisabledAndRedirected()
+      throws Exception {
+
     ContentResponse response = createResponse(HttpStatus.FOUND_302);
-    when(client.createRequest(any())).thenReturn(request);
-    when(request.getHeaders())
-        .thenReturn(HttpFields.build().put("location", "www.google.com"));
+    createMockRequest();
     when(request.send()).thenReturn(response);
     configureSampler(HTTPConstants.GET);
     HTTPSampleResult result = sampler.sample();
     softly.assertThat(result.isSuccessful())
         .isEqualTo(response.getStatus() >= 200 && response.getStatus() <= 399);
     softly.assertThat(result.getSubResults().length).isEqualTo(0);
+  }
+
+  private void createMockRequest() throws URISyntaxException {
+    when(client.createRequest(any())).thenReturn(request);
   }
 
   private void configureSampler(String method) {
@@ -158,16 +155,12 @@ public class HTTP2SamplerTest {
     sampler.setHeaderManager(hm);
   }
 
-  private void configureFollowRedirectToSampler() {
-    sampler.setFollowRedirects(true);
-  }
-
   private ContentResponse createResponse(int statusCode) {
     return new HttpContentResponse(
         new HttpResponse(null, Collections.emptyList()).status(statusCode)
             .addHeader(new HttpField("Header1", "value1"))
             .addHeader(new HttpField("Header2", "value2"))
-            .addHeader(new HttpField("location", "www.google.com")),
+            .addHeader(new HttpField(HTTPConstants.HEADER_LOCATION, "1")),
         RESPONSE_CONTENT.getBytes(StandardCharsets.UTF_8), MimeTypes.Type.TEXT_PLAIN.toString(),
         StandardCharsets.UTF_8.name());
   }
