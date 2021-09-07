@@ -86,9 +86,7 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
       }
 
       HttpRequest request = client.createRequest(newURL);
-      if (getFollowRedirects()) {
-        request.followRedirects(false);
-      }
+      request.followRedirects(false);
       request.method(getMethod());
 
       if (getHeaderManager() != null) {
