@@ -45,8 +45,11 @@ import org.slf4j.LoggerFactory;
 
 public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListener, ThreadListener {
 
-  private static final Set<String> SUPPORTED_METHODS =
-      new HashSet<>(Arrays.asList(HTTPConstants.GET, HTTPConstants.POST));
+  private static final Set<String> SUPPORTED_METHODS = new HashSet<>(Arrays
+      .asList(HTTPConstants.GET, HTTPConstants.POST, HTTPConstants.PUT, HTTPConstants.PATCH,
+          HTTPConstants.OPTIONS, HTTPConstants.DELETE));
+  private static final Set<String> METHODS_WITH_BODY = new HashSet<>(Arrays
+      .asList(HTTPConstants.POST, HTTPConstants.PUT, HTTPConstants.PATCH));
   private static final boolean ADD_CONTENT_TYPE_TO_POST_IF_MISSING = JMeterUtils.getPropDefault(
       "http.post_add_content_type_if_missing", false);
   private static final Pattern PORT_PATTERN = Pattern.compile("\\d+");
@@ -92,11 +95,7 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
       if (getHeaderManager() != null) {
         setHeaders(request, getHeaderManager(), newURL);
       }
-
-      if (getMethod().equals(HTTPConstants.POST)) {
-        setBody(request, resultBuilder);
-      }
-
+      setBody(request, resultBuilder);
       if (isSupportedMethod(getMethod())) {
         ContentResponse contentResponse = request.send();
         resultBuilder.withContentResponse(contentResponse);
@@ -167,7 +166,7 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
           contentCharset);
       resultBuilder.withContent(postBody.toString());
       request.body(requestContent);
-    } else {
+    } else if (isMethodWithBody(getMethod())) {
       PropertyIterator args = getArguments().iterator();
       Fields fields = new Fields();
       while (args.hasNext()) {
@@ -187,12 +186,16 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
       }
       requestContent = new FormRequestContent(fields, contentCharset);
       resultBuilder.withContent(FormRequestContent.convert(fields));
+      request.body(requestContent);
     }
-    request.body(requestContent);
   }
 
   private boolean isSupportedMethod(String method) {
     return SUPPORTED_METHODS.contains(method);
+  }
+
+  private boolean isMethodWithBody(String method) {
+    return METHODS_WITH_BODY.contains(method);
   }
 
   private String getSampleLabel(HTTP2SampleResultBuilder resultBuilder, URL url)
