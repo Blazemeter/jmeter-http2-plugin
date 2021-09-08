@@ -75,40 +75,49 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
   protected HTTPSampleResult sample(URL url, String s, boolean b, int i) {
     HTTP2SampleResultBuilder resultBuilder = new HTTP2SampleResultBuilder();
     try {
-      resultBuilder.withLabel(getSampleLabel(resultBuilder)).withMethod(getMethod())
-          .withUrl(getUrl());
-      HTTP2Client client = clientFactory.call();
-      client.setHTTP2StateListener(new HTTP2StateListener() {
-        @Override
-        public void onConnectionEnd() {
-          resultBuilder.withConnectionEnd();
-        }
+      URL newURL = url != null ? url : getUrl();
+      resultBuilder.withLabel(getSampleLabel(resultBuilder, newURL)).withMethod(getMethod())
+          .withUrl(newURL);
 
-        @Override
-        public void onLatencyEnd() {
-          resultBuilder.withLatencyEnd();
-        }
-      });
+      HTTP2Client client = getHttp2Client(resultBuilder);
+
       if (!getProxyHost().isEmpty()) {
         client.setProxy(getProxyHost(), getProxyPortInt(), getProxyScheme());
       }
-      HttpRequest request = client.createRequest(getUrl());
+
+      HttpRequest request = client.createRequest(newURL);
+      request.followRedirects(false);
       request.method(getMethod());
+
       if (getHeaderManager() != null) {
-        setHeaders(request, getHeaderManager(), getUrl());
+        setHeaders(request, getHeaderManager(), newURL);
       }
+
       if (getMethod().equals(HTTPConstants.POST)) {
         setBody(request, resultBuilder);
       }
+
       if (isSupportedMethod(getMethod())) {
         ContentResponse contentResponse = request.send();
         resultBuilder.withContentResponse(contentResponse);
+        if (resultBuilder.getResult().isRedirect()) {
+          resultBuilder.withRedirectLocation(
+              contentResponse.getHeaders() != null
+                  ? contentResponse.getHeaders().get(HTTPConstants.HEADER_LOCATION)
+                  : null);
+        }
       } else {
         throw new UnsupportedOperationException(
             String.format("Method %s is not supported", getMethod()));
       }
-      resultBuilder.withRequestHeaders(
-          request.getHeaders() != null ? request.getHeaders().asString() : "");
+
+      resultBuilder
+          .withRequestHeaders(
+              request.getHeaders() != null ? request.getHeaders().asString() : "")
+          .build();
+
+      resultBuilder.setResult(resultProcessing(b, i, resultBuilder.getResult()));
+
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
       LOG.error("The sampling has been interrupted", e);
@@ -117,7 +126,23 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
       LOG.error("Error while sampling", e);
       resultBuilder.withFailure(e);
     }
-    return resultBuilder.build();
+    return resultBuilder.getResult();
+  }
+
+  private HTTP2Client getHttp2Client(HTTP2SampleResultBuilder resultBuilder) throws Exception {
+    HTTP2Client client = clientFactory.call();
+    client.setHTTP2StateListener(new HTTP2StateListener() {
+      @Override
+      public void onConnectionEnd() {
+        resultBuilder.withConnectionEnd();
+      }
+
+      @Override
+      public void onLatencyEnd() {
+        resultBuilder.withLatencyEnd();
+      }
+    });
+    return client;
   }
 
   private void setBody(HttpRequest request, HTTP2SampleResultBuilder resultBuilder)
@@ -170,9 +195,9 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
     return SUPPORTED_METHODS.contains(method);
   }
 
-  private String getSampleLabel(HTTP2SampleResultBuilder resultBuilder)
+  private String getSampleLabel(HTTP2SampleResultBuilder resultBuilder, URL url)
       throws MalformedURLException {
-    return resultBuilder.isRenameSampleLabel() ? getName() : getUrl().toString();
+    return resultBuilder.isRenameSampleLabel() ? getName() : url.toString();
   }
 
   private HTTP2Client buildClient() throws Exception {
