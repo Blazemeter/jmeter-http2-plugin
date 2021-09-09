@@ -19,8 +19,9 @@ public class HTTP2Client {
 
   private final HttpClient httpClient;
   private HTTP2StateListener http2StateListener;
+  private static HTTP2Client instance;
 
-  public HTTP2Client() {
+  private HTTP2Client() {
     ClientConnector clientConnector = new ClientConnector();
     SslContextFactory.Client sslContextFactory = new SslContextFactory.Client();
     sslContextFactory.setTrustAll(true);
@@ -32,6 +33,13 @@ public class HTTP2Client {
         new ClientConnectionFactoryOverHTTP2.HTTP2(http2Client),
         HttpClientConnectionFactory.HTTP11);
     this.httpClient = new HttpClient(transport);
+  }
+
+  public static HTTP2Client getInstance() {
+    if (instance == null) {
+      instance = new HTTP2Client();
+    }
+    return instance;
   }
 
   public void setProxy(String host, int port, String protocol) {
@@ -56,7 +64,9 @@ public class HTTP2Client {
   }
 
   public void start() throws Exception {
-    httpClient.start();
+    if (!httpClient.isStarted()) {
+      httpClient.start();
+    }
   }
 
   public void stop() throws Exception {

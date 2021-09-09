@@ -37,7 +37,7 @@ public class HTTP2ClientTest {
 
   @Before
   public void setup() throws Exception {
-    client = new HTTP2Client();
+    client = HTTP2Client.getInstance();
     client.start();
   }
 

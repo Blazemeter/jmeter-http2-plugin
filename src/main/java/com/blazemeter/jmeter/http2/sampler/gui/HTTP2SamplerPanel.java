@@ -14,6 +14,7 @@ import javax.swing.border.Border;
 import org.apache.jmeter.gui.util.HorizontalPanel;
 import org.apache.jmeter.gui.util.VerticalPanel;
 import org.apache.jmeter.protocol.http.config.gui.UrlConfigGui;
+import org.apache.jmeter.protocol.http.sampler.HTTPSamplerBase;
 import org.apache.jmeter.util.JMeterUtils;
 import org.apache.jorphan.gui.JLabeledTextField;
 
@@ -107,30 +108,32 @@ public class HTTP2SamplerPanel extends JPanel {
   }
 
   protected JPanel createEmbeddedRsrcPanel() {
-    // retrieve Embedded resources
+    final JPanel embeddedRsrcPanel = new HorizontalPanel();
+    embeddedRsrcPanel.setBorder(
+        BorderFactory.createTitledBorder(BorderFactory.createEtchedBorder(), JMeterUtils
+            .getResString("web_testing_retrieve_title"))); // $NON-NLS-1$
+
     retrieveEmbeddedResources = new JCheckBox(
-        JMeterUtils.getResString("web_testing_retrieve_images")); // $NON-NLS-1$
-    // add a listener to activate or not concurrent dwn.
+        JMeterUtils.getResString("web_testing_retrieve_images"));
+
     retrieveEmbeddedResources.addItemListener(e -> {
       enableConcurrentDwn(e.getStateChange() == ItemEvent.SELECTED);
     });
-    // Download concurrent resources
+
     concurrentDwn = new JCheckBox(
-        JMeterUtils.getResString("web_testing_concurrent_download")); // $NON-NLS-1$
+        JMeterUtils.getResString("web_testing_concurrent_download"));
+
     concurrentDwn.addItemListener(e -> {
       concurrentPool.setEnabled(
           retrieveEmbeddedResources.isSelected() && e.getStateChange() == ItemEvent.SELECTED);
     });
-    concurrentPool = new JTextField(2); // 2 columns size
+
+    concurrentPool = new JTextField(2);
     concurrentPool.setMinimumSize(
         new Dimension(10, (int) concurrentPool.getPreferredSize().getHeight()));
     concurrentPool.setMaximumSize(
         new Dimension(30, (int) concurrentPool.getPreferredSize().getHeight()));
 
-    final JPanel embeddedRsrcPanel = new HorizontalPanel();
-    embeddedRsrcPanel.setBorder(
-        BorderFactory.createTitledBorder(BorderFactory.createEtchedBorder(), JMeterUtils
-            .getResString("web_testing_retrieve_title"))); // $NON-NLS-1$
     embeddedRsrcPanel.add(retrieveEmbeddedResources);
     embeddedRsrcPanel.add(concurrentDwn);
     embeddedRsrcPanel.add(concurrentPool);
@@ -159,6 +162,10 @@ public class HTTP2SamplerPanel extends JPanel {
 
   public void resetFields() {
     urlConfigGui.clear();
+    retrieveEmbeddedResources.setSelected(false);
+    concurrentDwn.setSelected(false);
+    concurrentPool.setText(String.valueOf(HTTPSamplerBase.CONCURRENT_POOL_SIZE));
+    enableConcurrentDwn(false);
     connectTimeOutField.setText("");
     responseTimeOutField.setText("");
     proxySchemeField.setText("");
@@ -200,6 +207,22 @@ public class HTTP2SamplerPanel extends JPanel {
     return new String(proxyPassField.getPassword());
   }
 
+  public boolean getRetrieveEmbeddedResources() {
+    return retrieveEmbeddedResources.isSelected();
+  }
+
+  public boolean getConcurrentDwn() {
+    return concurrentDwn.isSelected();
+  }
+
+  public String getConcurrentPool() {
+    return concurrentPool.getText();
+  }
+
+  public String getEmbeddedRE() {
+    return embeddedRE.getText();
+  }
+
   public void setConnectTimeOut(String connectTimeOut) {
     this.connectTimeOutField.setText(connectTimeOut);
   }
@@ -226,5 +249,21 @@ public class HTTP2SamplerPanel extends JPanel {
 
   public void setProxyPass(String proxyPass) {
     this.proxyPassField.setText(proxyPass);
+  }
+
+  public void setRetrieveEmbeddedResources(boolean retrieveEmbeddedResources) {
+    this.retrieveEmbeddedResources.setSelected(retrieveEmbeddedResources);
+  }
+
+  public void setConcurrentDwn(boolean concurrentDwn) {
+    this.concurrentDwn.setSelected(concurrentDwn);
+  }
+
+  public void setConcurrentPool(String concurrentPool) {
+    this.concurrentPool.setText(concurrentPool);
+  }
+
+  public void setEmbeddedRE(String embeddedRE) {
+    this.embeddedRE.setText(embeddedRE);
   }
 }
