@@ -1,7 +1,10 @@
 package com.blazemeter.jmeter.http2.sampler.gui;
 
 import java.awt.BorderLayout;
+import java.awt.Dimension;
+import java.awt.event.ItemEvent;
 import javax.swing.BorderFactory;
+import javax.swing.JCheckBox;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JPasswordField;
@@ -12,6 +15,7 @@ import org.apache.jmeter.gui.util.HorizontalPanel;
 import org.apache.jmeter.gui.util.VerticalPanel;
 import org.apache.jmeter.protocol.http.config.gui.UrlConfigGui;
 import org.apache.jmeter.util.JMeterUtils;
+import org.apache.jorphan.gui.JLabeledTextField;
 
 public class HTTP2SamplerPanel extends JPanel {
 
@@ -95,6 +99,38 @@ public class HTTP2SamplerPanel extends JPanel {
     proxyServerPanel.add(createPanelWithLabelForField(proxyPortField, JMeterUtils.getResString(
         "web_server_port")), BorderLayout.EAST);
     return proxyServerPanel;
+  }
+
+  protected JPanel createEmbeddedRsrcPanel() {
+    // retrieve Embedded resources
+    retrieveEmbeddedResources = new JCheckBox(JMeterUtils.getResString("web_testing_retrieve_images")); // $NON-NLS-1$
+    // add a listener to activate or not concurrent dwn.
+    retrieveEmbeddedResources.addItemListener(e -> {
+      if (e.getStateChange() == ItemEvent.SELECTED) { enableConcurrentDwn(true); }
+      else { enableConcurrentDwn(false); }
+    });
+    // Download concurrent resources
+    concurrentDwn = new JCheckBox(JMeterUtils.getResString("web_testing_concurrent_download")); // $NON-NLS-1$
+    concurrentDwn.addItemListener(e -> {
+      if (retrieveEmbeddedResources.isSelected() && e.getStateChange() == ItemEvent.SELECTED) { concurrentPool.setEnabled(true); }
+      else { concurrentPool.setEnabled(false); }
+    });
+    concurrentPool = new JTextField(2); // 2 columns size
+    concurrentPool.setMinimumSize(new Dimension(10, (int) concurrentPool.getPreferredSize().getHeight()));
+    concurrentPool.setMaximumSize(new Dimension(30, (int) concurrentPool.getPreferredSize().getHeight()));
+
+    final JPanel embeddedRsrcPanel = new HorizontalPanel();
+    embeddedRsrcPanel.setBorder(BorderFactory.createTitledBorder(BorderFactory.createEtchedBorder(), JMeterUtils
+        .getResString("web_testing_retrieve_title"))); // $NON-NLS-1$
+    embeddedRsrcPanel.add(retrieveEmbeddedResources);
+    embeddedRsrcPanel.add(concurrentDwn);
+    embeddedRsrcPanel.add(concurrentPool);
+
+    // Embedded URL match regex
+    embeddedRE = new JLabeledTextField(JMeterUtils.getResString("web_testing_embedded_url_pattern"),20); // $NON-NLS-1$
+    embeddedRsrcPanel.add(embeddedRE);
+
+    return embeddedRsrcPanel;
   }
 
   public void resetFields() {
