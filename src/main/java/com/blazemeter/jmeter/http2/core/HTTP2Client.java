@@ -17,9 +17,9 @@ import org.eclipse.jetty.util.ssl.SslContextFactory;
 
 public class HTTP2Client {
 
+  private static HTTP2Client instance;
   private final HttpClient httpClient;
   private HTTP2StateListener http2StateListener;
-  private static HTTP2Client instance;
 
   private HTTP2Client() {
     ClientConnector clientConnector = new ClientConnector();

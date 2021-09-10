@@ -4,6 +4,7 @@ import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.net.URL;
 import org.apache.jmeter.protocol.http.sampler.HTTPSampleResult;
+import org.apache.jmeter.protocol.http.util.HTTPConstants;
 import org.apache.jmeter.samplers.SampleResult;
 import org.eclipse.jetty.client.api.ContentResponse;
 
@@ -84,6 +85,14 @@ public class HTTP2SampleResultBuilder {
         .setResponseMessage(contentResponse.getReason() != null ? contentResponse.getReason() : "");
     result.setResponseHeaders(contentResponse.getHeaders().asString());
     result.setResponseData(contentResponse.getContentAsString(), contentResponse.getEncoding());
+    String contentType = contentResponse.getHeaders() != null
+        ? contentResponse.getHeaders().get(HTTPConstants.HEADER_CONTENT_TYPE)
+        : null;
+    if (contentType != null) {
+      result.setContentType(contentType);
+      result.setEncodingAndType(contentType);
+    }
+
     return this;
   }
 
