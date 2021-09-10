@@ -43,6 +43,8 @@ import org.eclipse.jetty.util.ssl.SslContextFactory;
 
 public class HTTP2Implementation {
 
+  private static HTTP2Implementation instance;
+
   private static final Set<String> SUPPORTED_METHODS = new HashSet<>(Arrays
       .asList(HTTPConstants.GET, HTTPConstants.POST, HTTPConstants.PUT, HTTPConstants.PATCH,
           HTTPConstants.OPTIONS, HTTPConstants.DELETE));
@@ -55,7 +57,7 @@ public class HTTP2Implementation {
   private HTTP2Sampler sampler;
   private HTTPSampleResult result;
 
-  public HTTP2Implementation() {
+  private HTTP2Implementation() {
     ClientConnector clientConnector = new ClientConnector();
     SslContextFactory.Client sslContextFactory = new SslContextFactory.Client();
     sslContextFactory.setTrustAll(true);
@@ -67,6 +69,14 @@ public class HTTP2Implementation {
         new ClientConnectionFactoryOverHTTP2.HTTP2(http2Client),
         HttpClientConnectionFactory.HTTP11);
     this.httpClient = new HttpClient(transport);
+  }
+
+  public static HTTP2Implementation getInstance() {
+    if (instance == null) {
+      instance = new HTTP2Implementation();
+    }
+
+    return instance;
   }
 
   public void setProxy(String host, int port, String protocol) {
@@ -91,7 +101,9 @@ public class HTTP2Implementation {
   }
 
   public void start() throws Exception {
-    httpClient.start();
+    if (!httpClient.isStarted()) {
+      httpClient.start();
+    }
   }
 
   public void stop() throws Exception {
@@ -150,7 +162,13 @@ public class HTTP2Implementation {
         .setResponseMessage(contentResponse.getReason() != null ? contentResponse.getReason() : "");
     result.setResponseHeaders(contentResponse.getHeaders().asString());
     result.setResponseData(contentResponse.getContentAsString(), contentResponse.getEncoding());
-
+    String contentType = contentResponse.getHeaders() != null
+        ? contentResponse.getHeaders().get(HTTPConstants.HEADER_CONTENT_TYPE)
+        : null;
+    if (contentType != null) {
+      result.setContentType(contentType);
+      result.setEncodingAndType(contentType);
+    }
   }
 
   private void setBody(HttpRequest request, HTTPSampleResult result)

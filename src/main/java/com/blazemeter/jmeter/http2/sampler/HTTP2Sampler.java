@@ -54,7 +54,7 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
   }
 
   private HTTP2Implementation buildClient() throws Exception {
-    HTTP2Implementation client = new HTTP2Implementation();
+    HTTP2Implementation client = HTTP2Implementation.getInstance();
     client.start();
     CONNECTIONS.get().put(buildConnectionKey(), client);
     return client;
