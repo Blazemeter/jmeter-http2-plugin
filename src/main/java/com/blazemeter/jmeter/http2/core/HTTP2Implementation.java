@@ -1,6 +1,9 @@
 package com.blazemeter.jmeter.http2.core;
 
 import com.blazemeter.jmeter.http2.sampler.HTTP2Sampler;
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.io.InputStream;
 import java.io.UnsupportedEncodingException;
 import java.net.URISyntaxException;
 import java.net.URL;
@@ -112,7 +115,7 @@ public class HTTP2Implementation {
 
   public HTTPSampleResult sample(HTTP2Sampler sampler, URL url, String method,
       boolean areFollowingRedirect, int depth)
-      throws URISyntaxException, UnsupportedEncodingException, InterruptedException,
+      throws URISyntaxException, IOException, InterruptedException,
       ExecutionException, TimeoutException {
     this.result = new HTTPSampleResult();
     this.sampler = sampler;
@@ -155,13 +158,16 @@ public class HTTP2Implementation {
     return result;
   }
 
-  private void setResultContentResponse(HTTPSampleResult result, ContentResponse contentResponse) {
+  private void setResultContentResponse(HTTPSampleResult result, ContentResponse contentResponse)
+      throws IOException {
     result.setSuccessful(contentResponse.getStatus() >= 200 && contentResponse.getStatus() <= 399);
     result.setResponseCode(String.valueOf(contentResponse.getStatus()));
     result
         .setResponseMessage(contentResponse.getReason() != null ? contentResponse.getReason() : "");
     result.setResponseHeaders(contentResponse.getHeaders().asString());
-    result.setResponseData(contentResponse.getContentAsString(), contentResponse.getEncoding());
+    InputStream inputStream = new ByteArrayInputStream(contentResponse.getContent());
+    result.setResponseData(sampler.readResponse(result, inputStream,
+        contentResponse.getContent().length));
     String contentType = contentResponse.getHeaders() != null
         ? contentResponse.getHeaders().get(HTTPConstants.HEADER_CONTENT_TYPE)
         : null;

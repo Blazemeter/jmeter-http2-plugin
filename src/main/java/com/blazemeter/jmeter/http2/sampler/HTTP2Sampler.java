@@ -2,6 +2,8 @@ package com.blazemeter.jmeter.http2.sampler;
 
 import com.blazemeter.jmeter.http2.core.HTTP2Implementation;
 import com.helger.commons.annotation.VisibleForTesting;
+import java.io.IOException;
+import java.io.InputStream;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.HashMap;
@@ -13,6 +15,7 @@ import org.apache.jmeter.engine.event.LoopIterationListener;
 import org.apache.jmeter.protocol.http.sampler.HTTPSampleResult;
 import org.apache.jmeter.protocol.http.sampler.HTTPSamplerBase;
 import org.apache.jmeter.protocol.http.util.HTTPConstants;
+import org.apache.jmeter.samplers.SampleResult;
 import org.apache.jmeter.testelement.ThreadListener;
 import org.apache.jmeter.threads.JMeterContextService;
 import org.apache.jmeter.threads.JMeterVariables;
@@ -76,6 +79,11 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
   public HTTPSampleResult resultProcessing(final boolean pAreFollowingRedirect,
       final int frameDepth, final HTTPSampleResult pRes) {
     return super.resultProcessing(pAreFollowingRedirect, frameDepth, pRes);
+  }
+
+  public byte[] readResponse(SampleResult res, InputStream instream,
+      long responseContentLength) throws IOException {
+    return super.readResponse(res, instream, responseContentLength);
   }
 
   @Override
