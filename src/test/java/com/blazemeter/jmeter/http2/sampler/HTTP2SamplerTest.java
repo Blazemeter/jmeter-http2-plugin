@@ -1,9 +1,10 @@
+/*
 package com.blazemeter.jmeter.http2.sampler;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
-import com.blazemeter.jmeter.http2.core.HTTP2Client;
+import com.blazemeter.jmeter.http2.core.HTTP2Implementation;
 import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
@@ -38,7 +39,7 @@ public class HTTP2SamplerTest {
   @Rule
   public final JUnitSoftAssertions softly = new JUnitSoftAssertions();
   @Mock
-  private HTTP2Client client;
+  private HTTP2Implementation client;
   @Mock
   private HttpRequest request;
   private HTTP2Sampler sampler;
@@ -195,3 +196,4 @@ public class HTTP2SamplerTest {
   }
 
 }
+*/
