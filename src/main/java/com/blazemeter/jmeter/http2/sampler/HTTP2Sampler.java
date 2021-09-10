@@ -22,7 +22,8 @@ import org.slf4j.LoggerFactory;
 public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListener, ThreadListener {
 
   private static final Logger LOG = LoggerFactory.getLogger(HTTP2Sampler.class);
-  private static final ThreadLocal<Map<HTTP2ClientKey, HTTP2Implementation>> CONNECTIONS = ThreadLocal
+  private static final ThreadLocal<Map<HTTP2ClientKey, HTTP2Implementation>> CONNECTIONS =
+      ThreadLocal
       .withInitial(HashMap::new);
   private final Callable<HTTP2Implementation> clientFactory;
 
