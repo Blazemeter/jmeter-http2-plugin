@@ -2,7 +2,6 @@ package com.blazemeter.jmeter.http2.core;
 
 import com.blazemeter.jmeter.http2.sampler.HTTP2Sampler;
 import java.io.IOException;
-import java.io.UnsupportedEncodingException;
 import java.net.URISyntaxException;
 import java.net.URL;
 import java.net.URLDecoder;
@@ -104,7 +103,7 @@ public class HTTP2Implementation {
 
   public HTTPSampleResult sample(HTTP2Sampler sampler, URL url, String method,
       boolean areFollowingRedirect, int depth)
-      throws URISyntaxException, UnsupportedEncodingException, InterruptedException,
+      throws URISyntaxException, IOException, InterruptedException,
       ExecutionException, TimeoutException {
     this.result = new HTTPSampleResult();
     this.sampler = sampler;
@@ -157,8 +156,8 @@ public class HTTP2Implementation {
 
   }
 
-  private void setBody(HttpRequest request, HTTPSampleResult result) throws IOException
-  {
+  private void setBody(HttpRequest request, HTTPSampleResult result)
+      throws IOException {
     final String contentEncoding = sampler.getContentEncoding();
     Charset contentCharset =
         !contentEncoding.isEmpty() ? Charset.forName(contentEncoding) : StandardCharsets.UTF_8;
@@ -189,46 +188,50 @@ public class HTTP2Implementation {
           requestContent = new PathRequestContent(HTTPConstants.APPLICATION_X_WWW_FORM_URLENCODED,
               Path.of(file.getPath()));
           request.body(requestContent);
-      }
-      // final FileEntity fileRequestEntity =
-      // new FileEntity(FileServer.getFileServer().getResolvedFile(file.getPath()),
-      // (ContentType) null);
-      //pathRequestContent.setEntity(fileRequestEntity);
-
-      // We just add placeholder text for file content
-      postBody.append("<actual file content, not shown here>");
-
-    } else if (sampler.getSendParameterValuesAsPostBody()) {
-      for (JMeterProperty jMeterProperty : sampler.getArguments()) {
-        HTTPArgument arg = (HTTPArgument) jMeterProperty.getObjectValue();
-        postBody.append(arg.getEncodedValue(contentCharset.name()));
-      }
-      requestContent = new StringRequestContent(contentTypeHeader, postBody.toString(),
-          contentCharset);
-      result.setQueryString(postBody.toString());
-      request.body(requestContent);
-    } else if (isMethodWithBody(sampler.getMethod())) {
-      PropertyIterator args = sampler.getArguments().iterator();
-      Fields fields = new Fields();
-      while (args.hasNext()) {
-        HTTPArgument arg = (HTTPArgument) args.next().getObjectValue();
-        String parameterName = arg.getName();
-        if (!arg.isSkippable(parameterName)) {
-          String parameterValue = arg.getValue();
-          if (!arg.isAlwaysEncoded()) {
-            // The FormRequestContent always urlencodes both name and value, in this case the value
-            // is already encoded by the user so is needed to decode the value now, so that when the
-            // httpclient encodes it, we end up with the same value as the user had entered.
-            parameterName = URLDecoder.decode(parameterName, contentCharset.name());
-            parameterValue = URLDecoder.decode(parameterValue, contentCharset.name());
-          }
-          fields.add(parameterName, parameterValue);
         }
+        // final FileEntity fileRequestEntity =
+        // new FileEntity(FileServer.getFileServer().getResolvedFile(file.getPath()),
+        // (ContentType) null);
+        //pathRequestContent.setEntity(fileRequestEntity);
+
+        // We just add placeholder text for file content
+        postBody.append("<actual file content, not shown here>");
+
+      } else if (sampler.getSendParameterValuesAsPostBody()) {
+        for (JMeterProperty jMeterProperty : sampler.getArguments()) {
+          HTTPArgument arg = (HTTPArgument) jMeterProperty.getObjectValue();
+          postBody.append(arg.getEncodedValue(contentCharset.name()));
+        }
+        requestContent = new StringRequestContent(contentTypeHeader, postBody.toString(),
+            contentCharset);
+        result.setQueryString(postBody.toString());
+        request.body(requestContent);
+      } else if (isMethodWithBody(sampler.getMethod())) {
+        PropertyIterator args = sampler.getArguments().iterator();
+        Fields fields = new Fields();
+        while (args.hasNext()) {
+          HTTPArgument arg = (HTTPArgument) args.next().getObjectValue();
+          String parameterName = arg.getName();
+          if (!arg.isSkippable(parameterName)) {
+            String parameterValue = arg.getValue();
+            if (!arg.isAlwaysEncoded()) {
+              // The FormRequestContent always urlencodes both name and value, in this case the
+              // value
+              // is already encoded by the user so is needed to decode the value now, so that
+              // when the
+              // httpclient encodes it, we end up with the same value as the user had entered.
+              parameterName = URLDecoder.decode(parameterName, contentCharset.name());
+              parameterValue = URLDecoder.decode(parameterValue, contentCharset.name());
+            }
+            fields.add(parameterName, parameterValue);
+          }
+        }
+        requestContent = new FormRequestContent(fields, contentCharset);
+        result.setQueryString(FormRequestContent.convert(fields));
+        request.body(requestContent);
       }
-      requestContent = new FormRequestContent(fields, contentCharset);
-      result.setQueryString(FormRequestContent.convert(fields));
-      request.body(requestContent);
     }
+
   }
 
   private boolean isSupportedMethod(String method) {
@@ -257,7 +260,8 @@ public class HTTP2Implementation {
             if (port == -1) {
               request.addHeader(new HttpField(HTTPConstants.HEADER_HOST, headerValue));
             } else {
-              request.addHeader(new HttpField(HTTPConstants.HEADER_HOST, headerValue + ":" + port));
+              request
+                  .addHeader(new HttpField(HTTPConstants.HEADER_HOST, headerValue + ":" + port));
             }
           } else if (!headerName.isEmpty()) {
             request.addHeader(new HttpField(headerName, headerValue));
