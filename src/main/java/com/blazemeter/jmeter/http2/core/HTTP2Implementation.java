@@ -46,8 +46,6 @@ import org.eclipse.jetty.util.ssl.SslContextFactory;
 
 public class HTTP2Implementation {
 
-  private static HTTP2Implementation instance;
-
   private static final Set<String> SUPPORTED_METHODS = new HashSet<>(Arrays
       .asList(HTTPConstants.GET, HTTPConstants.POST, HTTPConstants.PUT, HTTPConstants.PATCH,
           HTTPConstants.OPTIONS, HTTPConstants.DELETE));
@@ -60,7 +58,7 @@ public class HTTP2Implementation {
   private HTTP2Sampler sampler;
   private HTTPSampleResult result;
 
-  private HTTP2Implementation() {
+  public HTTP2Implementation() {
     ClientConnector clientConnector = new ClientConnector();
     SslContextFactory.Client sslContextFactory = new SslContextFactory.Client();
     sslContextFactory.setTrustAll(true);
@@ -72,14 +70,6 @@ public class HTTP2Implementation {
         new ClientConnectionFactoryOverHTTP2.HTTP2(http2Client),
         HttpClientConnectionFactory.HTTP11);
     this.httpClient = new HttpClient(transport);
-  }
-
-  public static HTTP2Implementation getInstance() {
-    if (instance == null) {
-      instance = new HTTP2Implementation();
-    }
-
-    return instance;
   }
 
   public void setProxy(String host, int port, String protocol) {

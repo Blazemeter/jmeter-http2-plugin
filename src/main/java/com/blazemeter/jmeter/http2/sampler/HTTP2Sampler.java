@@ -27,7 +27,8 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
   private static final Logger LOG = LoggerFactory.getLogger(HTTP2Sampler.class);
   private static final ThreadLocal<Map<HTTP2ClientKey, HTTP2Implementation>> CONNECTIONS =
       ThreadLocal
-      .withInitial(HashMap::new);
+          .withInitial(HashMap::new);
+  private transient Map<HTTP2ClientKey, HTTP2Implementation> threadClonedConnectios;
   private final Callable<HTTP2Implementation> clientFactory;
 
   public HTTP2Sampler() {
@@ -57,8 +58,15 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
     }
   }
 
+  @Override
+  public Object clone() {
+    HTTP2Sampler clonedElement = (HTTP2Sampler) super.clone();
+    clonedElement.threadClonedConnectios = new HashMap<>(CONNECTIONS.get());
+    return clonedElement;
+  }
+
   private HTTP2Implementation buildClient() throws Exception {
-    HTTP2Implementation client = HTTP2Implementation.getInstance();
+    HTTP2Implementation client = new HTTP2Implementation();
     client.start();
     CONNECTIONS.get().put(buildConnectionKey(), client);
     return client;
@@ -70,7 +78,9 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
   }
 
   private HTTP2Implementation getClient() throws Exception {
-    Map<HTTP2ClientKey, HTTP2Implementation> clients = CONNECTIONS.get();
+    Map<HTTP2ClientKey, HTTP2Implementation> clients = threadClonedConnectios != null
+        ? threadClonedConnectios
+        : CONNECTIONS.get();
     HTTP2ClientKey key = buildConnectionKey();
     return clients.containsKey(key) ? clients.get(key)
         : buildClient();

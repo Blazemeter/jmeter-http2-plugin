@@ -52,7 +52,7 @@ public class HTTP2SamplerGui extends AbstractSamplerGui {
       http2Sampler.setImageParser(http2SamplerPanel.getRetrieveEmbeddedResources());
       http2Sampler.setConcurrentDwn(http2SamplerPanel.getConcurrentDwn());
       http2Sampler.setConcurrentPool(http2SamplerPanel.getConcurrentPool());
-      http2Sampler.setEmbeddedUrlRE(http2SamplerPanel.getEmbeddedRE());
+      http2Sampler.setEmbeddedUrlRE(http2SamplerPanel.getEmbeddedResourcesRegex());
       http2Sampler.setConnectTimeout(http2SamplerPanel.getConnectTimeOut());
       http2Sampler.setResponseTimeout(http2SamplerPanel.getResponseTimeOut());
       http2Sampler.setProxyHost(http2SamplerPanel.getProxyHost());
@@ -84,7 +84,7 @@ public class HTTP2SamplerGui extends AbstractSamplerGui {
       http2SamplerPanel.setRetrieveEmbeddedResources(http2Sampler.isImageParser());
       http2SamplerPanel.setConcurrentDwn(http2Sampler.isConcurrentDwn());
       http2SamplerPanel.setConcurrentPool(http2Sampler.getConcurrentPool());
-      http2SamplerPanel.setEmbeddedRE(http2Sampler.getEmbeddedUrlRE());
+      http2SamplerPanel.setEmbeddedResourcesRegex(http2Sampler.getEmbeddedUrlRE());
       http2SamplerPanel.setConnectTimeOut(String.valueOf(http2Sampler.getConnectTimeout()));
       http2SamplerPanel.setResponseTimeOut(String.valueOf(http2Sampler.getResponseTimeout()));
       http2SamplerPanel.setProxyScheme(http2Sampler.getProxyScheme());
