@@ -157,8 +157,8 @@ public class HTTP2Implementation {
 
   }
 
-  private void setBody(HttpRequest request, HTTPSampleResult result)
-      throws UnsupportedEncodingException {
+  private void setBody(HttpRequest request, HTTPSampleResult result) throws IOException
+  {
     final String contentEncoding = sampler.getContentEncoding();
     Charset contentCharset =
         !contentEncoding.isEmpty() ? Charset.forName(contentEncoding) : StandardCharsets.UTF_8;
@@ -180,20 +180,15 @@ public class HTTP2Implementation {
         && sampler.getSendFileAsPostBody()) { // Not null file and not empty name for it
       final HTTPFileArg file = files[0]; // Only one File support in not multipart scenario
       if (!hasContentTypeHeader) {
-        try {
-          // Allow the mimetype of the file to control the content type
-          if (file.getMimeType() != null && file.getMimeType().length() > 0) {
-            requestContent = new PathRequestContent(file.getMimeType(), Path.of(file.getPath()));
-            result.setDataType(file.getMimeType());
-            request.body(requestContent);
-          } else if (ADD_CONTENT_TYPE_TO_POST_IF_MISSING) {
-            requestContent = new PathRequestContent(HTTPConstants.APPLICATION_X_WWW_FORM_URLENCODED,
-                Path.of(file.getPath()));
-            request.body(requestContent);
-          }
-        } catch (final IOException e) {
-          // LOG.error("Unable to create Path Request: ", e.getMessage());
-        }
+        // Allow the mimetype of the file to control the content type
+        if (file.getMimeType() != null && file.getMimeType().length() > 0) {
+          requestContent = new PathRequestContent(file.getMimeType(), Path.of(file.getPath()));
+          result.setDataType(file.getMimeType());
+          request.body(requestContent);
+        } else if (ADD_CONTENT_TYPE_TO_POST_IF_MISSING) {
+          requestContent = new PathRequestContent(HTTPConstants.APPLICATION_X_WWW_FORM_URLENCODED,
+              Path.of(file.getPath()));
+          request.body(requestContent);
       }
       // final FileEntity fileRequestEntity =
       // new FileEntity(FileServer.getFileServer().getResolvedFile(file.getPath()),
