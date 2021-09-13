@@ -4,12 +4,15 @@ import com.blazemeter.jmeter.http2.core.HTTP2Client;
 import com.blazemeter.jmeter.http2.core.HTTP2SampleResultBuilder;
 import com.blazemeter.jmeter.http2.core.HTTP2StateListener;
 import com.helger.commons.annotation.VisibleForTesting;
+
+import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLDecoder;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -19,6 +22,9 @@ import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.regex.Pattern;
 import java.util.stream.StreamSupport;
+
+import org.apache.http.entity.ContentType;
+import org.apache.http.entity.FileEntity;
 import org.apache.jmeter.engine.event.LoopIterationEvent;
 import org.apache.jmeter.engine.event.LoopIterationListener;
 import org.apache.jmeter.protocol.http.control.Header;
@@ -27,6 +33,8 @@ import org.apache.jmeter.protocol.http.sampler.HTTPSampleResult;
 import org.apache.jmeter.protocol.http.sampler.HTTPSamplerBase;
 import org.apache.jmeter.protocol.http.util.HTTPArgument;
 import org.apache.jmeter.protocol.http.util.HTTPConstants;
+import org.apache.jmeter.protocol.http.util.HTTPFileArg;
+import org.apache.jmeter.services.FileServer;
 import org.apache.jmeter.testelement.ThreadListener;
 import org.apache.jmeter.testelement.property.JMeterProperty;
 import org.apache.jmeter.testelement.property.PropertyIterator;
@@ -37,6 +45,7 @@ import org.eclipse.jetty.client.HttpRequest;
 import org.eclipse.jetty.client.api.ContentResponse;
 import org.eclipse.jetty.client.api.Request.Content;
 import org.eclipse.jetty.client.util.FormRequestContent;
+import org.eclipse.jetty.client.util.PathRequestContent;
 import org.eclipse.jetty.client.util.StringRequestContent;
 import org.eclipse.jetty.http.HttpField;
 import org.eclipse.jetty.util.Fields;
@@ -159,7 +168,40 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
     }
     StringBuilder postBody = new StringBuilder();
     Content requestContent;
-    if (getSendParameterValuesAsPostBody()) {
+
+    final HTTPFileArg[] files = getHTTPFiles();
+
+    // TODO: maybe we need add not multipart condition
+    // If there are no arguments, we can send a file as the body of the request
+    if(!hasArguments() && getSendFileAsPostBody())
+    { // Not null file and not empty name for it
+      final HTTPFileArg file = files[0]; // Only one File support in not multipart scenario
+      if (!hasContentTypeHeader)
+      {
+        try
+        {
+          // Allow the mimetype of the file to control the content type
+          if (file.getMimeType() != null && file.getMimeType().length() > 0)
+          {
+            requestContent = new PathRequestContent(file.getMimeType(), Path.of(file.getPath()));
+          }
+          else if (ADD_CONTENT_TYPE_TO_POST_IF_MISSING)
+          {
+            requestContent = new PathRequestContent(HTTPConstants.APPLICATION_X_WWW_FORM_URLENCODED, Path.of(file.getPath()));
+          }
+        }
+        catch (final IOException e)
+        {
+          LOG.error("Unable to create Path Request: ", e.getMessage());
+        }
+      }
+      final FileEntity fileRequestEntity = new FileEntity(FileServer.getFileServer().getResolvedFile(file.getPath()), (ContentType) null);
+      //pathRequestContent.setEntity(fileRequestEntity);
+
+      // We just add placeholder text for file content
+      postBody.append("<actual file content, not shown here>");
+
+    } else if (getSendParameterValuesAsPostBody()) {
       for (JMeterProperty jMeterProperty : getArguments()) {
         HTTPArgument arg = (HTTPArgument) jMeterProperty.getObjectValue();
         postBody.append(arg.getEncodedValue(contentCharset.name()));
