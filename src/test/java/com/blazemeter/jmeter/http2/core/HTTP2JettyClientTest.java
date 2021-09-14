@@ -12,7 +12,6 @@ import java.net.MalformedURLException;
 import java.net.URISyntaxException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
-import java.util.Collections;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeoutException;
 import org.apache.jmeter.protocol.http.control.Header;
@@ -21,12 +20,7 @@ import org.apache.jmeter.protocol.http.sampler.HTTPSampleResult;
 import org.apache.jmeter.protocol.http.util.HTTPConstants;
 import org.apache.jmeter.samplers.SampleResult;
 import org.assertj.core.api.JUnitSoftAssertions;
-import org.eclipse.jetty.client.HttpContentResponse;
-import org.eclipse.jetty.client.HttpResponse;
-import org.eclipse.jetty.client.api.ContentResponse;
-import org.eclipse.jetty.http.HttpField;
 import org.eclipse.jetty.http.HttpStatus;
-import org.eclipse.jetty.http.MimeTypes;
 import org.eclipse.jetty.http2.HTTP2Cipher;
 import org.eclipse.jetty.http2.server.HTTP2ServerConnectionFactory;
 import org.eclipse.jetty.server.ConnectionFactory;
@@ -50,7 +44,6 @@ import org.mockito.junit.MockitoJUnitRunner;
 public class HTTP2JettyClientTest {
 
   private static final String SERVER_RESPONSE = "Hello World!";
-  private static final String RESPONSE_CONTENT = "Dummy Response";
   private static final String REQUEST_HEADERS = "Accept-Encoding: gzip\r\nUser-Agent: Jetty/11.0"
       + ".6\r\n\r\n";
   private static final String SERVER_PATH = "/test";
@@ -171,7 +164,6 @@ public class HTTP2JettyClientTest {
   public void shouldReturnSuccessSampleResultWhenSuccessRequestWithHeaders() throws Exception {
     HTTPSampleResult expected = new HTTPSampleResult();
     expected.setResponseData(SERVER_RESPONSE, StandardCharsets.UTF_8.name());
-    expected.setRequestHeaders("");
     expected.setResponseCode(String.valueOf(HttpStatus.OK_200));
     expected.setSuccessful(true);
     expected.setRequestHeaders("Accept-Encoding: gzip\r\nUser-Agent: Jetty/11.0.6\r\nHeader1: "
@@ -200,26 +192,23 @@ public class HTTP2JettyClientTest {
         "localhost", SERVER_PORT, SERVER_PATH_302), HTTPConstants.GET, false, 0);
     validateRedirects(result, expected);
   }
-/*
+
   @Test
   public void shouldGetOnlyRedirectedResultWhenFollowRedirectDisabledAndRedirected()
       throws Exception {
-
-    ContentResponse response = createResponse(HttpStatus.FOUND_302);
-    createMockRequest();
-    when(request.send()).thenReturn(response);
+    startServer(createGetServerResponse());
     configureSampler(HTTPConstants.GET);
-    HTTPSampleResult result = sampler.sample();
-    softly.assertThat(result.isSuccessful())
-        .isEqualTo(response.getStatus() >= 200 && response.getStatus() <= 399);
+    HTTPSampleResult result = client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS,
+        "localhost", SERVER_PORT, SERVER_PATH_302), HTTPConstants.GET, false, 0);
+    softly.assertThat(result.getResponseCode()).isEqualTo("302");
     softly.assertThat(result.getSubResults().length).isEqualTo(0);
-  }*/
+  }
 
   private void configureSampler(String method) {
     sampler.setMethod(method);
     sampler.setDomain("server");
     sampler.setProtocol(HTTPConstants.PROTOCOL_HTTPS);
-    sampler.setPort(6666);
+    sampler.setPort(SERVER_PORT);
     sampler.setPath("");
   }
 
@@ -228,16 +217,6 @@ public class HTTP2JettyClientTest {
     hm.add(new Header("Header1", "value1"));
     hm.add(new Header("Header2", "value2"));
     sampler.setHeaderManager(hm);
-  }
-
-  private ContentResponse createResponse(int statusCode) {
-    return new HttpContentResponse(
-        new HttpResponse(null, Collections.emptyList()).status(statusCode)
-            .addHeader(new HttpField("Header1", "value1"))
-            .addHeader(new HttpField("Header2", "value2"))
-            .addHeader(new HttpField(HTTPConstants.HEADER_LOCATION, "1")),
-        RESPONSE_CONTENT.getBytes(StandardCharsets.UTF_8), MimeTypes.Type.TEXT_PLAIN.toString(),
-        StandardCharsets.UTF_8.name());
   }
 
   private void validateResponse(SampleResult result, SampleResult expected) {
