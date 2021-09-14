@@ -2,8 +2,6 @@ package com.blazemeter.jmeter.http2.sampler;
 
 import com.blazemeter.jmeter.http2.core.HTTP2JettyClient;
 import com.helger.commons.annotation.VisibleForTesting;
-import java.io.IOException;
-import java.io.InputStream;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.HashMap;
@@ -15,7 +13,6 @@ import org.apache.jmeter.engine.event.LoopIterationListener;
 import org.apache.jmeter.protocol.http.sampler.HTTPSampleResult;
 import org.apache.jmeter.protocol.http.sampler.HTTPSamplerBase;
 import org.apache.jmeter.protocol.http.util.HTTPConstants;
-import org.apache.jmeter.samplers.SampleResult;
 import org.apache.jmeter.testelement.ThreadListener;
 import org.apache.jmeter.threads.JMeterContextService;
 import org.apache.jmeter.threads.JMeterVariables;
@@ -23,12 +20,12 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListener,
-    ThreadListener, Cloneable {
+    ThreadListener {
 
   private static final Logger LOG = LoggerFactory.getLogger(HTTP2Sampler.class);
   private static final ThreadLocal<Map<HTTP2ClientKey, HTTP2JettyClient>> CONNECTIONS =
       ThreadLocal
-      .withInitial(HashMap::new);
+          .withInitial(HashMap::new);
   private transient Map<HTTP2ClientKey, HTTP2JettyClient> threadClonedConnections;
   private final Callable<HTTP2JettyClient> clientFactory;
 
@@ -81,22 +78,23 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
   }
 
   private HTTP2JettyClient getClient() throws Exception {
-    Map<HTTP2ClientKey, HTTP2JettyClient> clients = threadClonedConnections != null
-        ? threadClonedConnections
-        : CONNECTIONS.get();
+    updateConnectionsIfCloned();
+    Map<HTTP2ClientKey, HTTP2JettyClient> clients = CONNECTIONS.get();
     HTTP2ClientKey key = buildConnectionKey();
     return clients.containsKey(key) ? clients.get(key)
         : buildClient();
   }
 
+  private void updateConnectionsIfCloned() {
+    if (threadClonedConnections != null) {
+      CONNECTIONS.remove();
+      CONNECTIONS.set(threadClonedConnections);
+    }
+  }
+
   public HTTPSampleResult resultProcessing(final boolean pAreFollowingRedirect,
       final int frameDepth, final HTTPSampleResult pRes) {
     return super.resultProcessing(pAreFollowingRedirect, frameDepth, pRes);
-  }
-
-  public byte[] readResponse(SampleResult res, InputStream instream,
-      long responseContentLength) throws IOException {
-    return super.readResponse(res, instream, responseContentLength);
   }
 
   @Override
