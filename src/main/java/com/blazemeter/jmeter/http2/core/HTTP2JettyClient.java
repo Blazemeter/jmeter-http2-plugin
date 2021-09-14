@@ -36,12 +36,13 @@ import org.eclipse.jetty.client.http.HttpClientConnectionFactory;
 import org.eclipse.jetty.client.util.FormRequestContent;
 import org.eclipse.jetty.client.util.StringRequestContent;
 import org.eclipse.jetty.http.HttpField;
+import org.eclipse.jetty.http2.client.HTTP2Client;
 import org.eclipse.jetty.http2.client.http.ClientConnectionFactoryOverHTTP2;
 import org.eclipse.jetty.io.ClientConnector;
 import org.eclipse.jetty.util.Fields;
 import org.eclipse.jetty.util.ssl.SslContextFactory;
 
-public class HTTP2Implementation {
+public class HTTP2JettyClient {
 
   private static final Set<String> SUPPORTED_METHODS = new HashSet<>(Arrays
       .asList(HTTPConstants.GET, HTTPConstants.POST, HTTPConstants.PUT, HTTPConstants.PATCH,
@@ -52,75 +53,44 @@ public class HTTP2Implementation {
       "http.post_add_content_type_if_missing", false);
   private static final Pattern PORT_PATTERN = Pattern.compile("\\d+");
   private final HttpClient httpClient;
-  private HTTP2Sampler sampler;
-  private HTTPSampleResult result;
 
-  public HTTP2Implementation() {
+  public HTTP2JettyClient() {
     ClientConnector clientConnector = new ClientConnector();
     SslContextFactory.Client sslContextFactory = new SslContextFactory.Client();
     sslContextFactory.setTrustAll(true);
     clientConnector.setSslContextFactory(sslContextFactory);
-    org.eclipse.jetty.http2.client.HTTP2Client http2Client =
-        new org.eclipse.jetty.http2.client.HTTP2Client(
-            clientConnector);
+    HTTP2Client http2Client = new HTTP2Client(clientConnector);
     HttpClientTransport transport = new HttpClientTransportDynamic(clientConnector,
         new ClientConnectionFactoryOverHTTP2.HTTP2(http2Client),
         HttpClientConnectionFactory.HTTP11);
     this.httpClient = new HttpClient(transport);
   }
 
-  public void setProxy(String host, int port, String protocol) {
-    HttpProxy proxy =
-        new HttpProxy(new Address(host, port), HTTPConstants.PROTOCOL_HTTPS.equals(protocol));
-    httpClient.getProxyConfiguration().getProxies().add(proxy);
-  }
-
-  private HttpRequest createRequest(URL url) throws URISyntaxException, IllegalArgumentException {
-    Request request = httpClient.newRequest(url.toURI());
-    HttpRequest httpRequest;
-    if (request instanceof HttpRequest) {
-      httpRequest = (HttpRequest) request;
-      if (result != null) {
-        httpRequest.onRequestBegin(l -> result.connectEnd());
-        httpRequest.onResponseBegin(l -> result.latencyEnd());
-      }
-    } else {
-      throw new IllegalArgumentException("HttpRequest is expected");
-    }
-    return httpRequest;
-  }
-
-  public void start() throws Exception {
-    httpClient.start();
-  }
-
-  public void stop() throws Exception {
-    httpClient.stop();
-  }
-
   public HTTPSampleResult sample(HTTP2Sampler sampler, URL url, String method,
       boolean areFollowingRedirect, int depth)
       throws URISyntaxException, UnsupportedEncodingException, InterruptedException,
       ExecutionException, TimeoutException {
-    this.result = new HTTPSampleResult();
-    this.sampler = sampler;
-    result.setSampleLabel(getSampleLabel(url));
+    HTTPSampleResult result = new HTTPSampleResult();
+    result.setSampleLabel(getSampleLabel(url, sampler));
     result.setHTTPMethod(method);
     result.setURL(url);
 
     if (!sampler.getProxyHost().isEmpty()) {
       setProxy(sampler.getProxyHost(), sampler.getProxyPortInt(), sampler.getProxyScheme());
     }
-
-    HttpRequest request = createRequest(url);
+    result.sampleStart();
+    HttpRequest request = createRequest(url, result);
     request.followRedirects(false);
     request.method(method);
 
     if (sampler.getHeaderManager() != null) {
       setHeaders(request, sampler.getHeaderManager(), url);
     }
-    setBody(request, result);
-    if (isSupportedMethod(method)) {
+    setBody(request, sampler, result);
+    if (!isSupportedMethod(method)) {
+      throw new UnsupportedOperationException(
+          String.format("Method %s is not supported", method));
+    } else {
       ContentResponse contentResponse = request.send();
       setResultContentResponse(result, contentResponse);
       if (result.isRedirect()) {
@@ -132,15 +102,38 @@ public class HTTP2Implementation {
         }
         result.setRedirectLocation(redirectLocation);
       }
-    } else {
-      throw new UnsupportedOperationException(
-          String.format("Method %s is not supported", method));
     }
 
     result.setRequestHeaders(request.getHeaders() != null ? request.getHeaders().asString() : "");
     result = sampler.resultProcessing(areFollowingRedirect, depth, result);
-    result.sampleEnd();
     return result;
+  }
+
+  private void setProxy(String host, int port, String protocol) {
+    HttpProxy proxy =
+        new HttpProxy(new Address(host, port), HTTPConstants.PROTOCOL_HTTPS.equals(protocol));
+    httpClient.getProxyConfiguration().getProxies().add(proxy);
+  }
+
+  private HttpRequest createRequest(URL url, HTTPSampleResult result) throws URISyntaxException,
+      IllegalArgumentException {
+    Request request = httpClient.newRequest(url.toURI());
+    if (request instanceof HttpRequest && result != null) {
+      HttpRequest httpRequest = (HttpRequest) request;
+      httpRequest.onRequestBegin(l -> result.connectEnd());
+      httpRequest.onResponseBegin(l -> result.latencyEnd());
+      return httpRequest;
+    } else {
+      throw new IllegalArgumentException("HttpRequest is expected");
+    }
+  }
+
+  public void start() throws Exception {
+    httpClient.start();
+  }
+
+  public void stop() throws Exception {
+    httpClient.stop();
   }
 
   private void setResultContentResponse(HTTPSampleResult result, ContentResponse contentResponse) {
@@ -153,7 +146,7 @@ public class HTTP2Implementation {
 
   }
 
-  private void setBody(HttpRequest request, HTTPSampleResult result)
+  private void setBody(HttpRequest request, HTTP2Sampler sampler, HTTPSampleResult result)
       throws UnsupportedEncodingException {
     final String contentEncoding = sampler.getContentEncoding();
     Charset contentCharset =
@@ -214,25 +207,28 @@ public class HTTP2Implementation {
         .map(prop -> (Header) prop.getObjectValue())
         .filter(header -> !HTTPConstants.HEADER_CONTENT_LENGTH.equalsIgnoreCase(header.getName()))
         .forEach(header -> {
-          String headerName = header.getName();
-          String headerValue = header.getValue();
-          if (HTTPConstants.HEADER_HOST.equalsIgnoreCase(headerName)) {
-            int port = getPortFromHostHeader(headerValue, url.getPort());
-            // remove any port specification
-            headerValue = headerValue.replaceFirst(":\\d+$", "");
-            if (port != -1 && port == url.getDefaultPort()) {
-              // no need to specify the port if it is the default
-              port = -1;
-            }
-            if (port == -1) {
-              request.addHeader(new HttpField(HTTPConstants.HEADER_HOST, headerValue));
-            } else {
-              request.addHeader(new HttpField(HTTPConstants.HEADER_HOST, headerValue + ":" + port));
-            }
-          } else if (!headerName.isEmpty()) {
-            request.addHeader(new HttpField(headerName, headerValue));
+          if (!header.getName().isEmpty()) {
+            request.addHeader(createJettyHeader(header, url));
           }
         });
+  }
+
+  private HttpField createJettyHeader(Header header, URL url) {
+    String headerName = header.getName();
+    String headerValue = header.getValue();
+    if (HTTPConstants.HEADER_HOST.equalsIgnoreCase(headerName)) {
+      int port = getPortFromHostHeader(headerValue, url.getPort());
+      // remove any port specification
+      headerValue = headerValue.replaceFirst(":\\d+$", "");
+      if (port != -1 && port == url.getDefaultPort()) {
+        // no need to specify the port if it is the default
+        port = -1;
+      }
+      return port == -1 ? new HttpField(HTTPConstants.HEADER_HOST, headerValue)
+          : new HttpField(HTTPConstants.HEADER_HOST, headerValue + ":" + port);
+    } else {
+      return new HttpField(headerName, headerValue);
+    }
   }
 
   private int getPortFromHostHeader(String hostHeaderValue, int defaultValue) {
@@ -246,7 +242,7 @@ public class HTTP2Implementation {
     return defaultValue;
   }
 
-  private String getSampleLabel(URL url) {
+  private String getSampleLabel(URL url, HTTP2Sampler sampler) {
     return SampleResult.isRenameSampleLabel() ? sampler.getName() : url.toString();
   }
 
