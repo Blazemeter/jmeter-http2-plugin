@@ -8,8 +8,6 @@ import static org.mockito.Mockito.when;
 
 import com.blazemeter.jmeter.http2.core.HTTP2JettyClient;
 import java.util.concurrent.TimeoutException;
-import org.apache.jmeter.protocol.http.sampler.HTTPSampleResult;
-import org.apache.jmeter.protocol.http.util.HTTPConstants;
 import org.apache.jmeter.samplers.SampleResult;
 import org.assertj.core.api.JUnitSoftAssertions;
 import org.junit.Before;
@@ -22,9 +20,6 @@ import org.mockito.junit.MockitoJUnitRunner;
 
 @RunWith(MockitoJUnitRunner.class)
 public class HTTP2SamplerTest {
-
-  public static final String RESPONSE_CONTENT = "Dummy Response";
-  public static final String HEADER_MANAGER = "Header1: value1\r\nHeader2: value2\r\n\r\n";
 
   @Rule
   public final JUnitSoftAssertions softly = new JUnitSoftAssertions();
@@ -44,18 +39,20 @@ public class HTTP2SamplerTest {
 
   @Test
   public void shouldReturnErrorMessageWhenThreadIsInterrupted() throws Exception {
-    when(client.sample(any(), any(), anyString(), anyBoolean(), anyInt())).thenThrow(new InterruptedException());
+    when(client.sample(any(), any(), anyString(), anyBoolean(), anyInt()))
+        .thenThrow(new InterruptedException());
     validateErrorResponse(sampler.sample(), InterruptedException.class.getName());
   }
 
   private void validateErrorResponse(SampleResult result, String code) {
     softly.assertThat(result.isSuccessful()).isEqualTo(false);
-    softly.assertThat(result.getResponseCode()).isEqualTo("Non HTTP response code: " +code);
+    softly.assertThat(result.getResponseCode()).isEqualTo("Non HTTP response code: " + code);
   }
 
   @Test
   public void shouldReturnErrorMessageWhenClientThrowException() throws Exception {
-    when(client.sample(any(), any(), anyString(), anyBoolean(), anyInt())).thenThrow(new TimeoutException());
+    when(client.sample(any(), any(), anyString(), anyBoolean(), anyInt()))
+        .thenThrow(new TimeoutException());
     validateErrorResponse(sampler.sample(), TimeoutException.class.getName());
   }
 }
