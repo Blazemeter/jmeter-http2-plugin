@@ -160,8 +160,8 @@ public class HTTP2JettyClientTest {
 
   @Test(expected = UnsupportedOperationException.class)
   public void shouldReturnErrorMessageWhenMethodIsNotSupported()
-      throws URISyntaxException, MalformedURLException, InterruptedException, ExecutionException,
-      TimeoutException, UnsupportedEncodingException {
+      throws URISyntaxException, IOException, InterruptedException, ExecutionException,
+      TimeoutException {
     configureSampler("MethodNotSupported");
     client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS, "localhost", 123, SERVER_PATH_200),
         "MethodNotSupported", false, 0);

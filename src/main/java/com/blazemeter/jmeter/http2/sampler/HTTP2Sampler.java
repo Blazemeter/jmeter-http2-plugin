@@ -22,13 +22,14 @@ import org.apache.jmeter.threads.JMeterVariables;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListener, ThreadListener {
+public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListener,
+    ThreadListener, Cloneable {
 
   private static final Logger LOG = LoggerFactory.getLogger(HTTP2Sampler.class);
   private static final ThreadLocal<Map<HTTP2ClientKey, HTTP2JettyClient>> CONNECTIONS =
       ThreadLocal
       .withInitial(HashMap::new);
-  private transient Map<HTTP2ClientKey, HTTP2JettyClient> threadClonedConnectios;
+  private transient Map<HTTP2ClientKey, HTTP2JettyClient> threadClonedConnections;
   private final Callable<HTTP2JettyClient> clientFactory;
 
   public HTTP2Sampler() {
@@ -63,9 +64,10 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
   @Override
   public Object clone() {
     HTTP2Sampler clonedElement = (HTTP2Sampler) super.clone();
-    clonedElement.threadClonedConnectios = new HashMap<>(CONNECTIONS.get());
+    clonedElement.threadClonedConnections = new HashMap<>(CONNECTIONS.get());
     return clonedElement;
   }
+
   private HTTP2JettyClient buildClient() throws Exception {
     HTTP2JettyClient client = new HTTP2JettyClient();
     client.start();
@@ -79,8 +81,8 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
   }
 
   private HTTP2JettyClient getClient() throws Exception {
-    Map<HTTP2ClientKey, HTTP2JettyClient> clients = threadClonedConnectios != null
-        ? threadClonedConnectios
+    Map<HTTP2ClientKey, HTTP2JettyClient> clients = threadClonedConnections != null
+        ? threadClonedConnections
         : CONNECTIONS.get();
     HTTP2ClientKey key = buildConnectionKey();
     return clients.containsKey(key) ? clients.get(key)
