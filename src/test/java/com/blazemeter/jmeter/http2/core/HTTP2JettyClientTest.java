@@ -4,7 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.blazemeter.jmeter.http2.sampler.HTTP2Sampler;
 import com.blazemeter.jmeter.http2.sampler.JMeterTestUtils;
-import com.helger.commons.mime.CMimeType;
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
