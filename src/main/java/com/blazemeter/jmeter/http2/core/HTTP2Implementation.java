@@ -173,7 +173,6 @@ public class HTTP2Implementation {
     Content requestContent;
     final HTTPFileArg[] files = sampler.getHTTPFiles();
 
-    // TODO: maybe we need add not multipart condition
     // If there are no arguments, we can send a file as the body of the request
     if (!sampler.hasArguments()
         && sampler.getSendFileAsPostBody()) { // Not null file and not empty name for it
@@ -182,18 +181,14 @@ public class HTTP2Implementation {
         // Allow the mimetype of the file to control the content type
         if (file.getMimeType() != null && file.getMimeType().length() > 0) {
           requestContent = new PathRequestContent(file.getMimeType(), Path.of(file.getPath()));
-          result.setDataType(file.getMimeType());
           request.body(requestContent);
-        } else if (ADD_CONTENT_TYPE_TO_POST_IF_MISSING) {
+        } else if (ADD_CONTENT_TYPE_TO_POST_IF_MISSING) { // MimeType bu default
           requestContent = new PathRequestContent(HTTPConstants.APPLICATION_X_WWW_FORM_URLENCODED,
               Path.of(file.getPath()));
           request.body(requestContent);
         }
-        // final FileEntity fileRequestEntity =
-        // new FileEntity(FileServer.getFileServer().getResolvedFile(file.getPath()),
-        // (ContentType) null);
-        //pathRequestContent.setEntity(fileRequestEntity);
 
+        result.setQueryString("<actual file content, not shown here>");
         // We just add placeholder text for file content
         postBody.append("<actual file content, not shown here>");
 
