@@ -148,7 +148,6 @@ public class HTTP2JettyClient {
     result
         .setResponseMessage(contentResponse.getReason() != null ? contentResponse.getReason() : "");
     result.setResponseHeaders(contentResponse.getHeaders().asString());
-    result.setResponseData(contentResponse.getContentAsString(), contentResponse.getEncoding());
     InputStream inputStream = new ByteArrayInputStream(contentResponse.getContent());
     result.setResponseData(sampler.readResponse(result, inputStream,
         contentResponse.getContent().length));
