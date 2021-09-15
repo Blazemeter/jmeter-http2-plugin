@@ -1,6 +1,6 @@
 package com.blazemeter.jmeter.http2.sampler;
 
-import com.blazemeter.jmeter.http2.core.HTTP2Implementation;
+import com.blazemeter.jmeter.http2.core.HTTP2JettyClient;
 import com.helger.commons.annotation.VisibleForTesting;
 import java.net.MalformedURLException;
 import java.net.URL;
@@ -22,10 +22,10 @@ import org.slf4j.LoggerFactory;
 public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListener, ThreadListener {
 
   private static final Logger LOG = LoggerFactory.getLogger(HTTP2Sampler.class);
-  private static final ThreadLocal<Map<HTTP2ClientKey, HTTP2Implementation>> CONNECTIONS =
+  private static final ThreadLocal<Map<HTTP2ClientKey, HTTP2JettyClient>> CONNECTIONS =
       ThreadLocal
       .withInitial(HashMap::new);
-  private final Callable<HTTP2Implementation> clientFactory;
+  private final Callable<HTTP2JettyClient> clientFactory;
 
   public HTTP2Sampler() {
     setName("HTTP2 Sampler");
@@ -34,7 +34,7 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
   }
 
   @VisibleForTesting
-  public HTTP2Sampler(Callable<HTTP2Implementation> clientFactory) {
+  public HTTP2Sampler(Callable<HTTP2JettyClient> clientFactory) {
     this.clientFactory = clientFactory;
   }
 
@@ -42,8 +42,10 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
   protected HTTPSampleResult sample(URL url, String method, boolean areFollowingRedirect,
       int depth) {
     try {
-      HTTP2Implementation client = clientFactory.call();
-      return client.sample(this, url, method, areFollowingRedirect, depth);
+      HTTP2JettyClient client = clientFactory.call();
+      HTTPSampleResult result = client.sample(this, url, method, areFollowingRedirect, depth);
+      result.sampleEnd();
+      return result;
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
       LOG.error("The sampling has been interrupted", e);
@@ -54,8 +56,8 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
     }
   }
 
-  private HTTP2Implementation buildClient() throws Exception {
-    HTTP2Implementation client = new HTTP2Implementation();
+  private HTTP2JettyClient buildClient() throws Exception {
+    HTTP2JettyClient client = new HTTP2JettyClient();
     client.start();
     CONNECTIONS.get().put(buildConnectionKey(), client);
     return client;
@@ -66,8 +68,8 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
         getProxyPortInt());
   }
 
-  private HTTP2Implementation getClient() throws Exception {
-    Map<HTTP2ClientKey, HTTP2Implementation> clients = CONNECTIONS.get();
+  private HTTP2JettyClient getClient() throws Exception {
+    Map<HTTP2ClientKey, HTTP2JettyClient> clients = CONNECTIONS.get();
     HTTP2ClientKey key = buildConnectionKey();
     return clients.containsKey(key) ? clients.get(key)
         : buildClient();
@@ -87,8 +89,8 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
   }
 
   private void closeConnections() {
-    Map<HTTP2ClientKey, HTTP2Implementation> clients = CONNECTIONS.get();
-    for (HTTP2Implementation client : clients.values()) {
+    Map<HTTP2ClientKey, HTTP2JettyClient> clients = CONNECTIONS.get();
+    for (HTTP2JettyClient client : clients.values()) {
       try {
         client.stop();
       } catch (Exception e) {
