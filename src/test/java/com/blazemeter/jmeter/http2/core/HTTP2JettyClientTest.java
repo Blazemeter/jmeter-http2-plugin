@@ -3,22 +3,25 @@ package com.blazemeter.jmeter.http2.core;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.blazemeter.jmeter.http2.sampler.HTTP2Sampler;
+import com.blazemeter.jmeter.http2.sampler.JMeterTestUtils;
+import com.helger.commons.mime.CMimeType;
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
-import java.io.UnsupportedEncodingException;
-import java.net.MalformedURLException;
 import java.net.URISyntaxException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.util.MissingResourceException;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeoutException;
+import jodd.net.MimeTypes;
 import org.apache.jmeter.protocol.http.control.Header;
 import org.apache.jmeter.protocol.http.control.HeaderManager;
 import org.apache.jmeter.protocol.http.sampler.HTTPSampleResult;
 import org.apache.jmeter.protocol.http.util.HTTPConstants;
 import org.apache.jmeter.samplers.SampleResult;
+import org.apache.jmeter.util.JMeterUtils;
 import org.assertj.core.api.JUnitSoftAssertions;
 import org.eclipse.jetty.http.HttpStatus;
 import org.eclipse.jetty.http2.HTTP2Cipher;
@@ -35,6 +38,7 @@ import org.eclipse.jetty.util.resource.Resource;
 import org.eclipse.jetty.util.ssl.SslContextFactory;
 import org.junit.After;
 import org.junit.Before;
+import org.junit.BeforeClass;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -43,14 +47,18 @@ import org.mockito.junit.MockitoJUnitRunner;
 @RunWith(MockitoJUnitRunner.class)
 public class HTTP2JettyClientTest {
 
+  private static final String HOST_NAME = "localhost";
   private static final String SERVER_RESPONSE = "Hello World!";
   private static final String REQUEST_HEADERS = "Accept-Encoding: gzip\r\nUser-Agent: Jetty/11.0"
       + ".6\r\n\r\n";
   private static final String SERVER_PATH = "/test";
   private static final String SERVER_PATH_200 = "/test/200";
+  private static final String SERVER_PATH_200_EMBEDDED = "/test/embedded";
   private static final String SERVER_PATH_400 = "/test/400";
   private static final String SERVER_PATH_302 = "/test/302";
   private static final int SERVER_PORT = 6666;
+  private static final String BASIC_HTML_TEMPLATE = "<!DOCTYPE html><html><head><title>Page "
+      + "Title</title></head><body><div><img src=%s></div></body></html>";
 
   @Rule
   public final JUnitSoftAssertions softly = new JUnitSoftAssertions();
@@ -58,6 +66,11 @@ public class HTTP2JettyClientTest {
   private HTTP2JettyClient client;
   private HTTP2Sampler sampler;
 
+  @BeforeClass
+  public static void setupClass() {
+    JMeterTestUtils.setupJmeterEnv();
+    HTTP2JettyClientTest.setupJmeterProperties();
+  }
 
   @Before
   public void setup() throws Exception {
@@ -79,7 +92,7 @@ public class HTTP2JettyClientTest {
   public void shouldGetResponseWhenGetMethodIsSent() throws Exception {
     startServer(createGetServerResponse());
     HTTPSampleResult result = client.sample(sampler,
-        new URL(HTTPConstants.PROTOCOL_HTTPS, "localhost", SERVER_PORT, SERVER_PATH_200),
+        new URL(HTTPConstants.PROTOCOL_HTTPS, HOST_NAME, SERVER_PORT, SERVER_PATH_200),
         HTTPConstants.GET, false, 0);
     assertThat(result.getResponseDataAsString()).isEqualTo(SERVER_RESPONSE);
   }
@@ -87,52 +100,8 @@ public class HTTP2JettyClientTest {
   @Test(expected = ExecutionException.class)
   public void shouldThrowConnectExceptionWhenServerIsInaccessible() throws Exception {
     client.sample(sampler,
-        new URL(HTTPConstants.PROTOCOL_HTTPS, "localhost", 123, SERVER_PATH_200),
+        new URL(HTTPConstants.PROTOCOL_HTTPS, HOST_NAME, 123, SERVER_PATH_200),
         HTTPConstants.GET, false, 0);
-  }
-
-  private HttpServlet createGetServerResponse() {
-
-    return new HttpServlet() {
-      @Override
-      protected void service(HttpServletRequest req, HttpServletResponse resp) throws IOException {
-        switch (req.getServletPath() + req.getPathInfo()) {
-          case SERVER_PATH_200:
-            resp.setStatus(HttpStatus.OK_200);
-            break;
-          case SERVER_PATH_400:
-            resp.setStatus(HttpStatus.BAD_REQUEST_400);
-            break;
-          case SERVER_PATH_302:
-            resp.addHeader(HTTPConstants.HEADER_LOCATION,
-                "https://localhost:" + SERVER_PORT + SERVER_PATH_200);
-            resp.setStatus(HttpStatus.FOUND_302);
-            break;
-        }
-        resp.setContentType(StandardCharsets.UTF_8.name());
-        resp.getWriter().write(SERVER_RESPONSE);
-      }
-    };
-  }
-
-  private void startServer(HttpServlet servlet) throws Exception {
-    Server server = new Server();
-    HttpConfiguration httpsConfig = new HttpConfiguration();
-    httpsConfig.addCustomizer(new SecureRequestCustomizer());
-    ConnectionFactory h2 = new HTTP2ServerConnectionFactory(httpsConfig);
-    SslContextFactory.Server sslContextFactory = new SslContextFactory.Server();
-    sslContextFactory.setKeyStoreResource(
-        Resource.newResource(getClass().getResource("keystore.p12").getPath()));
-    sslContextFactory.setKeyStorePassword("storepwd");
-    sslContextFactory.setUseCipherSuitesOrder(true);
-    sslContextFactory.setCipherComparator(HTTP2Cipher.COMPARATOR);
-    ConnectionFactory ssl = new SslConnectionFactory(sslContextFactory, h2.getProtocol());
-    connector = new ServerConnector(server, 1, 1, ssl, h2);
-    connector.setPort(SERVER_PORT);
-    server.addConnector(connector);
-    ServletContextHandler context = new ServletContextHandler(server, "/", true, false);
-    context.addServlet(new ServletHolder(servlet), SERVER_PATH + "/*");
-    server.start();
   }
 
   @Test
@@ -145,7 +114,7 @@ public class HTTP2JettyClientTest {
     startServer(createGetServerResponse());
     configureSampler(HTTPConstants.GET);
     HTTPSampleResult result = client.sample(sampler,
-        new URL(HTTPConstants.PROTOCOL_HTTPS, "localhost", SERVER_PORT, SERVER_PATH_400),
+        new URL(HTTPConstants.PROTOCOL_HTTPS, HOST_NAME, SERVER_PORT, SERVER_PATH_400),
         HTTPConstants.GET, false, 0);
     validateResponse(result, expected);
   }
@@ -156,9 +125,25 @@ public class HTTP2JettyClientTest {
       throws URISyntaxException, IOException, InterruptedException, ExecutionException,
       TimeoutException {
     configureSampler("MethodNotSupported");
-    client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS, "localhost", 123, SERVER_PATH_200),
+    client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS, HOST_NAME, 123, SERVER_PATH_200),
         "MethodNotSupported", false, 0);
   }
+
+  @Test
+  public void shouldGetEmbeddedResourcesWithSubSampleWhenImageParserIsEnabled() throws Exception {
+    HTTPSampleResult expected = new HTTPSampleResult();
+    expected.setSuccessful(true);
+    expected.setResponseCode(String.valueOf(HttpStatus.OK_200));
+    expected.setRequestHeaders(REQUEST_HEADERS);
+    expected.setResponseData(HTTP2JettyClientTest.getBasicHtmlTemplate(),
+        StandardCharsets.UTF_8.name());
+    startServer(createGetServerResponse());
+    sampler.setImageParser(true);
+    HTTPSampleResult result = client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS,
+        HOST_NAME, SERVER_PORT, SERVER_PATH_200_EMBEDDED), HTTPConstants.GET, false, 0);
+    validateEmbeddedResources(result, expected);
+  }
+
 
   @Test
   public void shouldReturnSuccessSampleResultWhenSuccessRequestWithHeaders() throws Exception {
@@ -171,10 +156,9 @@ public class HTTP2JettyClientTest {
     startServer(createGetServerResponse());
     configureHeaderManagerToSampler();
     HTTPSampleResult result = client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS,
-        "localhost", SERVER_PORT, SERVER_PATH_200), HTTPConstants.GET, false, 0);
+        HOST_NAME, SERVER_PORT, SERVER_PATH_200), HTTPConstants.GET, false, 0);
     validateResponse(result, expected);
   }
-
 
   @Test
   public void shouldGetRedirectedResultWithSubSampleWhenFollowRedirectEnabledAndRedirected()
@@ -189,7 +173,7 @@ public class HTTP2JettyClientTest {
     configureSampler(HTTPConstants.GET);
     sampler.setFollowRedirects(true);
     HTTPSampleResult result = client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS,
-        "localhost", SERVER_PORT, SERVER_PATH_302), HTTPConstants.GET, false, 0);
+        HOST_NAME, SERVER_PORT, SERVER_PATH_302), HTTPConstants.GET, false, 0);
     validateRedirects(result, expected);
   }
 
@@ -199,7 +183,7 @@ public class HTTP2JettyClientTest {
     startServer(createGetServerResponse());
     configureSampler(HTTPConstants.GET);
     HTTPSampleResult result = client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS,
-        "localhost", SERVER_PORT, SERVER_PATH_302), HTTPConstants.GET, false, 0);
+        HOST_NAME, SERVER_PORT, SERVER_PATH_302), HTTPConstants.GET, false, 0);
     softly.assertThat(result.getResponseCode()).isEqualTo("302");
     softly.assertThat(result.getSubResults().length).isEqualTo(0);
   }
@@ -231,5 +215,80 @@ public class HTTP2JettyClientTest {
     validateResponse(result, expected);
     softly.assertThat(result.getSubResults().length).isGreaterThan(0);
     softly.assertThat(result.getRedirectLocation()).isEqualTo(expected.getRedirectLocation());
+  }
+
+  private void validateEmbeddedResources(HTTPSampleResult result, HTTPSampleResult expected) {
+    SampleResult[] results = result.getSubResults();
+    validateResponse(result, expected);
+    softly.assertThat(result.getSubResults().length).isGreaterThan(0);
+    softly.assertThat(results[0].getDataType()).isEqualTo(SampleResult.TEXT);
+    softly.assertThat(results[0].getUrlAsString()).isEqualTo("https://localhost:6666/test/embedded");
+    softly.assertThat(results[1].getDataType()).isEqualTo(SampleResult.TEXT);
+    softly.assertThat(results[1].getUrlAsString()).isEqualTo("https://localhost:6666/test/200");
+  }
+
+  private HttpServlet createGetServerResponse() {
+
+    return new HttpServlet() {
+      @Override
+      protected void service(HttpServletRequest req, HttpServletResponse resp) throws IOException {
+        switch (req.getServletPath() + req.getPathInfo()) {
+          case SERVER_PATH_200:
+            resp.setStatus(HttpStatus.OK_200);
+            break;
+          case SERVER_PATH_400:
+            resp.setStatus(HttpStatus.BAD_REQUEST_400);
+            break;
+          case SERVER_PATH_302:
+            resp.addHeader(HTTPConstants.HEADER_LOCATION,
+                "https://localhost:" + SERVER_PORT + SERVER_PATH_200);
+            resp.setStatus(HttpStatus.FOUND_302);
+            break;
+          case SERVER_PATH_200_EMBEDDED:
+            resp.setContentType(MimeTypes.MIME_TEXT_HTML + ";" + StandardCharsets.UTF_8.name());
+            resp.getWriter().write(HTTP2JettyClientTest.getBasicHtmlTemplate());
+            return;
+        }
+        resp.setContentType(MimeTypes.MIME_TEXT_HTML + ";" + StandardCharsets.UTF_8.name());
+        resp.getWriter().write(SERVER_RESPONSE);
+      }
+    };
+  }
+
+  private void startServer(HttpServlet servlet) throws Exception {
+    Server server = new Server();
+    HttpConfiguration httpsConfig = new HttpConfiguration();
+    httpsConfig.addCustomizer(new SecureRequestCustomizer());
+    ConnectionFactory h2 = new HTTP2ServerConnectionFactory(httpsConfig);
+    SslContextFactory.Server sslContextFactory = new SslContextFactory.Server();
+    sslContextFactory.setKeyStoreResource(
+        Resource.newResource(getClass().getResource("keystore.p12").getPath()));
+    sslContextFactory.setKeyStorePassword("storepwd");
+    sslContextFactory.setUseCipherSuitesOrder(true);
+    sslContextFactory.setCipherComparator(HTTP2Cipher.COMPARATOR);
+    ConnectionFactory ssl = new SslConnectionFactory(sslContextFactory, h2.getProtocol());
+    connector = new ServerConnector(server, 1, 1, ssl, h2);
+    connector.setPort(SERVER_PORT);
+    server.addConnector(connector);
+    ServletContextHandler context = new ServletContextHandler(server, "/", true, false);
+    context.addServlet(new ServletHolder(servlet), SERVER_PATH + "/*");
+    server.start();
+  }
+
+  private static void setupJmeterProperties() {
+    String filePrefix = JMeterTestUtils.setupJMeterHome();
+    String home = JMeterUtils.getJMeterHome();
+    System.setProperty("jmeter.home", home);
+    JMeterUtils jMeterUtils = new JMeterUtils();
+    try {
+      jMeterUtils.initializeProperties(filePrefix + "jmeter.properties");
+    } catch (MissingResourceException e) {
+      System.out.println("** Can't find resources - continuing anyway **");
+    }
+  }
+
+  private static String getBasicHtmlTemplate() {
+    return String.format(BASIC_HTML_TEMPLATE,
+        "https://localhost:" + SERVER_PORT + SERVER_PATH_200);
   }
 }
