@@ -27,10 +27,13 @@ public class HTTP2SamplerPanel extends JPanel {
   private final JTextField proxyPortField = new JTextField(10);
   private final JTextField proxyUserField = new JTextField(5);
   private final JPasswordField proxyPassField = new JPasswordField(5);
-  private JCheckBox retrieveEmbeddedResources;
-  private JCheckBox concurrentDwn;
-  private JTextField concurrentPool;
-  private JLabeledTextField embeddedResourcesRegex;
+  private final JCheckBox retrieveEmbeddedResourcesCheckBox = new JCheckBox(
+      JMeterUtils.getResString("web_testing_retrieve_images"));
+  private final JCheckBox concurrentDownloadCheckBox = new JCheckBox(
+      JMeterUtils.getResString("web_testing_concurrent_download"));
+  private final JTextField concurrentPoolField = new JTextField(2);
+  private final JLabeledTextField embeddedResourcesRegexField = new JLabeledTextField(
+      JMeterUtils.getResString("web_testing_embedded_url_pattern"), 20);
 
   public HTTP2SamplerPanel(boolean isSampler) {
     setLayout(new BorderLayout(0, 5));
@@ -46,12 +49,6 @@ public class HTTP2SamplerPanel extends JPanel {
     tabbedPane.add(JMeterUtils.getResString("web_testing_advanced"), advancedPanel);
 
     return tabbedPane;
-  }
-
-  private UrlConfigGui createUrlConfigGui() {
-    final UrlConfigGui configGui = new UrlConfigGui(true, true, true);
-    configGui.setBorder(makeBorder());
-    return configGui;
   }
 
   private Border makeBorder() {
@@ -108,53 +105,35 @@ public class HTTP2SamplerPanel extends JPanel {
 
   private JPanel createEmbeddedResourcesPanel() {
     final JPanel embeddedResourcesPanel = new HorizontalPanel();
-    embeddedResourcesPanel.setBorder(
-        BorderFactory.createTitledBorder(BorderFactory.createEtchedBorder(), JMeterUtils
-            .getResString("web_testing_retrieve_title")));
-
-    retrieveEmbeddedResources = new JCheckBox(
-        JMeterUtils.getResString("web_testing_retrieve_images"));
-
-    retrieveEmbeddedResources.addItemListener(e -> {
-      updateEnableStatus();
-    });
-
-    concurrentDwn = new JCheckBox(
-        JMeterUtils.getResString("web_testing_concurrent_download"));
-
-    concurrentDwn.addItemListener(e -> {
-      updateEnableStatus();
-    });
-
-    concurrentPool = new JTextField(2);
-    concurrentPool.setMinimumSize(
-        new Dimension(10, (int) concurrentPool.getPreferredSize().getHeight()));
-    concurrentPool.setMaximumSize(
-        new Dimension(30, (int) concurrentPool.getPreferredSize().getHeight()));
-
-    embeddedResourcesPanel.add(retrieveEmbeddedResources);
-    embeddedResourcesPanel.add(concurrentDwn);
-    embeddedResourcesPanel.add(concurrentPool);
-
-    embeddedResourcesRegex = new JLabeledTextField(
-        JMeterUtils.getResString("web_testing_embedded_url_pattern"),
-        20);
-    embeddedResourcesPanel.add(embeddedResourcesRegex);
-
+    embeddedResourcesPanel.setBorder(BorderFactory
+        .createTitledBorder(BorderFactory.createEtchedBorder(),
+            JMeterUtils.getResString("web_testing_retrieve_title")));
+    retrieveEmbeddedResourcesCheckBox.addItemListener(e -> updateEnableStatus());
+    concurrentDownloadCheckBox.addItemListener(e -> updateEnableStatus());
+    concurrentPoolField.setMinimumSize(
+        new Dimension(10, (int) concurrentPoolField.getPreferredSize().getHeight()));
+    concurrentPoolField.setMaximumSize(
+        new Dimension(30, (int) concurrentPoolField.getPreferredSize().getHeight()));
+    embeddedResourcesPanel.add(retrieveEmbeddedResourcesCheckBox);
+    embeddedResourcesPanel.add(concurrentDownloadCheckBox);
+    embeddedResourcesPanel.add(concurrentPoolField);
+    embeddedResourcesPanel.add(embeddedResourcesRegexField);
     return embeddedResourcesPanel;
   }
 
   private void updateEnableStatus() {
-    concurrentDwn.setEnabled(retrieveEmbeddedResources.isSelected());
-    embeddedResourcesRegex.setEnabled(retrieveEmbeddedResources.isSelected());
-    concurrentPool.setEnabled(retrieveEmbeddedResources.isSelected() && concurrentDwn.isSelected());
+    concurrentDownloadCheckBox.setEnabled(retrieveEmbeddedResourcesCheckBox.isSelected());
+    embeddedResourcesRegexField.setEnabled(retrieveEmbeddedResourcesCheckBox.isSelected());
+    concurrentPoolField
+        .setEnabled(retrieveEmbeddedResourcesCheckBox.isSelected() && concurrentDownloadCheckBox
+            .isSelected());
   }
 
   public void resetFields() {
     urlConfigGui.clear();
-    retrieveEmbeddedResources.setSelected(false);
-    concurrentDwn.setSelected(false);
-    concurrentPool.setText(String.valueOf(HTTPSamplerBase.CONCURRENT_POOL_SIZE));
+    retrieveEmbeddedResourcesCheckBox.setSelected(false);
+    concurrentDownloadCheckBox.setSelected(false);
+    concurrentPoolField.setText(String.valueOf(HTTPSamplerBase.CONCURRENT_POOL_SIZE));
     updateEnableStatus();
     connectTimeOutField.setText("");
     responseTimeOutField.setText("");
@@ -198,19 +177,19 @@ public class HTTP2SamplerPanel extends JPanel {
   }
 
   public boolean getRetrieveEmbeddedResources() {
-    return retrieveEmbeddedResources.isSelected();
+    return retrieveEmbeddedResourcesCheckBox.isSelected();
   }
 
-  public boolean getConcurrentDwn() {
-    return concurrentDwn.isSelected();
+  public boolean getConcurrentDownload() {
+    return concurrentDownloadCheckBox.isSelected();
   }
 
   public String getConcurrentPool() {
-    return concurrentPool.getText();
+    return concurrentPoolField.getText();
   }
 
   public String getEmbeddedResourcesRegex() {
-    return embeddedResourcesRegex.getText();
+    return embeddedResourcesRegexField.getText();
   }
 
   public void setConnectTimeOut(String connectTimeOut) {
@@ -242,18 +221,18 @@ public class HTTP2SamplerPanel extends JPanel {
   }
 
   public void setRetrieveEmbeddedResources(boolean retrieveEmbeddedResources) {
-    this.retrieveEmbeddedResources.setSelected(retrieveEmbeddedResources);
+    this.retrieveEmbeddedResourcesCheckBox.setSelected(retrieveEmbeddedResources);
   }
 
-  public void setConcurrentDwn(boolean concurrentDwn) {
-    this.concurrentDwn.setSelected(concurrentDwn);
+  public void setConcurrentDownload(boolean concurrentDownload) {
+    this.concurrentDownloadCheckBox.setSelected(concurrentDownload);
   }
 
   public void setConcurrentPool(String concurrentPool) {
-    this.concurrentPool.setText(concurrentPool);
+    this.concurrentPoolField.setText(concurrentPool);
   }
 
   public void setEmbeddedResourcesRegex(String embeddedResourcesRegex) {
-    this.embeddedResourcesRegex.setText(embeddedResourcesRegex);
+    this.embeddedResourcesRegexField.setText(embeddedResourcesRegex);
   }
 }
