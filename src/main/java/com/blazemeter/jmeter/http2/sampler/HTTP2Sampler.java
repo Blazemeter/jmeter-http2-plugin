@@ -46,7 +46,6 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
     try {
       HTTP2JettyClient client = clientFactory.call();
       HTTPSampleResult result = client.sample(this, url, method, areFollowingRedirect, depth);
-      result.sampleEnd();
       return result;
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
