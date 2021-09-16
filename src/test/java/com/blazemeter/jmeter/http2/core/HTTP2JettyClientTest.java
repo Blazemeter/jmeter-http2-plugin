@@ -232,6 +232,26 @@ public class HTTP2JettyClientTest {
     softly.assertThat(result.getSubResults().length).isEqualTo(0);
   }
 
+  @Test(expected = ExecutionException.class)
+  public void shouldReturnErrorMessageWhenConnectTimeIsOver() throws Exception {
+    startServer(createGetServerResponse());
+    configureSampler(HTTPConstants.GET);
+    sampler.setConnectTimeout("1");
+    client.sample(sampler,
+        new URL(HTTPConstants.PROTOCOL_HTTPS, HOST_NAME, SERVER_PORT, SERVER_PATH_200),
+        HTTPConstants.GET, false, 0);
+  }
+
+  @Test(expected = TimeoutException.class)
+  public void shouldReturnErrorMessageWhenResponseTimeIsOver() throws Exception {
+    startServer(createGetServerResponse());
+    configureSampler(HTTPConstants.GET);
+    sampler.setResponseTimeout("1");
+    client.sample(sampler,
+        new URL(HTTPConstants.PROTOCOL_HTTPS, HOST_NAME, SERVER_PORT, SERVER_PATH_200),
+        HTTPConstants.GET, false, 0);
+  }
+
   private void configureSampler(String method) {
     sampler.setMethod(method);
     sampler.setDomain("server");
