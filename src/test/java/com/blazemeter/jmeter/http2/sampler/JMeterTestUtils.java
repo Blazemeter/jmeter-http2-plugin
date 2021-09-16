@@ -11,30 +11,22 @@ public class JMeterTestUtils {
 
   public JMeterTestUtils() {
   }
-  
+
   public static void setupJmeterEnv() {
-    if(!jeerEnvironmentInitialized) {
+    if (!jeerEnvironmentInitialized) {
       jeerEnvironmentInitialized = true;
       TestJMeterUtils.createJmeterEnv();
+      JMeterUtils.setProperty("HTTPResponse.parsers", "htmlParser wmlParser cssParser");
+      JMeterUtils.setProperty("htmlParser.className",
+          "org.apache.jmeter.protocol.http.parser.LagartoBasedHtmlParser");
+      JMeterUtils.setProperty("htmlParser.types",
+          "text/html application/xhtml+xml application/xml text/xml");
+      JMeterUtils.setProperty("wmlParser.className",
+          "org.apache.jmeter.protocol.http.parser.RegexpHTMLParser");
+      JMeterUtils.setProperty("wmlParser.types", "text/vnd.wap.wml");
+      JMeterUtils
+          .setProperty("cssParser.className", "org.apache.jmeter.protocol.http.parser.CssParser");
+      JMeterUtils.setProperty("cssParser.types", "text/css");
     }
-  }
-
-  /**
-   * Set jmeter home and return file prefix
-   * @return file prefix which is path from jmeter home to jmeter.properties
-   */
-  public static String setupJMeterHome() {
-    if (filePrefix == null) {
-      String prefix = "/opt/apache-jmeter-5.2.1";
-      for (int i = 0; i < 5 && !new File(prefix, "bin/jmeter.properties").canRead(); i++) {
-        prefix = "../" + prefix;
-      }
-      // Used to be done in initializeProperties
-      String home = new File(prefix).getAbsolutePath();
-      filePrefix = prefix + "/bin/";
-      System.out.println("Setting JMeterHome: "+home);
-      JMeterUtils.setJMeterHome(home);
-    }
-    return filePrefix;
   }
 }

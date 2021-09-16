@@ -50,7 +50,7 @@ public class HTTP2SamplerGui extends AbstractSamplerGui {
     if (testElement instanceof HTTP2Sampler) {
       HTTP2Sampler http2Sampler = (HTTP2Sampler) testElement;
       http2Sampler.setImageParser(http2SamplerPanel.getRetrieveEmbeddedResources());
-      http2Sampler.setConcurrentDwn(http2SamplerPanel.getConcurrentDwn());
+      http2Sampler.setConcurrentDwn(http2SamplerPanel.getConcurrentDownload());
       http2Sampler.setConcurrentPool(http2SamplerPanel.getConcurrentPool());
       http2Sampler.setEmbeddedUrlRE(http2SamplerPanel.getEmbeddedResourcesRegex());
       http2Sampler.setConnectTimeout(http2SamplerPanel.getConnectTimeOut());
@@ -82,7 +82,7 @@ public class HTTP2SamplerGui extends AbstractSamplerGui {
     if (testElement instanceof HTTP2Sampler) {
       HTTP2Sampler http2Sampler = (HTTP2Sampler) testElement;
       http2SamplerPanel.setRetrieveEmbeddedResources(http2Sampler.isImageParser());
-      http2SamplerPanel.setConcurrentDwn(http2Sampler.isConcurrentDwn());
+      http2SamplerPanel.setConcurrentDownload(http2Sampler.isConcurrentDwn());
       http2SamplerPanel.setConcurrentPool(http2Sampler.getConcurrentPool());
       http2SamplerPanel.setEmbeddedResourcesRegex(http2Sampler.getEmbeddedUrlRE());
       http2SamplerPanel.setConnectTimeOut(String.valueOf(http2Sampler.getConnectTimeout()));

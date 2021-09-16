@@ -11,7 +11,6 @@ import java.io.IOException;
 import java.net.URISyntaxException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
-import java.util.MissingResourceException;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeoutException;
 import jodd.net.MimeTypes;
@@ -20,7 +19,6 @@ import org.apache.jmeter.protocol.http.control.HeaderManager;
 import org.apache.jmeter.protocol.http.sampler.HTTPSampleResult;
 import org.apache.jmeter.protocol.http.util.HTTPConstants;
 import org.apache.jmeter.samplers.SampleResult;
-import org.apache.jmeter.util.JMeterUtils;
 import org.assertj.core.api.JUnitSoftAssertions;
 import org.eclipse.jetty.http.HttpStatus;
 import org.eclipse.jetty.http2.HTTP2Cipher;
@@ -68,7 +66,6 @@ public class HTTP2JettyClientTest {
   @BeforeClass
   public static void setupClass() {
     JMeterTestUtils.setupJmeterEnv();
-    HTTP2JettyClientTest.setupJmeterProperties();
   }
 
   @Before
@@ -101,6 +98,54 @@ public class HTTP2JettyClientTest {
     client.sample(sampler,
         new URL(HTTPConstants.PROTOCOL_HTTPS, HOST_NAME, 123, SERVER_PATH_200),
         HTTPConstants.GET, false, 0);
+  }
+
+  private HttpServlet createGetServerResponse() {
+
+    return new HttpServlet() {
+      @Override
+      protected void service(HttpServletRequest req, HttpServletResponse resp) throws IOException {
+        switch (req.getServletPath() + req.getPathInfo()) {
+          case SERVER_PATH_200:
+            resp.setStatus(HttpStatus.OK_200);
+            break;
+          case SERVER_PATH_400:
+            resp.setStatus(HttpStatus.BAD_REQUEST_400);
+            break;
+          case SERVER_PATH_302:
+            resp.addHeader(HTTPConstants.HEADER_LOCATION,
+                "https://localhost:" + SERVER_PORT + SERVER_PATH_200);
+            resp.setStatus(HttpStatus.FOUND_302);
+            break;
+          case SERVER_PATH_200_EMBEDDED:
+            resp.setContentType(MimeTypes.MIME_TEXT_HTML + ";" + StandardCharsets.UTF_8.name());
+            resp.getWriter().write(HTTP2JettyClientTest.getBasicHtmlTemplate());
+            return;
+        }
+        resp.setContentType(MimeTypes.MIME_TEXT_HTML + ";" + StandardCharsets.UTF_8.name());
+        resp.getWriter().write(SERVER_RESPONSE);
+      }
+    };
+  }
+
+  private void startServer(HttpServlet servlet) throws Exception {
+    Server server = new Server();
+    HttpConfiguration httpsConfig = new HttpConfiguration();
+    httpsConfig.addCustomizer(new SecureRequestCustomizer());
+    ConnectionFactory h2 = new HTTP2ServerConnectionFactory(httpsConfig);
+    SslContextFactory.Server sslContextFactory = new SslContextFactory.Server();
+    sslContextFactory.setKeyStoreResource(
+        Resource.newResource(getClass().getResource("keystore.p12").getPath()));
+    sslContextFactory.setKeyStorePassword("storepwd");
+    sslContextFactory.setUseCipherSuitesOrder(true);
+    sslContextFactory.setCipherComparator(HTTP2Cipher.COMPARATOR);
+    ConnectionFactory ssl = new SslConnectionFactory(sslContextFactory, h2.getProtocol());
+    connector = new ServerConnector(server, 1, 1, ssl, h2);
+    connector.setPort(SERVER_PORT);
+    server.addConnector(connector);
+    ServletContextHandler context = new ServletContextHandler(server, "/", true, false);
+    context.addServlet(new ServletHolder(servlet), SERVER_PATH + "/*");
+    server.start();
   }
 
   @Test
@@ -221,69 +266,10 @@ public class HTTP2JettyClientTest {
     validateResponse(result, expected);
     softly.assertThat(result.getSubResults().length).isGreaterThan(0);
     softly.assertThat(results[0].getDataType()).isEqualTo(SampleResult.TEXT);
-    softly.assertThat(results[0].getUrlAsString()).isEqualTo("https://localhost:6666/test/embedded");
+    softly.assertThat(results[0].getUrlAsString())
+        .isEqualTo("https://localhost:6666/test/embedded");
     softly.assertThat(results[1].getDataType()).isEqualTo(SampleResult.TEXT);
     softly.assertThat(results[1].getUrlAsString()).isEqualTo("https://localhost:6666/test/200");
-  }
-
-  private HttpServlet createGetServerResponse() {
-
-    return new HttpServlet() {
-      @Override
-      protected void service(HttpServletRequest req, HttpServletResponse resp) throws IOException {
-        switch (req.getServletPath() + req.getPathInfo()) {
-          case SERVER_PATH_200:
-            resp.setStatus(HttpStatus.OK_200);
-            break;
-          case SERVER_PATH_400:
-            resp.setStatus(HttpStatus.BAD_REQUEST_400);
-            break;
-          case SERVER_PATH_302:
-            resp.addHeader(HTTPConstants.HEADER_LOCATION,
-                "https://localhost:" + SERVER_PORT + SERVER_PATH_200);
-            resp.setStatus(HttpStatus.FOUND_302);
-            break;
-          case SERVER_PATH_200_EMBEDDED:
-            resp.setContentType(MimeTypes.MIME_TEXT_HTML + ";" + StandardCharsets.UTF_8.name());
-            resp.getWriter().write(HTTP2JettyClientTest.getBasicHtmlTemplate());
-            return;
-        }
-        resp.setContentType(MimeTypes.MIME_TEXT_HTML + ";" + StandardCharsets.UTF_8.name());
-        resp.getWriter().write(SERVER_RESPONSE);
-      }
-    };
-  }
-
-  private void startServer(HttpServlet servlet) throws Exception {
-    Server server = new Server();
-    HttpConfiguration httpsConfig = new HttpConfiguration();
-    httpsConfig.addCustomizer(new SecureRequestCustomizer());
-    ConnectionFactory h2 = new HTTP2ServerConnectionFactory(httpsConfig);
-    SslContextFactory.Server sslContextFactory = new SslContextFactory.Server();
-    sslContextFactory.setKeyStoreResource(
-        Resource.newResource(getClass().getResource("keystore.p12").getPath()));
-    sslContextFactory.setKeyStorePassword("storepwd");
-    sslContextFactory.setUseCipherSuitesOrder(true);
-    sslContextFactory.setCipherComparator(HTTP2Cipher.COMPARATOR);
-    ConnectionFactory ssl = new SslConnectionFactory(sslContextFactory, h2.getProtocol());
-    connector = new ServerConnector(server, 1, 1, ssl, h2);
-    connector.setPort(SERVER_PORT);
-    server.addConnector(connector);
-    ServletContextHandler context = new ServletContextHandler(server, "/", true, false);
-    context.addServlet(new ServletHolder(servlet), SERVER_PATH + "/*");
-    server.start();
-  }
-
-  private static void setupJmeterProperties() {
-    String filePrefix = JMeterTestUtils.setupJMeterHome();
-    String home = JMeterUtils.getJMeterHome();
-    System.setProperty("jmeter.home", home);
-    JMeterUtils jMeterUtils = new JMeterUtils();
-    try {
-      jMeterUtils.initializeProperties(filePrefix + "jmeter.properties");
-    } catch (MissingResourceException e) {
-      System.out.println("** Can't find resources - continuing anyway **");
-    }
   }
 
   private static String getBasicHtmlTemplate() {

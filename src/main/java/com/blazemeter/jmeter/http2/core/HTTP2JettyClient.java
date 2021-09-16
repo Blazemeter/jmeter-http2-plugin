@@ -98,6 +98,7 @@ public class HTTP2JettyClient {
     } else {
       ContentResponse contentResponse = request.send();
       setResultContentResponse(result, contentResponse, sampler);
+      result.sampleEnd();
       if (result.isRedirect()) {
         String redirectLocation = contentResponse.getHeaders() != null
             ? contentResponse.getHeaders().get(HTTPConstants.HEADER_LOCATION)
