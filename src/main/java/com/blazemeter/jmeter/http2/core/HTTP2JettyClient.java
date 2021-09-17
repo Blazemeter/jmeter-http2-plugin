@@ -2,6 +2,10 @@ package com.blazemeter.jmeter.http2.core;
 
 import com.blazemeter.jmeter.http2.sampler.HTTP2Sampler;
 import java.io.IOException;
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.UnsupportedEncodingException;
 import java.net.URISyntaxException;
 import java.net.URL;
 import java.net.URLDecoder;
@@ -95,7 +99,8 @@ public class HTTP2JettyClient {
           String.format("Method %s is not supported", method));
     } else {
       ContentResponse contentResponse = request.send();
-      setResultContentResponse(result, contentResponse);
+      setResultContentResponse(result, contentResponse, sampler);
+      result.sampleEnd();
       if (result.isRedirect()) {
         String redirectLocation = contentResponse.getHeaders() != null
             ? contentResponse.getHeaders().get(HTTPConstants.HEADER_LOCATION)
@@ -132,21 +137,32 @@ public class HTTP2JettyClient {
   }
 
   public void start() throws Exception {
-    httpClient.start();
+    if (!httpClient.isStarted()) {
+      httpClient.start();
+    }
   }
 
   public void stop() throws Exception {
     httpClient.stop();
   }
 
-  private void setResultContentResponse(HTTPSampleResult result, ContentResponse contentResponse) {
+  private void setResultContentResponse(HTTPSampleResult result, ContentResponse contentResponse,
+      HTTP2Sampler sampler) throws IOException {
     result.setSuccessful(contentResponse.getStatus() >= 200 && contentResponse.getStatus() <= 399);
     result.setResponseCode(String.valueOf(contentResponse.getStatus()));
     result
         .setResponseMessage(contentResponse.getReason() != null ? contentResponse.getReason() : "");
     result.setResponseHeaders(contentResponse.getHeaders().asString());
-    result.setResponseData(contentResponse.getContentAsString(), contentResponse.getEncoding());
-
+    InputStream inputStream = new ByteArrayInputStream(contentResponse.getContent());
+    result.setResponseData(sampler.readResponse(result, inputStream,
+        contentResponse.getContent().length));
+    String contentType = contentResponse.getHeaders() != null
+        ? contentResponse.getHeaders().get(HTTPConstants.HEADER_CONTENT_TYPE)
+        : null;
+    if (contentType != null) {
+      result.setContentType(contentType);
+      result.setEncodingAndType(contentType);
+    }
   }
 
   private void setBody(HttpRequest request, HTTP2Sampler sampler, HTTPSampleResult result)

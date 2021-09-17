@@ -1,7 +1,9 @@
 package com.blazemeter.jmeter.http2.sampler.gui;
 
 import java.awt.BorderLayout;
+import java.awt.Dimension;
 import javax.swing.BorderFactory;
+import javax.swing.JCheckBox;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JPasswordField;
@@ -11,7 +13,9 @@ import javax.swing.border.Border;
 import org.apache.jmeter.gui.util.HorizontalPanel;
 import org.apache.jmeter.gui.util.VerticalPanel;
 import org.apache.jmeter.protocol.http.config.gui.UrlConfigGui;
+import org.apache.jmeter.protocol.http.sampler.HTTPSamplerBase;
 import org.apache.jmeter.util.JMeterUtils;
+import org.apache.jorphan.gui.JLabeledTextField;
 
 public class HTTP2SamplerPanel extends JPanel {
 
@@ -23,6 +27,13 @@ public class HTTP2SamplerPanel extends JPanel {
   private final JTextField proxyPortField = new JTextField(10);
   private final JTextField proxyUserField = new JTextField(5);
   private final JPasswordField proxyPassField = new JPasswordField(5);
+  private final JCheckBox retrieveEmbeddedResourcesCheckBox = new JCheckBox(
+      JMeterUtils.getResString("web_testing_retrieve_images"));
+  private final JCheckBox concurrentDownloadCheckBox = new JCheckBox(
+      JMeterUtils.getResString("web_testing_concurrent_download"));
+  private final JTextField concurrentPoolField = new JTextField(2);
+  private final JLabeledTextField embeddedResourcesRegexField = new JLabeledTextField(
+      JMeterUtils.getResString("web_testing_embedded_url_pattern"), 20);
 
   public HTTP2SamplerPanel(boolean isSampler) {
     setLayout(new BorderLayout(0, 5));
@@ -40,12 +51,6 @@ public class HTTP2SamplerPanel extends JPanel {
     return tabbedPane;
   }
 
-  private UrlConfigGui createUrlConfigGui() {
-    final UrlConfigGui configGui = new UrlConfigGui(true, true, true);
-    configGui.setBorder(makeBorder());
-    return configGui;
-  }
-
   private Border makeBorder() {
     return BorderFactory.createEmptyBorder(10, 10, 5, 10);
   }
@@ -55,6 +60,7 @@ public class HTTP2SamplerPanel extends JPanel {
     advancedPanel.setBorder(makeBorder());
     advancedPanel.add(createTimeOutPanel());
     advancedPanel.add(createProxyPanel());
+    advancedPanel.add(createEmbeddedResourcesPanel());
     return advancedPanel;
   }
 
@@ -97,8 +103,38 @@ public class HTTP2SamplerPanel extends JPanel {
     return proxyServerPanel;
   }
 
+  private JPanel createEmbeddedResourcesPanel() {
+    final JPanel embeddedResourcesPanel = new HorizontalPanel();
+    embeddedResourcesPanel.setBorder(BorderFactory
+        .createTitledBorder(BorderFactory.createEtchedBorder(),
+            JMeterUtils.getResString("web_testing_retrieve_title")));
+    retrieveEmbeddedResourcesCheckBox.addItemListener(e -> updateEnableStatus());
+    concurrentDownloadCheckBox.addItemListener(e -> updateEnableStatus());
+    concurrentPoolField.setMinimumSize(
+        new Dimension(10, (int) concurrentPoolField.getPreferredSize().getHeight()));
+    concurrentPoolField.setMaximumSize(
+        new Dimension(30, (int) concurrentPoolField.getPreferredSize().getHeight()));
+    embeddedResourcesPanel.add(retrieveEmbeddedResourcesCheckBox);
+    embeddedResourcesPanel.add(concurrentDownloadCheckBox);
+    embeddedResourcesPanel.add(concurrentPoolField);
+    embeddedResourcesPanel.add(embeddedResourcesRegexField);
+    return embeddedResourcesPanel;
+  }
+
+  private void updateEnableStatus() {
+    concurrentDownloadCheckBox.setEnabled(retrieveEmbeddedResourcesCheckBox.isSelected());
+    embeddedResourcesRegexField.setEnabled(retrieveEmbeddedResourcesCheckBox.isSelected());
+    concurrentPoolField
+        .setEnabled(retrieveEmbeddedResourcesCheckBox.isSelected() && concurrentDownloadCheckBox
+            .isSelected());
+  }
+
   public void resetFields() {
     urlConfigGui.clear();
+    retrieveEmbeddedResourcesCheckBox.setSelected(false);
+    concurrentDownloadCheckBox.setSelected(false);
+    concurrentPoolField.setText(String.valueOf(HTTPSamplerBase.CONCURRENT_POOL_SIZE));
+    updateEnableStatus();
     connectTimeOutField.setText("");
     responseTimeOutField.setText("");
     proxySchemeField.setText("");
@@ -140,6 +176,22 @@ public class HTTP2SamplerPanel extends JPanel {
     return new String(proxyPassField.getPassword());
   }
 
+  public boolean getRetrieveEmbeddedResources() {
+    return retrieveEmbeddedResourcesCheckBox.isSelected();
+  }
+
+  public boolean getConcurrentDownload() {
+    return concurrentDownloadCheckBox.isSelected();
+  }
+
+  public String getConcurrentPool() {
+    return concurrentPoolField.getText();
+  }
+
+  public String getEmbeddedResourcesRegex() {
+    return embeddedResourcesRegexField.getText();
+  }
+
   public void setConnectTimeOut(String connectTimeOut) {
     this.connectTimeOutField.setText(connectTimeOut);
   }
@@ -166,5 +218,21 @@ public class HTTP2SamplerPanel extends JPanel {
 
   public void setProxyPass(String proxyPass) {
     this.proxyPassField.setText(proxyPass);
+  }
+
+  public void setRetrieveEmbeddedResources(boolean retrieveEmbeddedResources) {
+    this.retrieveEmbeddedResourcesCheckBox.setSelected(retrieveEmbeddedResources);
+  }
+
+  public void setConcurrentDownload(boolean concurrentDownload) {
+    this.concurrentDownloadCheckBox.setSelected(concurrentDownload);
+  }
+
+  public void setConcurrentPool(String concurrentPool) {
+    this.concurrentPoolField.setText(concurrentPool);
+  }
+
+  public void setEmbeddedResourcesRegex(String embeddedResourcesRegex) {
+    this.embeddedResourcesRegexField.setText(embeddedResourcesRegex);
   }
 }

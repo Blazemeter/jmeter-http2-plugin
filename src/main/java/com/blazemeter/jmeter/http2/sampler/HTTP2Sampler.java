@@ -19,12 +19,14 @@ import org.apache.jmeter.threads.JMeterVariables;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListener, ThreadListener {
+public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListener,
+    ThreadListener {
 
   private static final Logger LOG = LoggerFactory.getLogger(HTTP2Sampler.class);
   private static final ThreadLocal<Map<HTTP2ClientKey, HTTP2JettyClient>> CONNECTIONS =
       ThreadLocal
-      .withInitial(HashMap::new);
+          .withInitial(HashMap::new);
+  private transient Map<HTTP2ClientKey, HTTP2JettyClient> threadClonedConnections;
   private final Callable<HTTP2JettyClient> clientFactory;
 
   public HTTP2Sampler() {
@@ -44,7 +46,6 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
     try {
       HTTP2JettyClient client = clientFactory.call();
       HTTPSampleResult result = client.sample(this, url, method, areFollowingRedirect, depth);
-      result.sampleEnd();
       return result;
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
@@ -54,6 +55,13 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
       LOG.error("Error while sampling", e);
       return errorResult(e, new HTTPSampleResult());
     }
+  }
+
+  @Override
+  public Object clone() {
+    HTTP2Sampler clonedElement = (HTTP2Sampler) super.clone();
+    clonedElement.threadClonedConnections = new HashMap<>(CONNECTIONS.get());
+    return clonedElement;
   }
 
   private HTTP2JettyClient buildClient() throws Exception {
@@ -69,10 +77,18 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
   }
 
   private HTTP2JettyClient getClient() throws Exception {
+    updateConnectionsIfCloned();
     Map<HTTP2ClientKey, HTTP2JettyClient> clients = CONNECTIONS.get();
     HTTP2ClientKey key = buildConnectionKey();
     return clients.containsKey(key) ? clients.get(key)
         : buildClient();
+  }
+
+  private void updateConnectionsIfCloned() {
+    if (threadClonedConnections != null) {
+      CONNECTIONS.remove();
+      CONNECTIONS.set(threadClonedConnections);
+    }
   }
 
   public HTTPSampleResult resultProcessing(final boolean pAreFollowingRedirect,
