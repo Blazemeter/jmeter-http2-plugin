@@ -1,11 +1,9 @@
 package com.blazemeter.jmeter.http2.core;
 
 import com.blazemeter.jmeter.http2.sampler.HTTP2Sampler;
-import java.io.IOException;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.UnsupportedEncodingException;
 import java.net.URISyntaxException;
 import java.net.URL;
 import java.net.URLDecoder;
@@ -163,6 +161,15 @@ public class HTTP2JettyClient {
       result.setContentType(contentType);
       result.setEncodingAndType(contentType);
     }
+
+    // Set size in bytes for headers and body
+    final long headerBytes =
+        (long) result.getResponseHeaders().length()   // condensed length (without \r)
+            + (long) contentResponse.getHeaders().asString().length() // Add \r for each header
+            + 1L // Add \r for initial header
+            + 2L; // final \r\n before data
+    result.setHeadersSize((int) headerBytes);
+
   }
 
   private void setBody(HttpRequest request, HTTP2Sampler sampler, HTTPSampleResult result)
