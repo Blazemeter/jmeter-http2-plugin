@@ -21,6 +21,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.zip.GZIPOutputStream;
 import jodd.net.MimeTypes;
+import org.apache.jmeter.protocol.http.control.CookieManager;
 import org.apache.jmeter.protocol.http.control.Header;
 import org.apache.jmeter.protocol.http.control.HeaderManager;
 import org.apache.jmeter.protocol.http.sampler.HTTPSampleResult;
@@ -57,6 +58,9 @@ public class HTTP2JettyClientTest {
   private static final String REQUEST_HEADERS = "Accept-Encoding: gzip\r\nUser-Agent: Jetty/11.0"
       + ".6\r\n\r\n";
   private static final String SERVER_PATH = "/test";
+  private static final String SERVER_PATH_SET_COOKIES = "/test/set-cookies";
+  private static final String SERVER_PATH_USE_COOKIES = "/test/use-cookies";
+  private static final String RESPONSE_DATA_COOKIES = "testCookie=test";
   private static final String SERVER_PATH_200 = "/test/200";
   private static final String SERVER_PATH_SLOW = "/test/slow";
   private static final String SERVER_PATH_200_GZIP = "/test/gzip";
@@ -148,6 +152,14 @@ public class HTTP2JettyClientTest {
                 "https://localhost:" + SERVER_PORT + SERVER_PATH_200);
             resp.setStatus(HttpStatus.FOUND_302);
             break;
+          case SERVER_PATH_SET_COOKIES:
+            resp.addHeader(HTTPConstants.HEADER_SET_COOKIE,
+                RESPONSE_DATA_COOKIES);
+            break;
+          case SERVER_PATH_USE_COOKIES:
+            String cookie = req.getHeader(HTTPConstants.HEADER_COOKIE);
+            resp.getWriter().write(cookie);
+            break;
           case SERVER_PATH_200_EMBEDDED:
             resp.setContentType(MimeTypes.MIME_TEXT_HTML + ";" + StandardCharsets.UTF_8.name());
             resp.getWriter().write(HTTP2JettyClientTest.getBasicHtmlTemplate());
@@ -227,6 +239,27 @@ public class HTTP2JettyClientTest {
     validateEmbeddedResources(result, expected);
   }
 
+  @Test
+  public void shouldUseCookiesFromFirstRequestOnSecondRequestWhenSecondRequestIsSent() throws Exception {
+    HTTPSampleResult expected = new HTTPSampleResult();
+    expected.setCookies(RESPONSE_DATA_COOKIES);
+    expected.setSuccessful(true);
+    expected.setResponseCode(String.valueOf(HttpStatus.OK_200));
+    expected.setRequestHeaders(REQUEST_HEADERS.substring(0, 49) + "Cookie: " +
+        RESPONSE_DATA_COOKIES+ "\r\nCookie:" + " " + RESPONSE_DATA_COOKIES + "\r\n\r\n");
+    expected.setResponseData(RESPONSE_DATA_COOKIES+SERVER_RESPONSE,
+        StandardCharsets.UTF_8.name());
+    startServer(createGetServerResponse());
+    CookieManager cookieManager = new CookieManager();
+    cookieManager.testStarted(HOST_NAME);
+    sampler.setCookieManager(cookieManager);
+    client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS,
+        HOST_NAME, SERVER_PORT, SERVER_PATH_SET_COOKIES), HTTPConstants.GET, false, 0);
+    HTTPSampleResult result = client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS,
+        HOST_NAME, SERVER_PORT, SERVER_PATH_USE_COOKIES), HTTPConstants.GET, false, 0);
+    validateResponse(result, expected);
+    softly.assertThat(result.getCookies()).isEqualTo(expected.getCookies());
+  }
 
   @Test
   public void shouldReturnSuccessSampleResultWhenSuccessRequestWithHeaders() throws Exception {

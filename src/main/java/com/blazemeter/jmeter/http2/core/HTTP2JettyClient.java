@@ -18,6 +18,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.regex.Pattern;
 import java.util.stream.StreamSupport;
+import org.apache.jmeter.protocol.http.control.CookieManager;
 import org.apache.jmeter.protocol.http.control.Header;
 import org.apache.jmeter.protocol.http.control.HeaderManager;
 import org.apache.jmeter.protocol.http.sampler.HTTPSampleResult;
@@ -95,12 +96,17 @@ public class HTTP2JettyClient {
     if (sampler.getHeaderManager() != null) {
       setHeaders(request, sampler.getHeaderManager(), url);
     }
+
+    String cookiesString = setCookies(request, url, sampler.getCookieManager());
+    result.setCookies(cookiesString);
+
     setBody(request, sampler, result);
     if (!isSupportedMethod(method)) {
       throw new UnsupportedOperationException(
           String.format("Method %s is not supported", method));
     } else {
       ContentResponse contentResponse = request.send();
+      saveCookiesInCookieManager(contentResponse, url, sampler.getCookieManager());
       setResultContentResponse(result, contentResponse, sampler);
       result.sampleEnd();
       if (result.isRedirect()) {
@@ -117,6 +123,25 @@ public class HTTP2JettyClient {
     result.setRequestHeaders(request.getHeaders() != null ? request.getHeaders().asString() : "");
     result = sampler.resultProcessing(areFollowingRedirect, depth, result);
     return result;
+  }
+
+  private void saveCookiesInCookieManager(ContentResponse response, java.net.URL newURL,
+      CookieManager cookieManager) {
+    String cookieHeader = response.getHeaders().get(HTTPConstants.HEADER_SET_COOKIE);
+    if (cookieHeader != null) {
+      cookieManager.addCookieFromHeader(cookieHeader, newURL);
+    }
+  }
+
+  private String setCookies(HttpRequest request, java.net.URL newURL, CookieManager cookieManager) {
+    if (cookieManager != null) {
+      String cookieString = cookieManager.getCookieHeaderForURL(newURL);
+      HttpField cookieHeader = new HttpField(HTTPConstants.HEADER_COOKIE, cookieString);
+      request.addHeader(cookieHeader);
+      return cookieString;
+    } else {
+      return null;
+    }
   }
 
   private void setProxy(String host, int port, String protocol) {

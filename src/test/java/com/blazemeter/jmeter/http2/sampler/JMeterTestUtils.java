@@ -2,6 +2,8 @@ package com.blazemeter.jmeter.http2.sampler;
 
 import java.io.File;
 import kg.apc.emulators.TestJMeterUtils;
+import org.apache.http.client.config.CookieSpecs;
+import org.apache.jmeter.protocol.http.control.HC4CookieHandler;
 import org.apache.jmeter.util.JMeterUtils;
 
 public class JMeterTestUtils {
@@ -27,6 +29,8 @@ public class JMeterTestUtils {
       JMeterUtils
           .setProperty("cssParser.className", "org.apache.jmeter.protocol.http.parser.CssParser");
       JMeterUtils.setProperty("cssParser.types", "text/css");
+      JMeterUtils.setProperty( "CookieManager.implementation", HC4CookieHandler.class.getName());
+      JMeterUtils.setProperty( "CookieManager.policy", CookieSpecs.STANDARD);
     }
   }
 }
