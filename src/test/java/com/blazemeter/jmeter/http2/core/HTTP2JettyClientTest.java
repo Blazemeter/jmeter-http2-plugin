@@ -256,7 +256,6 @@ public class HTTP2JettyClientTest {
     expected.setResponseData(HTTP2JettyClientTest.getFileData(),
         StandardCharsets.UTF_8.name());
     startServer(createGetServerResponse());
-    sampler.setImageParser(true);
     final HTTPSampleResult result = client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS,
         HOST_NAME, SERVER_PORT, SERVER_PATH_200_FILE_SENT), HTTPConstants.POST, false, 0);
     validateFileDataReceived(result, expected);
