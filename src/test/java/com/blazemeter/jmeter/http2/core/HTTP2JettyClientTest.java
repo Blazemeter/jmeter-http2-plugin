@@ -61,6 +61,7 @@ public class HTTP2JettyClientTest {
   private static final int SERVER_PORT = 6666;
   private static final String BASIC_HTML_TEMPLATE = "<!DOCTYPE html><html><head><title>Page "
       + "Title</title></head><body><div><img src=%s></div></body></html>";
+  private static final String pathToFile = "/src/main/resources/blazemeter-labs-light-logo.png";
 
   @Rule
   public final JUnitSoftAssertions softly = new JUnitSoftAssertions();
@@ -123,6 +124,10 @@ public class HTTP2JettyClientTest {
             resp.setStatus(HttpStatus.FOUND_302);
             break;
           case SERVER_PATH_200_EMBEDDED:
+            resp.setContentType(MimeTypes.MIME_TEXT_HTML + ";" + StandardCharsets.UTF_8.name());
+            resp.getWriter().write(HTTP2JettyClientTest.getBasicHtmlTemplate());
+            return;
+          case SERVER_PATH_200_FILE_SENT:
             resp.setContentType(
                 MimeTypes.MIME_APPLICATION_JSON + ";" + StandardCharsets.UTF_8.name());
             try {
@@ -130,10 +135,6 @@ public class HTTP2JettyClientTest {
             } catch (final URISyntaxException e) {
               e.printStackTrace();
             }
-            return;
-          case SERVER_PATH_200_FILE_SENT:
-            resp.setContentType(MimeTypes.MIME_TEXT_HTML + ";" + StandardCharsets.UTF_8.name());
-            resp.getWriter().write(HTTP2JettyClientTest.getBasicHtmlTemplate());
             return;
         }
         resp.setContentType(MimeTypes.MIME_TEXT_HTML + ";" + StandardCharsets.UTF_8.name());
@@ -252,7 +253,7 @@ public class HTTP2JettyClientTest {
     expected.setSuccessful(true);
     expected.setResponseCode(String.valueOf(HttpStatus.OK_200));
     expected.setRequestHeaders(REQUEST_HEADERS);
-    expected.setResponseData(HTTP2JettyClientTest.getBasicHtmlTemplate(),
+    expected.setResponseData(HTTP2JettyClientTest.getFileData(),
         StandardCharsets.UTF_8.name());
     startServer(createGetServerResponse());
     sampler.setImageParser(true);
@@ -306,19 +307,38 @@ public class HTTP2JettyClientTest {
         "https://localhost:" + SERVER_PORT + SERVER_PATH_200);
   }
 
+  /**
+   * Get data in array of bytes format for a new File.
+   *
+   * @return data in String parsed
+   */
   private static String getFileData() throws IOException, URISyntaxException {
+    // Get root directory from system to avoid environment problems in tests
+    StringBuilder rootPath = new StringBuilder("file://");
+    rootPath.append(System.getProperty("user.dir")); // get current working directory
+    rootPath.append(pathToFile); // add path to file
+    final String uriFile = rootPath.toString();
     // Load file from resources and convert it to x64 base like jmeter return a file
-    final File file = new File(new URI(("./resources/blazemeter-labs-light-logo.png")));
+    final File file = new File(new URI((uriFile)));
+    final byte[] encoded = Base64.encodeBase64(FileUtils.readFileToByteArray(file));
+    return new String(encoded, StandardCharsets.US_ASCII);
+  }
+
+  /**
+   * Get data in array of bytes format from a existing File.
+   *
+   * @param file File to convert
+   */
+  @Deprecated
+  private static String getDataFromFile(final File file) throws IOException {
     final byte[] encoded = Base64.encodeBase64(FileUtils.readFileToByteArray(file));
     return new String(encoded, StandardCharsets.US_ASCII);
   }
 
   private void validateFileDataReceived(final HTTPSampleResult result,
       final HTTPSampleResult expected) {
-    final SampleResult[] results = result.getSubResults();
+    result.getDataType().equalsIgnoreCase(SampleResult.TEXT);
+    result.getUrlAsString().equalsIgnoreCase("https://localhost:6666/test/file");
     validateResponse(result, expected);
-    softly.assertThat(results[0].getDataType()).isEqualTo(SampleResult.TEXT);
-    softly.assertThat(results[0].getUrlAsString())
-        .isEqualTo("https://localhost:6666/test/file");
   }
 }
