@@ -13,6 +13,7 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeoutException;
+import java.util.zip.GZIPOutputStream;
 import jodd.net.MimeTypes;
 import org.apache.jmeter.protocol.http.control.Header;
 import org.apache.jmeter.protocol.http.control.HeaderManager;
@@ -20,6 +21,7 @@ import org.apache.jmeter.protocol.http.sampler.HTTPSampleResult;
 import org.apache.jmeter.protocol.http.util.HTTPConstants;
 import org.apache.jmeter.samplers.SampleResult;
 import org.assertj.core.api.JUnitSoftAssertions;
+import org.assertj.core.api.SoftAssertions;
 import org.eclipse.jetty.http.HttpStatus;
 import org.eclipse.jetty.http2.HTTP2Cipher;
 import org.eclipse.jetty.http2.server.HTTP2ServerConnectionFactory;
@@ -50,12 +52,14 @@ public class HTTP2JettyClientTest {
       + ".6\r\n\r\n";
   private static final String SERVER_PATH = "/test";
   private static final String SERVER_PATH_200 = "/test/200";
+  private static final String SERVER_PATH_200_GZIP = "/test/gzip";
   private static final String SERVER_PATH_200_EMBEDDED = "/test/embedded";
   private static final String SERVER_PATH_400 = "/test/400";
   private static final String SERVER_PATH_302 = "/test/302";
   private static final int SERVER_PORT = 6666;
   private static final String BASIC_HTML_TEMPLATE = "<!DOCTYPE html><html><head><title>Page "
       + "Title</title></head><body><div><img src=%s></div></body></html>";
+  private static final byte[] content = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
 
   @Rule
   public final JUnitSoftAssertions softly = new JUnitSoftAssertions();
@@ -100,6 +104,21 @@ public class HTTP2JettyClientTest {
         HTTPConstants.GET, false, 0);
   }
 
+  @Test
+  public void shouldReturnSuccessSampleResultWhenSuccessResponseWithContentTypeGzip()
+      throws Exception {
+    HTTPSampleResult expected = new HTTPSampleResult();
+    expected.setSuccessful(true);
+    expected.setResponseCode(String.valueOf(HttpStatus.OK_200));
+    expected.setRequestHeaders(REQUEST_HEADERS);
+    expected.setResponseData(HTTP2JettyClientTest.getBasicHtmlTemplate(),
+        StandardCharsets.UTF_8.name());
+    startServer(createGetServerResponse());
+    HTTPSampleResult result = client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS,
+        HOST_NAME, SERVER_PORT, SERVER_PATH_200_GZIP), HTTPConstants.GET, false, 0);
+    softly.assertThat(HTTP2JettyClientTest.content).isEqualTo(result.getResponseData());
+  }
+
   private HttpServlet createGetServerResponse() {
 
     return new HttpServlet() {
@@ -121,6 +140,12 @@ public class HTTP2JettyClientTest {
             resp.setContentType(MimeTypes.MIME_TEXT_HTML + ";" + StandardCharsets.UTF_8.name());
             resp.getWriter().write(HTTP2JettyClientTest.getBasicHtmlTemplate());
             return;
+          case SERVER_PATH_200_GZIP:
+            resp.addHeader("Content-Encoding", "gzip");
+            GZIPOutputStream gzipOutputStream = new GZIPOutputStream(resp.getOutputStream());
+            gzipOutputStream.write(HTTP2JettyClientTest.content);
+            gzipOutputStream.close();
+            break;
         }
         resp.setContentType(MimeTypes.MIME_TEXT_HTML + ";" + StandardCharsets.UTF_8.name());
         resp.getWriter().write(SERVER_RESPONSE);
@@ -251,6 +276,34 @@ public class HTTP2JettyClientTest {
         new URL(HTTPConstants.PROTOCOL_HTTPS, HOST_NAME, SERVER_PORT, SERVER_PATH_200),
         HTTPConstants.GET, false, 0);
   }
+
+  /* @Test
+  public void testGZIPContentIsProxied() throws Exception {
+    final byte[] content = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
+    prepareProxy();
+    prepareServer(
+        new HttpServlet() {
+          @Override
+          protected void doGet(HttpServletRequest req, HttpServletResponse resp)
+              throws ServletException, IOException {
+            if (req.getHeader("Via") != null) resp.addHeader(PROXIED_HEADER, "true");
+
+            resp.addHeader("Content-Encoding", "gzip");
+            GZIPOutputStream gzipOutputStream = new GZIPOutputStream(resp.getOutputStream());
+            gzipOutputStream.write(content);
+            gzipOutputStream.close();
+          }
+        });
+
+    ContentResponse response =
+        client
+            .newRequest("localhost", serverConnector.getLocalPort())
+            .timeout(5, TimeUnit.SECONDS)
+            .send();
+    Assert.assertEquals(200, response.getStatus());
+    Assert.assertTrue(response.getHeaders().containsKey(PROXIED_HEADER));
+    Assert.assertArrayEquals(content, response.getContent());
+  }*/
 
   private void configureSampler(String method) {
     sampler.setMethod(method);
