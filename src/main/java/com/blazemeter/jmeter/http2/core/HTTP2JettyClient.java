@@ -5,6 +5,7 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UnsupportedEncodingException;
+import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
 import java.net.URLDecoder;
@@ -23,10 +24,21 @@ import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 import org.apache.http.HttpResponse;
 import org.apache.http.client.methods.CloseableHttpResponse;
+import org.apache.http.client.methods.HttpGet;
+import org.apache.http.client.methods.HttpHead;
+import org.apache.http.client.methods.HttpOptions;
+import org.apache.http.client.methods.HttpPatch;
+import org.apache.http.client.methods.HttpPost;
+import org.apache.http.client.methods.HttpPut;
+import org.apache.http.client.methods.HttpRequestBase;
+import org.apache.http.client.methods.HttpTrace;
 import org.apache.jmeter.protocol.http.control.CacheManager;
 import org.apache.jmeter.protocol.http.control.Header;
 import org.apache.jmeter.protocol.http.control.HeaderManager;
+import org.apache.jmeter.protocol.http.sampler.HTTPHC4Impl.HttpDelete;
+import org.apache.jmeter.protocol.http.sampler.HTTPHC4Impl.HttpGetWithEntity;
 import org.apache.jmeter.protocol.http.sampler.HTTPSampleResult;
+import org.apache.jmeter.protocol.http.sampler.HttpWebdav;
 import org.apache.jmeter.protocol.http.util.HTTPArgument;
 import org.apache.jmeter.protocol.http.util.HTTPConstants;
 import org.apache.jmeter.samplers.SampleResult;
@@ -64,6 +76,10 @@ public class HTTP2JettyClient {
       "http.post_add_content_type_if_missing", false);
   private static final Pattern PORT_PATTERN = Pattern.compile("\\d+");
   private final HttpClient httpClient;
+  private static final CachedResourceMode CACHED_RESOURCE_MODE =
+      CachedResourceMode.valueOf(
+          JMeterUtils.getPropDefault("cache_manager.cached_resource_mode", //$NON-NLS-1$
+              CachedResourceMode.RETURN_NO_SAMPLE.toString()));
 
   public HTTP2JettyClient() {
     ClientConnector clientConnector = new ClientConnector();
@@ -97,7 +113,8 @@ public class HTTP2JettyClient {
 
     final CacheManager cacheManager = sampler.getCacheManager();
     if (sampler.getHeaderManager() != null) {
-      setHeaders(request, sampler.getHeaderManager(), url, cacheManager);
+      setHeaders(request, sampler.getHeaderManager(), url, cacheManager, areFollowingRedirect,
+          sampler);
     }
 
     // Get headers request and convert to pass to cache manager
@@ -112,7 +129,7 @@ public class HTTP2JettyClient {
         })
         .collect(Collectors.toList());
 
-    // If result request is cached, then return it
+    // If result of request is cached, then return it
     if (cacheManager != null && HTTPConstants.GET.equalsIgnoreCase(method) && cacheManager
         .inCache(url, (org.apache.http.Header[]) headersRequest.toArray())) {
       return updateSampleResultForResourceInCache(result);
@@ -253,8 +270,9 @@ public class HTTP2JettyClient {
     return METHODS_WITH_BODY.contains(method);
   }
 
-  private void setHeaders(HttpRequest request, HeaderManager headerManager, URL url,
-      CacheManager cacheManager) {
+  private void setHeaders(HttpRequest request, final HeaderManager headerManager, final URL url,
+      CacheManager cacheManager, final boolean areFollowingRedirect, final HTTP2Sampler sampler)
+      throws URISyntaxException {
     StreamSupport.stream(headerManager.getHeaders().spliterator(), false)
         .map(prop -> (Header) prop.getObjectValue())
         .filter(header -> !HTTPConstants.HEADER_CONTENT_LENGTH.equalsIgnoreCase(header.getName()))
@@ -265,8 +283,10 @@ public class HTTP2JettyClient {
         });
 
     if (cacheManager != null) {
-      // TODO dfilgueiras: Convert to HttpRequestBase
-      cacheManager.setHeaders(url, /*request*/null);
+      // Convert URL to URI
+      final URI uri = new URI(url.toString());
+      cacheManager.setHeaders(url, createHttpRequest(uri, request.getMethod(),
+          areFollowingRedirect, sampler));
     }
   }
 
@@ -309,9 +329,8 @@ public class HTTP2JettyClient {
    * @param res {@link HTTPSampleResult}
    * @return HTTPSampleResult
    */
-  // TODO dfilgueiras
   private HTTPSampleResult updateSampleResultForResourceInCache(HTTPSampleResult res) {
-    /*switch (CACHED_RESOURCE_MODE) {
+    switch (CACHED_RESOURCE_MODE) {
       case RETURN_NO_SAMPLE:
         return null;
       case RETURN_200_CACHE:
@@ -329,14 +348,99 @@ public class HTTP2JettyClient {
       default:
         // Cannot happen
         throw new IllegalStateException("Unknown CACHED_RESOURCE_MODE");
-    }*/
+    }
+  }
+
+  /**
+   * Create an HttpResponse from a ContentResponse of Jetty
+   * @param contentResponse
+   * @return
+   */
+  private CloseableHttpResponse createHttpResponse(final ContentResponse contentResponse) {
+    // Get atts that Cache need
+    final Header vary = new Header(HTTPConstants.VARY,
+        contentResponse.getHeaders().get(HTTPConstants.VARY));
+    final Header lastModified = new Header(HTTPConstants.LAST_MODIFIED,
+        contentResponse.getHeaders().get(HTTPConstants.LAST_MODIFIED));
+    final Header expires = new Header(HTTPConstants.EXPIRES,
+        contentResponse.getHeaders().get(HTTPConstants.EXPIRES));
+    final Header etag = new Header(HTTPConstants.ETAG,
+        contentResponse.getHeaders().get(HTTPConstants.ETAG);
+    final Header cacheControl = new Header(HTTPConstants.CACHE_CONTROL,
+        contentResponse.getHeaders().get(HTTPConstants.CACHE_CONTROL));
+    final Header date = new Header(HTTPConstants.DATE,
+        contentResponse.getHeaders().get(HTTPConstants.DATE));
+
+    // Set atts in http response
+
     return null;
   }
 
-  // TODO dfilgueiras
-  private CloseableHttpResponse createHttpResponse(final ContentResponse contentResponse) {
+  private enum CachedResourceMode {
+    RETURN_200_CACHE(),
+    RETURN_NO_SAMPLE(),
+    RETURN_CUSTOM_STATUS()
+  }
 
-    return null;
+  /**
+   * SampleResult message when resource was in cache and mode is RETURN_200_CACHE
+   */
+  private static final String RETURN_200_CACHE_MESSAGE =
+      JMeterUtils.getPropDefault("RETURN_200_CACHE.message", "(ex cache)");//$NON-NLS-1$ $NON-NLS-2$
+
+  /**
+   * Custom response code for cached resource
+   */
+  private static final String RETURN_CUSTOM_STATUS_CODE =
+      JMeterUtils.getProperty("RETURN_CUSTOM_STATUS.code");//$NON-NLS-1$
+
+  /**
+   * Custom response message for cached resource
+   */
+  private static final String RETURN_CUSTOM_STATUS_MESSAGE =
+      JMeterUtils.getProperty("RETURN_CUSTOM_STATUS.message"); //$NON-NLS-1$
+
+  /**
+   * @param uri {@link URI}
+   * @param method HTTP Method
+   * @param areFollowingRedirect Are we following redirects
+   * @return {@link HttpRequestBase}
+   */
+  private HttpRequestBase createHttpRequest(final URI uri, final String method,
+      final boolean areFollowingRedirect,
+      final HTTP2Sampler sampler) {
+    HttpRequestBase result;
+    if (method.equals(HTTPConstants.POST)) {
+      result = new HttpPost(uri);
+    } else if (method.equals(HTTPConstants.GET)) {
+      // Some servers fail if Content-Length is equal to 0
+      // so to avoid this we use HttpGet when there is no body (Content-Length will not be set)
+      // otherwise we use HttpGetWithEntity
+      if (!areFollowingRedirect
+          && ((!sampler.hasArguments() && sampler.getSendFileAsPostBody())
+          || sampler.getSendParameterValuesAsPostBody())) {
+        result = new HttpGetWithEntity(uri);
+      } else {
+        result = new HttpGet(uri);
+      }
+    } else if (method.equals(HTTPConstants.PUT)) {
+      result = new HttpPut(uri);
+    } else if (method.equals(HTTPConstants.HEAD)) {
+      result = new HttpHead(uri);
+    } else if (method.equals(HTTPConstants.TRACE)) {
+      result = new HttpTrace(uri);
+    } else if (method.equals(HTTPConstants.OPTIONS)) {
+      result = new HttpOptions(uri);
+    } else if (method.equals(HTTPConstants.DELETE)) {
+      result = new HttpDelete(uri);
+    } else if (method.equals(HTTPConstants.PATCH)) {
+      result = new HttpPatch(uri);
+    } else if (HttpWebdav.isWebdavMethod(method)) {
+      result = new HttpWebdav(method, uri);
+    } else {
+      throw new IllegalArgumentException("Unexpected method: '" + method + "'");
+    }
+    return result;
   }
 
 }
