@@ -232,7 +232,7 @@ public class HTTP2JettyClientTest {
     softly.assertThat(result.getSubResults().length).isEqualTo(0);
   }
 
-  @Test(expected = ExecutionException.class)
+  @Test(expected = InterruptedException.class)
   public void shouldReturnErrorMessageWhenConnectTimeIsOver() throws Exception {
     startServer(createGetServerResponse());
     configureSampler(HTTPConstants.GET);
