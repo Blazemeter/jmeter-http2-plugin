@@ -162,12 +162,12 @@ public class HTTP2JettyClient {
       result.setEncodingAndType(contentType);
     }
 
-    // Set size in bytes for headers and body
+    // Set size for header and body (\r\r\n)
     final long headerBytes =
-        (long) result.getResponseHeaders().length()   // condensed length (without \r)
-            + (long) contentResponse.getHeaders().asString().length() // Add \r for each header
-            + 1L // Add \r for initial header
-            + 2L; // final \r\n before data
+        (long) result.getResponseHeaders().length()
+            + (long) contentResponse.getHeaders().asString().length()
+            + 1L
+            + 2L;
     result.setHeadersSize((int) headerBytes);
 
   }
@@ -189,23 +189,20 @@ public class HTTP2JettyClient {
     Content requestContent;
     HTTPFileArg[] files = sampler.getHTTPFiles();
 
-    // If there are no arguments, we can send a file as the body of the request
     if (!sampler.hasArguments() && sampler
-        .getSendFileAsPostBody()) { // Not null file and not empty name for it
+        .getSendFileAsPostBody()) {
       final HTTPFileArg file = files[0]; // Only one File support in not multipart scenario
       String mimeTypeFile = null;
       if (!hasContentTypeHeader) {
-        // Allow the mimetype of the file to control the content type
         if (file.getMimeType() != null && file.getMimeType().length() > 0) {
           mimeTypeFile = file.getMimeType();
-        } else if (ADD_CONTENT_TYPE_TO_POST_IF_MISSING) { // MimeType by default if property is true
+        } else if (ADD_CONTENT_TYPE_TO_POST_IF_MISSING) {
           mimeTypeFile = HTTPConstants.APPLICATION_X_WWW_FORM_URLENCODED;
         }
       }
 
       requestContent = new PathRequestContent(mimeTypeFile, Path.of(file.getPath()));
       request.body(requestContent);
-      // We just add placeholder text for file content
       result.setQueryString("<actual file content, not shown here>");
       postBody.append("<actual file content, not shown here>");
 
