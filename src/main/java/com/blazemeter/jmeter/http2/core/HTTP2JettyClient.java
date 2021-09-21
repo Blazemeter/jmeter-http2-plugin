@@ -14,6 +14,7 @@ import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.regex.Pattern;
 import java.util.stream.StreamSupport;
@@ -85,6 +86,7 @@ public class HTTP2JettyClient {
     }
     result.sampleStart();
     HttpRequest request = createRequest(url, result);
+    setTimeouts(sampler, request);
     request.followRedirects(false);
     request.method(method);
 
@@ -293,6 +295,15 @@ public class HTTP2JettyClient {
 
   private String getSampleLabel(URL url, HTTP2Sampler sampler) {
     return SampleResult.isRenameSampleLabel() ? sampler.getName() : url.toString();
+  }
+
+  private void setTimeouts(HTTP2Sampler sampler, HttpRequest request) {
+    if (sampler.getConnectTimeout() > 0) {
+      httpClient.setConnectTimeout(sampler.getConnectTimeout());
+    }
+    if (sampler.getResponseTimeout() > 0) {
+      request.timeout(sampler.getResponseTimeout(), TimeUnit.MILLISECONDS);
+    }
   }
 
 }

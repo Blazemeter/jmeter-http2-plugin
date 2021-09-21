@@ -1,9 +1,11 @@
 package com.blazemeter.jmeter.http2.core;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.Assert.assertThrows;
 
 import com.blazemeter.jmeter.http2.sampler.HTTP2Sampler;
 import com.blazemeter.jmeter.http2.sampler.JMeterTestUtils;
+import com.google.common.base.Stopwatch;
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -14,6 +16,7 @@ import java.net.URISyntaxException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import jodd.net.MimeTypes;
 import org.apache.commons.codec.binary.Base64;
@@ -54,6 +57,7 @@ public class HTTP2JettyClientTest {
       + ".6\r\n\r\n";
   private static final String SERVER_PATH = "/test";
   private static final String SERVER_PATH_200 = "/test/200";
+  private static final String SERVER_PATH_SLOW = "/test/slow";
   private static final String SERVER_PATH_200_EMBEDDED = "/test/embedded";
   private static final String SERVER_PATH_200_FILE_SENT = "/test/file";
   private static final String SERVER_PATH_400 = "/test/400";
@@ -113,6 +117,14 @@ public class HTTP2JettyClientTest {
       protected void service(HttpServletRequest req, HttpServletResponse resp) throws IOException {
         switch (req.getServletPath() + req.getPathInfo()) {
           case SERVER_PATH_200:
+            resp.setStatus(HttpStatus.OK_200);
+            break;
+          case SERVER_PATH_SLOW:
+            try {
+              Thread.sleep(10000);
+            } catch (InterruptedException e) {
+              e.printStackTrace();
+            }
             resp.setStatus(HttpStatus.OK_200);
             break;
           case SERVER_PATH_400:
@@ -259,6 +271,37 @@ public class HTTP2JettyClientTest {
     final HTTPSampleResult result = client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS,
         HOST_NAME, SERVER_PORT, SERVER_PATH_200_FILE_SENT), HTTPConstants.POST, false, 0);
     validateFileDataReceived(result, expected);
+  }
+
+  @Test
+  public void shouldReturnErrorMessageWhenConnectTimeIsOver() {
+    configureSampler(HTTPConstants.GET);
+    sampler.setConnectTimeout("1");
+    Exception exception = assertThrows(Exception.class, () -> {
+      client.sample(sampler,
+          new URL(HTTPConstants.PROTOCOL_HTTPS, HOST_NAME, SERVER_PORT, SERVER_PATH_200),
+          HTTPConstants.GET, false, 0);
+    });
+
+    String actual = exception.getMessage();
+    String expected = "java.net.SocketTimeoutException: Connect Timeout";
+    softly.assertThat(actual).contains(expected);
+  }
+
+  @Test
+  public void shouldReturnErrorMessageWhenResponseTimeIsOver() throws Exception {
+    long timeout = 1000;
+    startServer(createGetServerResponse());
+    configureSampler(HTTPConstants.GET);
+    sampler.setResponseTimeout(String.valueOf(timeout));
+    Stopwatch waitTime = Stopwatch.createStarted();
+    TimeoutException exception = assertThrows(TimeoutException.class, () -> {
+      client.sample(sampler,
+          new URL(HTTPConstants.PROTOCOL_HTTPS, HOST_NAME, SERVER_PORT, SERVER_PATH_SLOW),
+          HTTPConstants.GET, false, 0);
+    });
+    softly.assertThat(exception).isInstanceOf(TimeoutException.class);
+    softly.assertThat(waitTime.elapsed(TimeUnit.MILLISECONDS)).isGreaterThanOrEqualTo(timeout);
   }
 
   private void configureSampler(String method) {
