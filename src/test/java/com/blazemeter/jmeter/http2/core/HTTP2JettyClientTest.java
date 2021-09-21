@@ -1,6 +1,7 @@
 package com.blazemeter.jmeter.http2.core;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.Assert.assertThrows;
 
 import com.blazemeter.jmeter.http2.sampler.HTTP2Sampler;
 import com.blazemeter.jmeter.http2.sampler.JMeterTestUtils;
@@ -256,24 +257,35 @@ public class HTTP2JettyClientTest {
     softly.assertThat(result.getSubResults().length).isEqualTo(0);
   }
 
-  @Test(expected = ExecutionException.class)
-  public void shouldReturnErrorMessageWhenConnectTimeIsOver() throws Exception {
-    startServer(createGetServerResponse());
+  @Test
+  public void shouldReturnErrorMessageWhenConnectTimeIsOver() {
     configureSampler(HTTPConstants.GET);
     sampler.setConnectTimeout("1");
-    client.sample(sampler,
-        new URL(HTTPConstants.PROTOCOL_HTTPS, HOST_NAME, SERVER_PORT, SERVER_PATH_200),
-        HTTPConstants.GET, false, 0);
+    Exception exception = assertThrows(Exception.class, () -> {
+      client.sample(sampler,
+          new URL(HTTPConstants.PROTOCOL_HTTPS, HOST_NAME, SERVER_PORT, SERVER_PATH_200),
+          HTTPConstants.GET, false, 0);
+    });
+
+    String actual = exception.getMessage();
+    String expected = "java.net.SocketTimeoutException: Connect Timeout";
+    softly.assertThat(actual).contains(expected);
   }
 
-  @Test(expected = TimeoutException.class)
+  @Test()
   public void shouldReturnErrorMessageWhenResponseTimeIsOver() throws Exception {
     startServer(createGetServerResponse());
     configureSampler(HTTPConstants.GET);
     sampler.setResponseTimeout("1");
-    client.sample(sampler,
-        new URL(HTTPConstants.PROTOCOL_HTTPS, HOST_NAME, SERVER_PORT, SERVER_PATH_200),
-        HTTPConstants.GET, false, 0);
+    Exception exception = assertThrows(Exception.class, () -> {
+      client.sample(sampler,
+          new URL(HTTPConstants.PROTOCOL_HTTPS, HOST_NAME, SERVER_PORT, SERVER_PATH_200),
+          HTTPConstants.GET, false, 0);
+    });
+
+    String actual = exception.getMessage();
+    String expected = "Total timeout 1 ms elapsed";
+    softly.assertThat(actual).contains(expected);
   }
 
   private void configureSampler(String method) {
