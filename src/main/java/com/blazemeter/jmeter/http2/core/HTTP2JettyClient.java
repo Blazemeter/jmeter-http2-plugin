@@ -23,7 +23,6 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 import org.apache.http.HttpResponse;
-import org.apache.http.client.methods.CloseableHttpResponse;
 import org.apache.http.client.methods.HttpGet;
 import org.apache.http.client.methods.HttpHead;
 import org.apache.http.client.methods.HttpOptions;
@@ -67,6 +66,10 @@ import org.eclipse.jetty.util.ssl.SslContextFactory;
 
 public class HTTP2JettyClient {
 
+  private static final CachedResourceMode CACHED_RESOURCE_MODE =
+      CachedResourceMode.valueOf(
+          JMeterUtils.getPropDefault("cache_manager.cached_resource_mode", //$NON-NLS-1$
+              CachedResourceMode.RETURN_NO_SAMPLE.toString()));
   private static final Set<String> SUPPORTED_METHODS = new HashSet<>(Arrays
       .asList(HTTPConstants.GET, HTTPConstants.POST, HTTPConstants.PUT, HTTPConstants.PATCH,
           HTTPConstants.OPTIONS, HTTPConstants.DELETE));
@@ -75,11 +78,13 @@ public class HTTP2JettyClient {
   private static final boolean ADD_CONTENT_TYPE_TO_POST_IF_MISSING = JMeterUtils.getPropDefault(
       "http.post_add_content_type_if_missing", false);
   private static final Pattern PORT_PATTERN = Pattern.compile("\\d+");
+  private static final String RETURN_200_CACHE_MESSAGE =
+      JMeterUtils.getPropDefault("RETURN_200_CACHE.message", "(ex cache)");
+  private static final String RETURN_CUSTOM_STATUS_CODE =
+      JMeterUtils.getProperty("RETURN_CUSTOM_STATUS.code");
+  private static final String RETURN_CUSTOM_STATUS_MESSAGE =
+      JMeterUtils.getProperty("RETURN_CUSTOM_STATUS.message");
   private final HttpClient httpClient;
-  private static final CachedResourceMode CACHED_RESOURCE_MODE =
-      CachedResourceMode.valueOf(
-          JMeterUtils.getPropDefault("cache_manager.cached_resource_mode", //$NON-NLS-1$
-              CachedResourceMode.RETURN_NO_SAMPLE.toString()));
 
   public HTTP2JettyClient() {
     ClientConnector clientConnector = new ClientConnector();
@@ -285,8 +290,23 @@ public class HTTP2JettyClient {
     if (cacheManager != null) {
       // Convert URL to URI
       final URI uri = new URI(url.toString());
-      cacheManager.setHeaders(url, createHttpRequest(uri, request.getMethod(),
-          areFollowingRedirect, sampler));
+      final HttpRequestBase reqBase = createHttpRequest(uri, request.getMethod(),
+          areFollowingRedirect, sampler);
+      // Set header to Cache manager
+      cacheManager.setHeaders(url, reqBase);
+      // Set header for jetty request if Cache setted in its headers
+      if (reqBase.getFirstHeader(HTTPConstants.VARY) != null) {
+        request.addHeader(createJettyHeader(new Header(HTTPConstants.VARY,
+            reqBase.getFirstHeader(HTTPConstants.VARY).getValue()), url));
+      }
+      if (reqBase.getFirstHeader(HTTPConstants.IF_MODIFIED_SINCE) != null) {
+        request.addHeader(createJettyHeader(new Header(HTTPConstants.IF_MODIFIED_SINCE,
+            reqBase.getFirstHeader(HTTPConstants.LAST_MODIFIED).getValue()), url));
+      }
+      if (reqBase.getFirstHeader(HTTPConstants.IF_NONE_MATCH) != null) {
+        request.addHeader(createJettyHeader(new Header(HTTPConstants.IF_NONE_MATCH,
+            reqBase.getFirstHeader(HTTPConstants.ETAG).getValue()), url));
+      }
     }
   }
 
@@ -352,28 +372,25 @@ public class HTTP2JettyClient {
   }
 
   /**
-   * Create an HttpResponse from a ContentResponse of Jetty
-   * @param contentResponse
-   * @return
+   * Create an HttpResponse from a ContentResponse of Jetty.
    */
-  private CloseableHttpResponse createHttpResponse(final ContentResponse contentResponse) {
-    // Get atts that Cache need
-    final Header vary = new Header(HTTPConstants.VARY,
-        contentResponse.getHeaders().get(HTTPConstants.VARY));
-    final Header lastModified = new Header(HTTPConstants.LAST_MODIFIED,
+  private HttpResponse createHttpResponse(final ContentResponse contentResponse) {
+    // Set atts in http response thath Cache needs
+    HttpResponse httpResponse = new HttpResponseProxy();
+    httpResponse
+        .addHeader(HTTPConstants.VARY, contentResponse.getHeaders().get(HTTPConstants.VARY));
+    httpResponse.addHeader(HTTPConstants.LAST_MODIFIED,
         contentResponse.getHeaders().get(HTTPConstants.LAST_MODIFIED));
-    final Header expires = new Header(HTTPConstants.EXPIRES,
-        contentResponse.getHeaders().get(HTTPConstants.EXPIRES));
-    final Header etag = new Header(HTTPConstants.ETAG,
-        contentResponse.getHeaders().get(HTTPConstants.ETAG);
-    final Header cacheControl = new Header(HTTPConstants.CACHE_CONTROL,
+    httpResponse
+        .addHeader(HTTPConstants.EXPIRES, contentResponse.getHeaders().get(HTTPConstants.EXPIRES));
+    httpResponse
+        .addHeader(HTTPConstants.ETAG, contentResponse.getHeaders().get(HTTPConstants.ETAG));
+    httpResponse.addHeader(HTTPConstants.CACHE_CONTROL,
         contentResponse.getHeaders().get(HTTPConstants.CACHE_CONTROL));
-    final Header date = new Header(HTTPConstants.DATE,
-        contentResponse.getHeaders().get(HTTPConstants.DATE));
+    httpResponse
+        .addHeader(HTTPConstants.DATE, contentResponse.getHeaders().get(HTTPConstants.DATE));
 
-    // Set atts in http response
-
-    return null;
+    return httpResponse;
   }
 
   private enum CachedResourceMode {
@@ -381,24 +398,6 @@ public class HTTP2JettyClient {
     RETURN_NO_SAMPLE(),
     RETURN_CUSTOM_STATUS()
   }
-
-  /**
-   * SampleResult message when resource was in cache and mode is RETURN_200_CACHE
-   */
-  private static final String RETURN_200_CACHE_MESSAGE =
-      JMeterUtils.getPropDefault("RETURN_200_CACHE.message", "(ex cache)");//$NON-NLS-1$ $NON-NLS-2$
-
-  /**
-   * Custom response code for cached resource
-   */
-  private static final String RETURN_CUSTOM_STATUS_CODE =
-      JMeterUtils.getProperty("RETURN_CUSTOM_STATUS.code");//$NON-NLS-1$
-
-  /**
-   * Custom response message for cached resource
-   */
-  private static final String RETURN_CUSTOM_STATUS_MESSAGE =
-      JMeterUtils.getProperty("RETURN_CUSTOM_STATUS.message"); //$NON-NLS-1$
 
   /**
    * @param uri {@link URI}
