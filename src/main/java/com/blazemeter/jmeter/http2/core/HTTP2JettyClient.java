@@ -18,7 +18,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.regex.Pattern;
 import java.util.stream.StreamSupport;
-import java.util.zip.GZIPInputStream;
 import org.apache.jmeter.protocol.http.control.Header;
 import org.apache.jmeter.protocol.http.control.HeaderManager;
 import org.apache.jmeter.protocol.http.sampler.HTTPSampleResult;
@@ -153,20 +152,9 @@ public class HTTP2JettyClient {
         .setResponseMessage(contentResponse.getReason() != null ? contentResponse.getReason() : "");
     result.setResponseHeaders(contentResponse.getHeaders().asString());
 
-    /*GZIPInputStream gzipInputStream =
-        new GZIPInputStream(new ByteArrayInputStream(
-            contentResponse.getContentAsString().getBytes(StandardCharsets.ISO_8859_1)));*/
-
-    /*GZIPInputStream gzipInputStream = new GZIPInputStream(
-        new ByteArrayInputStream(contentResponse.getContent()),
-        contentResponse.getContent().length);*/
-
     InputStream inputStream = new ByteArrayInputStream(contentResponse.getContent());
     result.setResponseData(sampler.readResponse(result, inputStream,
         contentResponse.getContent().length));
-
-    /*result.setResponseData(sampler.readResponse(result, gzipInputStream,
-        contentResponse.getContentAsString().getBytes(StandardCharsets.ISO_8859_1).length));*/
 
     String contentType = contentResponse.getHeaders() != null
         ? contentResponse.getHeaders().get(HTTPConstants.HEADER_CONTENT_TYPE)
