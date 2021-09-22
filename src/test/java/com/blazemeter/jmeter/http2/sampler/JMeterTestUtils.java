@@ -29,8 +29,6 @@ public class JMeterTestUtils {
       JMeterUtils
           .setProperty("cssParser.className", "org.apache.jmeter.protocol.http.parser.CssParser");
       JMeterUtils.setProperty("cssParser.types", "text/css");
-      JMeterUtils.setProperty( "CookieManager.implementation", HC4CookieHandler.class.getName());
-      JMeterUtils.setProperty( "CookieManager.policy", CookieSpecs.STANDARD);
     }
   }
 }

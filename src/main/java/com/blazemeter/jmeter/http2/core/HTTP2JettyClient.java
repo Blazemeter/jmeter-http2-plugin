@@ -97,8 +97,10 @@ public class HTTP2JettyClient {
       setHeaders(request, sampler.getHeaderManager(), url);
     }
 
-    String cookiesString = setCookies(request, url, sampler.getCookieManager());
-    result.setCookies(cookiesString);
+    CookieManager cookieManager = sampler.getCookieManager();
+    if(cookieManager != null) {
+      result.setCookies(buildCookies(request, url, cookieManager));
+    }
 
     setBody(request, sampler, result);
     if (!isSupportedMethod(method)) {
@@ -133,7 +135,7 @@ public class HTTP2JettyClient {
     }
   }
 
-  private String setCookies(HttpRequest request, java.net.URL newURL, CookieManager cookieManager) {
+  private String buildCookies(HttpRequest request, java.net.URL newURL, CookieManager cookieManager) {
     if (cookieManager != null) {
       String cookieString = cookieManager.getCookieHeaderForURL(newURL);
       HttpField cookieHeader = new HttpField(HTTPConstants.HEADER_COOKIE, cookieString);
