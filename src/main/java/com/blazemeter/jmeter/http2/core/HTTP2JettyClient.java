@@ -4,6 +4,7 @@ import com.blazemeter.jmeter.http2.sampler.HTTP2Sampler;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
 import java.net.URLDecoder;
@@ -45,7 +46,6 @@ import org.apache.jmeter.protocol.http.util.HTTPConstants;
 import org.apache.jmeter.protocol.http.util.HTTPFileArg;
 import org.apache.jmeter.samplers.SampleResult;
 import org.apache.jmeter.testelement.property.JMeterProperty;
-import org.apache.jmeter.testelement.property.PropertyIterator;
 import org.apache.jmeter.util.JMeterUtils;
 import org.eclipse.jetty.client.HttpClient;
 import org.eclipse.jetty.client.HttpClientTransport;
@@ -72,6 +72,7 @@ import org.slf4j.LoggerFactory;
 
 public class HTTP2JettyClient {
 
+  private static final Logger LOG = LoggerFactory.getLogger(HTTP2JettyClient.class);
   private static final CachedResourceMode CACHED_RESOURCE_MODE =
       CachedResourceMode.valueOf(
           JMeterUtils.getPropDefault("cache_manager.cached_resource_mode", //$NON-NLS-1$
