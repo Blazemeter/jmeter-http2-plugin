@@ -13,7 +13,6 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.HashSet;
-import java.util.List;
 import java.util.Set;
 import java.util.Spliterator;
 import java.util.Spliterators;
@@ -21,9 +20,10 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.regex.Pattern;
-import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
+import org.apache.http.HeaderElement;
 import org.apache.http.HttpResponse;
+import org.apache.http.ParseException;
 import org.apache.http.ProtocolVersion;
 import org.apache.http.client.methods.HttpGet;
 import org.apache.http.client.methods.HttpHead;
@@ -131,19 +131,34 @@ public class HTTP2JettyClient {
 
     // Get headers request and convert to pass to cache manager
     final HttpFields fields = request.getHeaders();
-    final List<Header> headersRequest = StreamSupport.stream(
+    final org.apache.http.Header[] headersRequest = StreamSupport.stream(
         Spliterators
             .spliterator(fields.getFieldNames().asIterator(), fields.size(), Spliterator.SIZED),
         false)
         .map(name -> {
           final String value = fields.getField(name).getValue();
-          return new Header(name, value);
+          return new org.apache.http.Header() {
+            @Override
+            public HeaderElement[] getElements() throws ParseException {
+              return new HeaderElement[0];
+            }
+
+            @Override
+            public String getName() {
+              return name;
+            }
+
+            @Override
+            public String getValue() {
+              return value;
+            }
+          };
         })
-        .collect(Collectors.toList());
+        .toArray(org.apache.http.Header[]::new);
 
     // If result of request is cached, then return it
     if (cacheManager != null && HTTPConstants.GET.equalsIgnoreCase(method) && cacheManager
-        .inCache(url, (org.apache.http.Header[]) headersRequest.toArray())) {
+        .inCache(url, (org.apache.http.Header[]) headersRequest)) {
       return updateSampleResultForResourceInCache(result);
     }
 
