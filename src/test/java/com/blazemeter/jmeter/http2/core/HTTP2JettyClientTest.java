@@ -10,9 +10,12 @@ import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.URISyntaxException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -21,6 +24,7 @@ import org.apache.jmeter.protocol.http.control.Header;
 import org.apache.jmeter.protocol.http.control.HeaderManager;
 import org.apache.jmeter.protocol.http.sampler.HTTPSampleResult;
 import org.apache.jmeter.protocol.http.util.HTTPConstants;
+import org.apache.jmeter.protocol.http.util.HTTPFileArg;
 import org.apache.jmeter.samplers.SampleResult;
 import org.assertj.core.api.JUnitSoftAssertions;
 import org.eclipse.jetty.http.HttpStatus;
@@ -55,6 +59,7 @@ public class HTTP2JettyClientTest {
   private static final String SERVER_PATH_200 = "/test/200";
   private static final String SERVER_PATH_SLOW = "/test/slow";
   private static final String SERVER_PATH_200_EMBEDDED = "/test/embedded";
+  private static final String SERVER_PATH_200_FILE_SENT = "/test/file";
   private static final String SERVER_PATH_400 = "/test/400";
   private static final String SERVER_PATH_302 = "/test/302";
   private static final int SERVER_PORT = 6666;
@@ -112,6 +117,8 @@ public class HTTP2JettyClientTest {
         switch (req.getServletPath() + req.getPathInfo()) {
           case SERVER_PATH_200:
             resp.setStatus(HttpStatus.OK_200);
+            resp.setContentType(MimeTypes.MIME_TEXT_HTML + ";" + StandardCharsets.UTF_8.name());
+            resp.getWriter().write(SERVER_RESPONSE);
             break;
           case SERVER_PATH_SLOW:
             try {
@@ -133,9 +140,12 @@ public class HTTP2JettyClientTest {
             resp.setContentType(MimeTypes.MIME_TEXT_HTML + ";" + StandardCharsets.UTF_8.name());
             resp.getWriter().write(HTTP2JettyClientTest.getBasicHtmlTemplate());
             return;
+          case SERVER_PATH_200_FILE_SENT:
+            resp.setContentType("image/png");
+            byte [] requestBody = req.getInputStream().readAllBytes();
+            resp.getOutputStream().write(requestBody);
+            return;
         }
-        resp.setContentType(MimeTypes.MIME_TEXT_HTML + ";" + StandardCharsets.UTF_8.name());
-        resp.getWriter().write(SERVER_RESPONSE);
       }
     };
   }
@@ -165,7 +175,6 @@ public class HTTP2JettyClientTest {
     HTTPSampleResult expected = new HTTPSampleResult();
     expected.setSuccessful(false);
     expected.setResponseCode(String.valueOf(HttpStatus.BAD_REQUEST_400));
-    expected.setResponseData(SERVER_RESPONSE, StandardCharsets.UTF_8.name());
     expected.setRequestHeaders(REQUEST_HEADERS);
     startServer(createGetServerResponse());
     configureSampler(HTTPConstants.GET);
@@ -245,6 +254,29 @@ public class HTTP2JettyClientTest {
   }
 
   @Test
+  public void shouldGetFileDataWithFileIsSentAsBodyPart() throws Exception {
+    HTTPSampleResult expected = new HTTPSampleResult();
+    expected.setSuccessful(true);
+    expected.setResponseCode(String.valueOf(HttpStatus.OK_200));
+    expected.setRequestHeaders(REQUEST_HEADERS);
+    String filePath = getClass().getResource("blazemeter-labs-logo.png").getPath();
+    InputStream inputStream = Files.newInputStream(Paths.get(filePath));
+    expected.setResponseData(sampler.readResponse(expected, inputStream, 0));
+    expected.setRequestHeaders("Accept-Encoding: gzip\r\n"
+        + "User-Agent: Jetty/11.0.6\r\n"
+        + "Content-Type: image/png\r\n"
+        + "Content-Length: 9018\r\n"
+        + "\r\n");
+    configureSampler(HTTPConstants.POST);
+    HTTPFileArg fileArg = new HTTPFileArg(filePath, "", "image/png");
+    sampler.setHTTPFiles(new HTTPFileArg[]{fileArg});
+    startServer(createGetServerResponse());
+    HTTPSampleResult result = client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS,
+        HOST_NAME, SERVER_PORT, SERVER_PATH_200_FILE_SENT), HTTPConstants.POST, false, 0);
+    validateResponse(result, expected);
+  }
+
+  @Test
   public void shouldReturnErrorMessageWhenConnectTimeIsOver() {
     configureSampler(HTTPConstants.GET);
     sampler.setConnectTimeout("1");
@@ -253,7 +285,6 @@ public class HTTP2JettyClientTest {
           new URL(HTTPConstants.PROTOCOL_HTTPS, HOST_NAME, SERVER_PORT, SERVER_PATH_200),
           HTTPConstants.GET, false, 0);
     });
-
     String actual = exception.getMessage();
     String expected = "java.net.SocketTimeoutException: Connect Timeout";
     softly.assertThat(actual).contains(expected);
