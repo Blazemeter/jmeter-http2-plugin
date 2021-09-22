@@ -26,7 +26,6 @@ import org.apache.jmeter.protocol.http.util.HTTPConstants;
 import org.apache.jmeter.protocol.http.util.HTTPFileArg;
 import org.apache.jmeter.samplers.SampleResult;
 import org.apache.jmeter.testelement.property.JMeterProperty;
-import org.apache.jmeter.testelement.property.PropertyIterator;
 import org.apache.jmeter.util.JMeterUtils;
 import org.eclipse.jetty.client.HttpClient;
 import org.eclipse.jetty.client.HttpClientTransport;
@@ -47,9 +46,12 @@ import org.eclipse.jetty.http2.client.http.ClientConnectionFactoryOverHTTP2;
 import org.eclipse.jetty.io.ClientConnector;
 import org.eclipse.jetty.util.Fields;
 import org.eclipse.jetty.util.ssl.SslContextFactory;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class HTTP2JettyClient {
 
+  private static final Logger LOG = LoggerFactory.getLogger(HTTP2JettyClient.class);
   private static final Set<String> SUPPORTED_METHODS = new HashSet<>(Arrays
       .asList(HTTPConstants.GET, HTTPConstants.POST, HTTPConstants.PUT, HTTPConstants.PATCH,
           HTTPConstants.OPTIONS, HTTPConstants.DELETE));
@@ -183,32 +185,36 @@ public class HTTP2JettyClient {
         request.getHeaders() != null ? request.getHeaders().get(HTTPConstants.HEADER_CONTENT_TYPE)
             : null;
     boolean hasContentTypeHeader = contentTypeHeader != null && contentTypeHeader.isEmpty();
-    if (!hasContentTypeHeader && ADD_CONTENT_TYPE_TO_POST_IF_MISSING) {
-      request.addHeader(new HttpField(HTTPConstants.HEADER_CONTENT_TYPE,
-          HTTPConstants.APPLICATION_X_WWW_FORM_URLENCODED));
-    }
     StringBuilder postBody = new StringBuilder();
     Content requestContent;
-    HTTPFileArg[] files = sampler.getHTTPFiles();
-
-    if (!sampler.hasArguments() && sampler
-        .getSendFileAsPostBody()) {
-      final HTTPFileArg file = files[0]; // Only one File support in not multipart scenario
+    if (!sampler.hasArguments() && sampler.getSendFileAsPostBody()) {
+      // Only one File support in not multipart scenario
+      final HTTPFileArg file = sampler.getHTTPFiles()[0];
+      if (sampler.getHTTPFiles().length > 1) {
+        LOG.info("Send multiples files is not currently supported, only first file will be "
+            + "sending");
+      }
       String mimeTypeFile = null;
       if (!hasContentTypeHeader) {
-        if (file.getMimeType() != null && file.getMimeType().length() > 0) {
+        if (file.getMimeType() != null && !file.getMimeType().isEmpty()) {
           mimeTypeFile = file.getMimeType();
         } else if (ADD_CONTENT_TYPE_TO_POST_IF_MISSING) {
           mimeTypeFile = HTTPConstants.APPLICATION_X_WWW_FORM_URLENCODED;
         }
       }
-
-      requestContent = new PathRequestContent(mimeTypeFile, Path.of(file.getPath()));
+      if (mimeTypeFile != null) {
+        request.addHeader(new HttpField(HTTPConstants.HEADER_CONTENT_TYPE, mimeTypeFile));
+        requestContent = new PathRequestContent(mimeTypeFile, Path.of(file.getPath()));
+      } else {
+        requestContent = new PathRequestContent(Path.of(file.getPath()));
+      }
       request.body(requestContent);
-      result.setQueryString("<actual file content, not shown here>");
       postBody.append("<actual file content, not shown here>");
-
     } else {
+      if (!hasContentTypeHeader && ADD_CONTENT_TYPE_TO_POST_IF_MISSING) {
+        request.addHeader(new HttpField(HTTPConstants.HEADER_CONTENT_TYPE,
+            HTTPConstants.APPLICATION_X_WWW_FORM_URLENCODED));
+      }
       if (sampler.getSendParameterValuesAsPostBody()) {
         for (JMeterProperty jMeterProperty : sampler.getArguments()) {
           HTTPArgument arg = (HTTPArgument) jMeterProperty.getObjectValue();
@@ -216,22 +222,19 @@ public class HTTP2JettyClient {
         }
         requestContent = new StringRequestContent(contentTypeHeader, postBody.toString(),
             contentCharset);
-        result.setQueryString(postBody.toString());
         request.body(requestContent);
       } else if (isMethodWithBody(sampler.getMethod())) {
-        PropertyIterator args = sampler.getArguments().iterator();
         Fields fields = new Fields();
-        while (args.hasNext()) {
-          HTTPArgument arg = (HTTPArgument) args.next().getObjectValue();
+        for (JMeterProperty p : sampler.getArguments()) {
+          HTTPArgument arg = (HTTPArgument) p.getObjectValue();
           String parameterName = arg.getName();
           if (!arg.isSkippable(parameterName)) {
             String parameterValue = arg.getValue();
             if (!arg.isAlwaysEncoded()) {
               // The FormRequestContent always urlencodes both name and value, in this case the
-              // value
-              // is already encoded by the user so is needed to decode the value now, so that
-              // when the
-              // httpclient encodes it, we end up with the same value as the user had entered.
+              // value is already encoded by the user so is needed to decode the value now, so
+              // that when the httpclient encodes it, we end up with the same value as the user
+              // had entered.
               parameterName = URLDecoder.decode(parameterName, contentCharset.name());
               parameterValue = URLDecoder.decode(parameterValue, contentCharset.name());
             }
@@ -239,9 +242,10 @@ public class HTTP2JettyClient {
           }
         }
         requestContent = new FormRequestContent(fields, contentCharset);
-        result.setQueryString(FormRequestContent.convert(fields));
+        postBody.append(FormRequestContent.convert(fields));
         request.body(requestContent);
       }
+      result.setQueryString(postBody.toString());
     }
   }
 

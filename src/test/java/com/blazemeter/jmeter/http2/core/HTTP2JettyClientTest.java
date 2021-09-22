@@ -9,22 +9,22 @@ import com.google.common.base.Stopwatch;
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import java.io.File;
 import java.io.IOException;
-import java.net.URI;
+import java.io.InputStream;
 import java.net.URISyntaxException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import jodd.net.MimeTypes;
-import org.apache.commons.codec.binary.Base64;
-import org.apache.commons.io.FileUtils;
 import org.apache.jmeter.protocol.http.control.Header;
 import org.apache.jmeter.protocol.http.control.HeaderManager;
 import org.apache.jmeter.protocol.http.sampler.HTTPSampleResult;
 import org.apache.jmeter.protocol.http.util.HTTPConstants;
+import org.apache.jmeter.protocol.http.util.HTTPFileArg;
 import org.apache.jmeter.samplers.SampleResult;
 import org.assertj.core.api.JUnitSoftAssertions;
 import org.eclipse.jetty.http.HttpStatus;
@@ -65,7 +65,6 @@ public class HTTP2JettyClientTest {
   private static final int SERVER_PORT = 6666;
   private static final String BASIC_HTML_TEMPLATE = "<!DOCTYPE html><html><head><title>Page "
       + "Title</title></head><body><div><img src=%s></div></body></html>";
-  private static final String pathToFile = "/src/main/resources/blazemeter-labs-light-logo.png";
 
   @Rule
   public final JUnitSoftAssertions softly = new JUnitSoftAssertions();
@@ -118,6 +117,8 @@ public class HTTP2JettyClientTest {
         switch (req.getServletPath() + req.getPathInfo()) {
           case SERVER_PATH_200:
             resp.setStatus(HttpStatus.OK_200);
+            resp.setContentType(MimeTypes.MIME_TEXT_HTML + ";" + StandardCharsets.UTF_8.name());
+            resp.getWriter().write(SERVER_RESPONSE);
             break;
           case SERVER_PATH_SLOW:
             try {
@@ -140,17 +141,11 @@ public class HTTP2JettyClientTest {
             resp.getWriter().write(HTTP2JettyClientTest.getBasicHtmlTemplate());
             return;
           case SERVER_PATH_200_FILE_SENT:
-            resp.setContentType(
-                MimeTypes.MIME_APPLICATION_JSON + ";" + StandardCharsets.UTF_8.name());
-            try {
-              resp.getWriter().write(HTTP2JettyClientTest.getFileData());
-            } catch (final URISyntaxException e) {
-              e.printStackTrace();
-            }
+            resp.setContentType("image/png");
+            byte [] requestBody = req.getInputStream().readAllBytes();
+            resp.getOutputStream().write(requestBody);
             return;
         }
-        resp.setContentType(MimeTypes.MIME_TEXT_HTML + ";" + StandardCharsets.UTF_8.name());
-        resp.getWriter().write(SERVER_RESPONSE);
       }
     };
   }
@@ -180,7 +175,6 @@ public class HTTP2JettyClientTest {
     HTTPSampleResult expected = new HTTPSampleResult();
     expected.setSuccessful(false);
     expected.setResponseCode(String.valueOf(HttpStatus.BAD_REQUEST_400));
-    expected.setResponseData(SERVER_RESPONSE, StandardCharsets.UTF_8.name());
     expected.setRequestHeaders(REQUEST_HEADERS);
     startServer(createGetServerResponse());
     configureSampler(HTTPConstants.GET);
@@ -265,12 +259,21 @@ public class HTTP2JettyClientTest {
     expected.setSuccessful(true);
     expected.setResponseCode(String.valueOf(HttpStatus.OK_200));
     expected.setRequestHeaders(REQUEST_HEADERS);
-    expected.setResponseData(HTTP2JettyClientTest.getFileData(),
-        StandardCharsets.UTF_8.name());
+    String filePath = getClass().getResource("blazemeter-labs-logo.png").getPath();
+    InputStream inputStream = Files.newInputStream(Paths.get(filePath));
+    expected.setResponseData(sampler.readResponse(expected, inputStream, 0));
+    expected.setRequestHeaders("Accept-Encoding: gzip\r\n"
+        + "User-Agent: Jetty/11.0.6\r\n"
+        + "Content-Type: image/png\r\n"
+        + "Content-Length: 9018\r\n"
+        + "\r\n");
+    configureSampler(HTTPConstants.POST);
+    HTTPFileArg fileArg = new HTTPFileArg(filePath, "", "image/png");
+    sampler.setHTTPFiles(new HTTPFileArg[]{fileArg});
     startServer(createGetServerResponse());
-    final HTTPSampleResult result = client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS,
+    HTTPSampleResult result = client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS,
         HOST_NAME, SERVER_PORT, SERVER_PATH_200_FILE_SENT), HTTPConstants.POST, false, 0);
-    validateFileDataReceived(result, expected);
+    validateResponse(result, expected);
   }
 
   @Test
@@ -282,7 +285,6 @@ public class HTTP2JettyClientTest {
           new URL(HTTPConstants.PROTOCOL_HTTPS, HOST_NAME, SERVER_PORT, SERVER_PATH_200),
           HTTPConstants.GET, false, 0);
     });
-
     String actual = exception.getMessage();
     String expected = "java.net.SocketTimeoutException: Connect Timeout";
     softly.assertThat(actual).contains(expected);
@@ -347,40 +349,5 @@ public class HTTP2JettyClientTest {
   private static String getBasicHtmlTemplate() {
     return String.format(BASIC_HTML_TEMPLATE,
         "https://localhost:" + SERVER_PORT + SERVER_PATH_200);
-  }
-
-  /**
-   * Get data in array of bytes format for a new File.
-   *
-   * @return data in String parsed
-   */
-  private static String getFileData() throws IOException, URISyntaxException {
-    // Get root directory from system to avoid environment problems in tests
-    StringBuilder rootPath = new StringBuilder("file://");
-    rootPath.append(System.getProperty("user.dir")); // get current working directory
-    rootPath.append(pathToFile); // add path to file
-    final String uriFile = rootPath.toString();
-    // Load file from resources and convert it to x64 base like jmeter return a file
-    final File file = new File(new URI((uriFile)));
-    final byte[] encoded = Base64.encodeBase64(FileUtils.readFileToByteArray(file));
-    return new String(encoded, StandardCharsets.US_ASCII);
-  }
-
-  /**
-   * Get data in array of bytes format from a existing File.
-   *
-   * @param file File to convert
-   */
-  @Deprecated
-  private static String getDataFromFile(final File file) throws IOException {
-    final byte[] encoded = Base64.encodeBase64(FileUtils.readFileToByteArray(file));
-    return new String(encoded, StandardCharsets.US_ASCII);
-  }
-
-  private void validateFileDataReceived(final HTTPSampleResult result,
-      final HTTPSampleResult expected) {
-    result.getDataType().equalsIgnoreCase(SampleResult.TEXT);
-    result.getUrlAsString().equalsIgnoreCase("https://localhost:6666/test/file");
-    validateResponse(result, expected);
   }
 }
