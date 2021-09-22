@@ -21,6 +21,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.zip.GZIPOutputStream;
+import java.util.stream.Collectors;
 import jodd.net.MimeTypes;
 import org.apache.jmeter.protocol.http.control.CookieManager;
 import org.apache.jmeter.protocol.http.control.Header;
@@ -69,6 +70,9 @@ public class HTTP2JettyClientTest {
   private static final String SERVER_PATH_200_FILE_SENT = "/test/file";
   private static final String SERVER_PATH_400 = "/test/400";
   private static final String SERVER_PATH_302 = "/test/302";
+  private static final String SERVER_PATH_200_WITH_BODY = "/test/body";
+  private static final String RESPONSE_DATA_BODY_1 = "valueTest1";
+  private static final String RESPONSE_DATA_BODY_2 = "valueTest2";
   private static final int SERVER_PORT = 6666;
   private static final String BASIC_HTML_TEMPLATE = "<!DOCTYPE html><html><head><title>Page "
       + "Title</title></head><body><div><img src=%s></div></body></html>";
@@ -156,6 +160,10 @@ public class HTTP2JettyClientTest {
                 "https://localhost:" + SERVER_PORT + SERVER_PATH_200);
             resp.setStatus(HttpStatus.FOUND_302);
             break;
+          case SERVER_PATH_200_WITH_BODY:
+            String bodyRequest = req.getReader().lines().collect(Collectors.joining());
+            resp.getWriter().write(bodyRequest);
+            break;
           case SERVER_PATH_SET_COOKIES:
             resp.addHeader(HTTPConstants.HEADER_SET_COOKIE,
                 RESPONSE_DATA_COOKIES);
@@ -202,6 +210,42 @@ public class HTTP2JettyClientTest {
     ServletContextHandler context = new ServletContextHandler(server, "/", true, false);
     context.addServlet(new ServletHolder(servlet), SERVER_PATH + "/*");
     server.start();
+  }
+
+  @Test
+  public void shouldSendBodyInformationWhenARequestWithBodyIsDoneWithBodyRaw () throws Exception {
+    HTTPSampleResult expected = new HTTPSampleResult();
+    expected.setSuccessful(true);
+    expected.setResponseCode(String.valueOf(HttpStatus.OK_200));
+    expected.setRequestHeaders(REQUEST_HEADERS.substring(0,45)
+        .concat(".6\r\nContent-Type: application/octet-stream\r\nContent-Length: 20\r\n\r\n"));
+    expected.setResponseData(RESPONSE_DATA_BODY_1 + RESPONSE_DATA_BODY_2,
+        StandardCharsets.UTF_8.name());
+    startServer(createGetServerResponse());
+    sampler.setMethod(HTTPConstants.POST);
+    sampler.addArgument("", "valueTest1");
+    sampler.addArgument("", "valueTest2");
+    HTTPSampleResult result = client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS,
+        HOST_NAME, SERVER_PORT, SERVER_PATH_200_WITH_BODY), HTTPConstants.POST, false, 0);
+    validateResponse(result, expected);
+  }
+
+  @Test
+  public void shouldSendBodyInformationWhenARequestWithBodyIsDoneWithArguments () throws Exception {
+    HTTPSampleResult expected = new HTTPSampleResult();
+    expected.setSuccessful(true);
+    expected.setResponseCode(String.valueOf(HttpStatus.OK_200));
+    expected.setRequestHeaders(REQUEST_HEADERS.substring(0,45)
+        .concat(".6\r\nContent-Type: application/x-www-form-urlencoded\r\nContent-Length: 31\r\n\r\n"));
+    expected.setResponseData("test=" + RESPONSE_DATA_BODY_1 + "&"
+        + "test=" + RESPONSE_DATA_BODY_2, StandardCharsets.UTF_8.name());
+    startServer(createGetServerResponse());
+    sampler.setMethod(HTTPConstants.POST);
+    sampler.addArgument("test", "valueTest1");
+    sampler.addArgument("test", "valueTest2");
+    HTTPSampleResult result = client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS,
+        HOST_NAME, SERVER_PORT, SERVER_PATH_200_WITH_BODY), HTTPConstants.POST, false, 0);
+    validateResponse(result, expected);
   }
 
   @Test
