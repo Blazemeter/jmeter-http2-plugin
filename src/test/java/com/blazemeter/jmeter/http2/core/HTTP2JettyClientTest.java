@@ -320,6 +320,7 @@ public class HTTP2JettyClientTest {
         HOST_NAME, SERVER_PORT, SERVER_PATH_200_EMBEDDED), HTTPConstants.GET, false, 0);
     // First request must connect to the server
     validateEmbeddedResources(result, expected);
+    softly.assertThat(result.getConnectTime()).isGreaterThan(1);
     HTTPSampleResult resultCached = client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS,
         HOST_NAME, SERVER_PORT, SERVER_PATH_200_EMBEDDED), HTTPConstants.GET, false, 0);
     // Same request should use results cached in Cache Manager
