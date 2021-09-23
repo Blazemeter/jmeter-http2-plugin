@@ -4,6 +4,8 @@ import com.blazemeter.jmeter.http2.sampler.HTTP2Sampler;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.UnsupportedEncodingException;
+import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
 import java.net.URLDecoder;
@@ -19,6 +21,9 @@ import java.util.concurrent.TimeoutException;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
+import org.apache.jmeter.protocol.http.control.AuthManager;
+import org.apache.jmeter.protocol.http.control.AuthManager.Mechanism;
+import org.apache.jmeter.protocol.http.control.Authorization;
 import org.apache.jmeter.protocol.http.control.CookieManager;
 import org.apache.jmeter.protocol.http.control.Header;
 import org.apache.jmeter.protocol.http.control.HeaderManager;
@@ -34,11 +39,13 @@ import org.eclipse.jetty.client.HttpClientTransport;
 import org.eclipse.jetty.client.HttpProxy;
 import org.eclipse.jetty.client.HttpRequest;
 import org.eclipse.jetty.client.Origin.Address;
+import org.eclipse.jetty.client.api.Authentication;
 import org.eclipse.jetty.client.api.ContentResponse;
 import org.eclipse.jetty.client.api.Request;
 import org.eclipse.jetty.client.api.Request.Content;
 import org.eclipse.jetty.client.dynamic.HttpClientTransportDynamic;
 import org.eclipse.jetty.client.http.HttpClientConnectionFactory;
+import org.eclipse.jetty.client.util.BasicAuthentication;
 import org.eclipse.jetty.client.util.FormRequestContent;
 import org.eclipse.jetty.client.util.PathRequestContent;
 import org.eclipse.jetty.client.util.StringRequestContent;
@@ -89,8 +96,17 @@ public class HTTP2JettyClient {
     if (!sampler.getProxyHost().isEmpty()) {
       setProxy(sampler.getProxyHost(), sampler.getProxyPortInt(), sampler.getProxyScheme());
     }
+    // setAuthManager(sampler);
     result.sampleStart();
-    HttpRequest request = createRequest(url, result);
+    URI uri = url.toURI();
+    HttpRequest request = createRequest(uri, result);
+
+    AuthManager authManager = sampler.getAuthManager();
+    Authentication.Result auth =
+        new BasicAuthentication.BasicResult(URI.create(authManager.get(0).getURL()),
+            authManager.get(0).getUser(), authManager.get(0).getPass());
+    auth.apply(request);
+
     setTimeouts(sampler, request);
     request.followRedirects(false);
     request.method(method);
@@ -163,9 +179,9 @@ public class HTTP2JettyClient {
     httpClient.getProxyConfiguration().getProxies().add(proxy);
   }
 
-  private HttpRequest createRequest(URL url, HTTPSampleResult result) throws URISyntaxException,
+  private HttpRequest createRequest(URI uri, HTTPSampleResult result) throws URISyntaxException,
       IllegalArgumentException {
-    Request request = httpClient.newRequest(url.toURI());
+    Request request = httpClient.newRequest(uri);
     if (request instanceof HttpRequest && result != null) {
       HttpRequest httpRequest = (HttpRequest) request;
       httpRequest.onRequestBegin(l -> result.connectEnd());
@@ -174,6 +190,62 @@ public class HTTP2JettyClient {
     } else {
       throw new IllegalArgumentException("HttpRequest is expected");
     }
+  }
+
+  private void setAuthManager(HTTP2Sampler sampler) {
+
+    AuthManager authManager = sampler.getAuthManager();
+    int count = authManager.getAuthCount();
+    System.out.println(count);
+
+    StreamSupport.stream(authManager.getAuthObjects().spliterator(), false)
+        .map(jMeterProperty -> (Authorization) jMeterProperty.getObjectValue())
+        .filter(auth -> auth.getMechanism().name().equals(Mechanism.BASIC.name()))
+        .forEach(auth -> httpClient.getAuthenticationStore().addAuthentication(
+            new BasicAuthentication(URI.create(auth.getURL()), auth.getRealm(), auth.getUser(),
+                auth.getPass())));
+
+    /*List<BasicAuthentication> list =
+        StreamSupport.stream(authManager.getAuthObjects().spliterator(), false)
+            .map(jMeterProperty -> (Authorization) jMeterProperty.getObjectValue())
+            .filter(auth -> auth.getMechanism().name().equals(Mechanism.BASIC.name()))
+            .map(auth ->
+                new BasicAuthentication(URI.create(auth.getURL()),
+                    auth.getRealm(), auth.getUser(), auth.getPass())).collect(Collectors.toList()
+                    );*/
+    /*list.forEach(basicAuthentication -> httpClient.getAuthenticationStore()
+        .addAuthentication(basicAuthentication));*/
+
+    /*httpClient.getAuthenticationStore()
+        .addAuthentication(list.get(0));*/
+
+    System.out.println();
+
+    /*
+    {
+              try {
+                new BasicAuthentication.BasicResult(url.toURI(), authorization.getUser(),
+                    authorization.getPass()).apply(request);
+              } catch (URISyntaxException e) {
+                e.printStackTrace();
+              }
+            }
+    */
+    /*
+    jMeterPropertyStream.filter(
+            authorization -> authorization.getName().equals(Mechanism.DIGEST.name()))
+        .forEach(authorization -> {
+              try {
+                new DigestAuthentication(url.toURI(), authorization.getRealm(),
+                    authorization.getUser(), authorization.getPass());
+              } catch (URISyntaxException e) {
+                e.printStackTrace();
+              }
+            }
+
+        );
+    */
+
   }
 
   public void start() throws Exception {
