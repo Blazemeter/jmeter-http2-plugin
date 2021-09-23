@@ -373,7 +373,7 @@ public class HTTP2JettyClientTest {
    */
   private void valdiateEmbeddedResultCached(HTTPSampleResult result, HTTPSampleResult expected) {
     this.validateEmbeddedResources(result, expected);
-    softly.assertThat(result.getConnectTime()).isLessThanOrEqualTo(1);
+    softly.assertThat(result.getConnectTime()).isLessThanOrEqualTo(3);
   }
 
   private static String getBasicHtmlTemplate() {
