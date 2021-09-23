@@ -39,7 +39,6 @@ import org.eclipse.jetty.client.HttpClientTransport;
 import org.eclipse.jetty.client.HttpProxy;
 import org.eclipse.jetty.client.HttpRequest;
 import org.eclipse.jetty.client.Origin.Address;
-import org.eclipse.jetty.client.api.Authentication;
 import org.eclipse.jetty.client.api.ContentResponse;
 import org.eclipse.jetty.client.api.Request;
 import org.eclipse.jetty.client.api.Request.Content;
@@ -96,16 +95,10 @@ public class HTTP2JettyClient {
     if (!sampler.getProxyHost().isEmpty()) {
       setProxy(sampler.getProxyHost(), sampler.getProxyPortInt(), sampler.getProxyScheme());
     }
-    // setAuthManager(sampler);
-    result.sampleStart();
-    URI uri = url.toURI();
-    HttpRequest request = createRequest(uri, result);
 
-    AuthManager authManager = sampler.getAuthManager();
-    Authentication.Result auth =
-        new BasicAuthentication.BasicResult(URI.create(authManager.get(0).getURL()),
-            authManager.get(0).getUser(), authManager.get(0).getPass());
-    auth.apply(request);
+    setAuthManager(sampler);
+    result.sampleStart();
+    HttpRequest request = createRequest(url, result);
 
     setTimeouts(sampler, request);
     request.followRedirects(false);
@@ -179,9 +172,9 @@ public class HTTP2JettyClient {
     httpClient.getProxyConfiguration().getProxies().add(proxy);
   }
 
-  private HttpRequest createRequest(URI uri, HTTPSampleResult result) throws URISyntaxException,
+  private HttpRequest createRequest(URL url, HTTPSampleResult result) throws URISyntaxException,
       IllegalArgumentException {
-    Request request = httpClient.newRequest(uri);
+    Request request = httpClient.newRequest(url.toURI());
     if (request instanceof HttpRequest && result != null) {
       HttpRequest httpRequest = (HttpRequest) request;
       httpRequest.onRequestBegin(l -> result.connectEnd());
