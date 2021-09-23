@@ -254,11 +254,10 @@ public class HTTP2JettyClientTest {
   }
 
   @Test
-  public void shouldGetFileDataWithFileIsSentAsBodyPart() throws Exception {
+  public void shouldGetFileDataWhenFileIsSentAsBodyPart() throws Exception {
     HTTPSampleResult expected = new HTTPSampleResult();
     expected.setSuccessful(true);
     expected.setResponseCode(String.valueOf(HttpStatus.OK_200));
-    expected.setRequestHeaders(REQUEST_HEADERS);
     String filePath = getClass().getResource("blazemeter-labs-logo.png").getPath();
     InputStream inputStream = Files.newInputStream(Paths.get(filePath));
     expected.setResponseData(sampler.readResponse(expected, inputStream, 0));
