@@ -147,25 +147,28 @@ public class HTTP2JettyClient {
   private void setAuthManager(HTTP2Sampler sampler) {
 
     AuthManager authManager = sampler.getAuthManager();
-    boolean byThread = authManager.getControlledByThread();
-    boolean clearOnEachiteration = authManager.getClearEachIteration();
-    int count = authManager.getAuthCount();
-    System.out.println(count + " " + byThread + clearOnEachiteration);
+    if (authManager != null) {
 
-    if (BASIC_AUTH_PREEMPTIVE) {
-      StreamSupport.stream(authManager.getAuthObjects().spliterator(), false)
-          .map(jMeterProperty -> (Authorization) jMeterProperty.getObjectValue())
-          .filter(auth -> auth.getMechanism().name().equals(Mechanism.BASIC.name()))
-          .forEach(auth -> httpClient.getAuthenticationStore().addAuthenticationResult(
-              new BasicAuthentication.BasicResult(URI.create(auth.getURL()), auth.getUser(),
-                  auth.getPass())));
-    } else {
-      StreamSupport.stream(authManager.getAuthObjects().spliterator(), false)
-          .map(jMeterProperty -> (Authorization) jMeterProperty.getObjectValue())
-          .filter(auth -> auth.getMechanism().name().equals(Mechanism.BASIC.name()))
-          .forEach(auth -> httpClient.getAuthenticationStore().addAuthentication(
-              new BasicAuthentication(URI.create(auth.getURL()), auth.getRealm(), auth.getUser(),
-                  auth.getPass())));
+      boolean byThread = authManager.getControlledByThread();
+      boolean clearOnEachIteration = authManager.getClearEachIteration();
+      int count = authManager.getAuthCount();
+      System.out.println(count + " " + byThread + clearOnEachIteration);
+
+      if (BASIC_AUTH_PREEMPTIVE) {
+        StreamSupport.stream(authManager.getAuthObjects().spliterator(), false)
+            .map(jMeterProperty -> (Authorization) jMeterProperty.getObjectValue())
+            .filter(auth -> auth.getMechanism().name().equals(Mechanism.BASIC.name()))
+            .forEach(auth -> httpClient.getAuthenticationStore().addAuthenticationResult(
+                new BasicAuthentication.BasicResult(URI.create(auth.getURL()), auth.getUser(),
+                    auth.getPass())));
+      } else {
+        StreamSupport.stream(authManager.getAuthObjects().spliterator(), false)
+            .map(jMeterProperty -> (Authorization) jMeterProperty.getObjectValue())
+            .filter(auth -> auth.getMechanism().name().equals(Mechanism.BASIC.name()))
+            .forEach(auth -> httpClient.getAuthenticationStore().addAuthentication(
+                new BasicAuthentication(URI.create(auth.getURL()), auth.getRealm(), auth.getUser(),
+                    auth.getPass())));
+      }
     }
 
   }
