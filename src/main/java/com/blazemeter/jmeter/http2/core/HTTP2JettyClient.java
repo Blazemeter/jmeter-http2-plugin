@@ -68,6 +68,8 @@ public class HTTP2JettyClient {
       .asList(HTTPConstants.POST, HTTPConstants.PUT, HTTPConstants.PATCH));
   private static final boolean ADD_CONTENT_TYPE_TO_POST_IF_MISSING = JMeterUtils.getPropDefault(
       "http.post_add_content_type_if_missing", false);
+  private static final boolean BASIC_AUTH_PREEMPTIVE = JMeterUtils.getPropDefault(
+      "httpclient4.auth.preemptive", true);
   private static final Pattern PORT_PATTERN = Pattern.compile("\\d+");
   private final HttpClient httpClient;
 
@@ -188,57 +190,31 @@ public class HTTP2JettyClient {
   private void setAuthManager(HTTP2Sampler sampler) {
 
     AuthManager authManager = sampler.getAuthManager();
+    boolean byThread = authManager.getControlledByThread();
+    boolean clearOnEachiteration = authManager.getClearEachIteration();
     int count = authManager.getAuthCount();
-    System.out.println(count);
+    System.out.println(count + " " + byThread + clearOnEachiteration);
 
-    StreamSupport.stream(authManager.getAuthObjects().spliterator(), false)
-        .map(jMeterProperty -> (Authorization) jMeterProperty.getObjectValue())
-        .filter(auth -> auth.getMechanism().name().equals(Mechanism.BASIC.name()))
-        .forEach(auth -> httpClient.getAuthenticationStore().addAuthentication(
-            new BasicAuthentication(URI.create(auth.getURL()), auth.getRealm(), auth.getUser(),
-                auth.getPass())));
+    if (BASIC_AUTH_PREEMPTIVE) {
+      StreamSupport.stream(authManager.getAuthObjects().spliterator(), false)
+          .map(jMeterProperty -> (Authorization) jMeterProperty.getObjectValue())
+          .filter(auth -> auth.getMechanism().name().equals(Mechanism.BASIC.name()))
+          .forEach(auth -> httpClient.getAuthenticationStore().addAuthenticationResult(
+              new BasicAuthentication.BasicResult(URI.create(auth.getURL()), auth.getUser(),
+                  auth.getPass())));
+    } else {
+      StreamSupport.stream(authManager.getAuthObjects().spliterator(), false)
+          .map(jMeterProperty -> (Authorization) jMeterProperty.getObjectValue())
+          .filter(auth -> auth.getMechanism().name().equals(Mechanism.BASIC.name()))
+          .forEach(auth -> httpClient.getAuthenticationStore().addAuthentication(
+              new BasicAuthentication(URI.create(auth.getURL()), auth.getRealm(), auth.getUser(),
+                  auth.getPass())));
+    }
 
-    /*List<BasicAuthentication> list =
-        StreamSupport.stream(authManager.getAuthObjects().spliterator(), false)
-            .map(jMeterProperty -> (Authorization) jMeterProperty.getObjectValue())
-            .filter(auth -> auth.getMechanism().name().equals(Mechanism.BASIC.name()))
-            .map(auth ->
-                new BasicAuthentication(URI.create(auth.getURL()),
-                    auth.getRealm(), auth.getUser(), auth.getPass())).collect(Collectors.toList()
-                    );*/
-    /*list.forEach(basicAuthentication -> httpClient.getAuthenticationStore()
-        .addAuthentication(basicAuthentication));*/
+  }
 
-    /*httpClient.getAuthenticationStore()
-        .addAuthentication(list.get(0));*/
-
-    System.out.println();
-
-    /*
-    {
-              try {
-                new BasicAuthentication.BasicResult(url.toURI(), authorization.getUser(),
-                    authorization.getPass()).apply(request);
-              } catch (URISyntaxException e) {
-                e.printStackTrace();
-              }
-            }
-    */
-    /*
-    jMeterPropertyStream.filter(
-            authorization -> authorization.getName().equals(Mechanism.DIGEST.name()))
-        .forEach(authorization -> {
-              try {
-                new DigestAuthentication(url.toURI(), authorization.getRealm(),
-                    authorization.getUser(), authorization.getPass());
-              } catch (URISyntaxException e) {
-                e.printStackTrace();
-              }
-            }
-
-        );
-    */
-
+  public void clearAuthenticationResults() {
+    httpClient.getAuthenticationStore().clearAuthenticationResults();
   }
 
   public void start() throws Exception {
