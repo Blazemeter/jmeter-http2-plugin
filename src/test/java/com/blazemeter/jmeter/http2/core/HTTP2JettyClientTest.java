@@ -11,6 +11,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.MalformedURLException;
 import java.net.URISyntaxException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
@@ -142,7 +143,7 @@ public class HTTP2JettyClientTest {
             return;
           case SERVER_PATH_200_FILE_SENT:
             resp.setContentType("image/png");
-            byte [] requestBody = req.getInputStream().readAllBytes();
+            byte[] requestBody = req.getInputStream().readAllBytes();
             resp.getOutputStream().write(requestBody);
             return;
         }
@@ -305,6 +306,26 @@ public class HTTP2JettyClientTest {
     softly.assertThat(waitTime.elapsed(TimeUnit.MILLISECONDS)).isGreaterThanOrEqualTo(timeout);
   }
 
+  @Test
+  public void shouldNotConectWhenHeaderRequestIsCached() throws Exception {
+    HTTPSampleResult expected = new HTTPSampleResult();
+    expected.setSuccessful(true);
+    expected.setResponseCode(String.valueOf(HttpStatus.OK_200));
+    expected.setRequestHeaders(REQUEST_HEADERS);
+    expected.setResponseData(HTTP2JettyClientTest.getBasicHtmlTemplate(),
+        StandardCharsets.UTF_8.name());
+    startServer(createGetServerResponse());
+    sampler.setImageParser(true);
+    HTTPSampleResult result = client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS,
+        HOST_NAME, SERVER_PORT, SERVER_PATH_200_EMBEDDED), HTTPConstants.GET, false, 0);
+    // First request must connect to the server
+    validateEmbeddedResources(result, expected);
+    HTTPSampleResult resultCached = client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS,
+        HOST_NAME, SERVER_PORT, SERVER_PATH_200_EMBEDDED), HTTPConstants.GET, false, 0);
+    // Same request should use results cached in Cache Manager
+    valdiateEmbeddedResultCached(resultCached, expected);
+  }
+
   private void configureSampler(String method) {
     sampler.setMethod(method);
     sampler.setDomain("server");
@@ -345,8 +366,18 @@ public class HTTP2JettyClientTest {
     softly.assertThat(results[1].getUrlAsString()).isEqualTo("https://localhost:6666/test/200");
   }
 
+  /**
+   * Validate same result as expected, but also control that result was obtained by Cache Manager
+   * checking for connect time.
+   */
+  private void valdiateEmbeddedResultCached(HTTPSampleResult result, HTTPSampleResult expected) {
+    this.validateEmbeddedResources(result, expected);
+    softly.assertThat(result.getConnectTime()).isLessThanOrEqualTo(1);
+  }
+
   private static String getBasicHtmlTemplate() {
     return String.format(BASIC_HTML_TEMPLATE,
         "https://localhost:" + SERVER_PORT + SERVER_PATH_200);
   }
+
 }
