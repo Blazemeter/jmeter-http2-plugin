@@ -4,12 +4,12 @@ import com.blazemeter.jmeter.http2.sampler.HTTP2Sampler;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.UnsupportedEncodingException;
 import java.net.URISyntaxException;
 import java.net.URL;
 import java.net.URLDecoder;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Set;
@@ -23,9 +23,9 @@ import org.apache.jmeter.protocol.http.control.HeaderManager;
 import org.apache.jmeter.protocol.http.sampler.HTTPSampleResult;
 import org.apache.jmeter.protocol.http.util.HTTPArgument;
 import org.apache.jmeter.protocol.http.util.HTTPConstants;
+import org.apache.jmeter.protocol.http.util.HTTPFileArg;
 import org.apache.jmeter.samplers.SampleResult;
 import org.apache.jmeter.testelement.property.JMeterProperty;
-import org.apache.jmeter.testelement.property.PropertyIterator;
 import org.apache.jmeter.util.JMeterUtils;
 import org.eclipse.jetty.client.HttpClient;
 import org.eclipse.jetty.client.HttpClientTransport;
@@ -38,6 +38,7 @@ import org.eclipse.jetty.client.api.Request.Content;
 import org.eclipse.jetty.client.dynamic.HttpClientTransportDynamic;
 import org.eclipse.jetty.client.http.HttpClientConnectionFactory;
 import org.eclipse.jetty.client.util.FormRequestContent;
+import org.eclipse.jetty.client.util.PathRequestContent;
 import org.eclipse.jetty.client.util.StringRequestContent;
 import org.eclipse.jetty.http.HttpField;
 import org.eclipse.jetty.http2.client.HTTP2Client;
@@ -45,9 +46,12 @@ import org.eclipse.jetty.http2.client.http.ClientConnectionFactoryOverHTTP2;
 import org.eclipse.jetty.io.ClientConnector;
 import org.eclipse.jetty.util.Fields;
 import org.eclipse.jetty.util.ssl.SslContextFactory;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class HTTP2JettyClient {
 
+  private static final Logger LOG = LoggerFactory.getLogger(HTTP2JettyClient.class);
   private static final Set<String> SUPPORTED_METHODS = new HashSet<>(Arrays
       .asList(HTTPConstants.GET, HTTPConstants.POST, HTTPConstants.PUT, HTTPConstants.PATCH,
           HTTPConstants.OPTIONS, HTTPConstants.DELETE));
@@ -163,10 +167,19 @@ public class HTTP2JettyClient {
       result.setContentType(contentType);
       result.setEncodingAndType(contentType);
     }
+
+    // Set size for header and body (\r\r\n)
+    final long headerBytes =
+        (long) result.getResponseHeaders().length()
+            + (long) contentResponse.getHeaders().asString().length()
+            + 1L
+            + 2L;
+    result.setHeadersSize((int) headerBytes);
+
   }
 
   private void setBody(HttpRequest request, HTTP2Sampler sampler, HTTPSampleResult result)
-      throws UnsupportedEncodingException {
+      throws IOException {
     final String contentEncoding = sampler.getContentEncoding();
     Charset contentCharset =
         !contentEncoding.isEmpty() ? Charset.forName(contentEncoding) : StandardCharsets.UTF_8;
@@ -174,42 +187,67 @@ public class HTTP2JettyClient {
         request.getHeaders() != null ? request.getHeaders().get(HTTPConstants.HEADER_CONTENT_TYPE)
             : null;
     boolean hasContentTypeHeader = contentTypeHeader != null && contentTypeHeader.isEmpty();
-    if (!hasContentTypeHeader && ADD_CONTENT_TYPE_TO_POST_IF_MISSING) {
-      request.addHeader(new HttpField(HTTPConstants.HEADER_CONTENT_TYPE,
-          HTTPConstants.APPLICATION_X_WWW_FORM_URLENCODED));
-    }
     StringBuilder postBody = new StringBuilder();
     Content requestContent;
-    if (sampler.getSendParameterValuesAsPostBody()) {
-      for (JMeterProperty jMeterProperty : sampler.getArguments()) {
-        HTTPArgument arg = (HTTPArgument) jMeterProperty.getObjectValue();
-        postBody.append(arg.getEncodedValue(contentCharset.name()));
+    if (!sampler.hasArguments() && sampler.getSendFileAsPostBody()) {
+      // Only one File support in not multipart scenario
+      final HTTPFileArg file = sampler.getHTTPFiles()[0];
+      if (sampler.getHTTPFiles().length > 1) {
+        LOG.info("Send multiples files is not currently supported, only first file will be "
+            + "sending");
       }
-      requestContent = new StringRequestContent(contentTypeHeader, postBody.toString(),
-          contentCharset);
-      result.setQueryString(postBody.toString());
-      request.body(requestContent);
-    } else if (isMethodWithBody(sampler.getMethod())) {
-      PropertyIterator args = sampler.getArguments().iterator();
-      Fields fields = new Fields();
-      while (args.hasNext()) {
-        HTTPArgument arg = (HTTPArgument) args.next().getObjectValue();
-        String parameterName = arg.getName();
-        if (!arg.isSkippable(parameterName)) {
-          String parameterValue = arg.getValue();
-          if (!arg.isAlwaysEncoded()) {
-            // The FormRequestContent always urlencodes both name and value, in this case the value
-            // is already encoded by the user so is needed to decode the value now, so that when the
-            // httpclient encodes it, we end up with the same value as the user had entered.
-            parameterName = URLDecoder.decode(parameterName, contentCharset.name());
-            parameterValue = URLDecoder.decode(parameterValue, contentCharset.name());
-          }
-          fields.add(parameterName, parameterValue);
+      String mimeTypeFile = null;
+      if (!hasContentTypeHeader) {
+        if (file.getMimeType() != null && !file.getMimeType().isEmpty()) {
+          mimeTypeFile = file.getMimeType();
+        } else if (ADD_CONTENT_TYPE_TO_POST_IF_MISSING) {
+          mimeTypeFile = HTTPConstants.APPLICATION_X_WWW_FORM_URLENCODED;
         }
       }
-      requestContent = new FormRequestContent(fields, contentCharset);
-      result.setQueryString(FormRequestContent.convert(fields));
+      if (mimeTypeFile != null) {
+        request.addHeader(new HttpField(HTTPConstants.HEADER_CONTENT_TYPE, mimeTypeFile));
+        requestContent = new PathRequestContent(mimeTypeFile, Path.of(file.getPath()));
+      } else {
+        requestContent = new PathRequestContent(Path.of(file.getPath()));
+      }
       request.body(requestContent);
+      postBody.append("<actual file content, not shown here>");
+    } else {
+      if (!hasContentTypeHeader && ADD_CONTENT_TYPE_TO_POST_IF_MISSING) {
+        request.addHeader(new HttpField(HTTPConstants.HEADER_CONTENT_TYPE,
+            HTTPConstants.APPLICATION_X_WWW_FORM_URLENCODED));
+      }
+      if (sampler.getSendParameterValuesAsPostBody()) {
+        for (JMeterProperty jMeterProperty : sampler.getArguments()) {
+          HTTPArgument arg = (HTTPArgument) jMeterProperty.getObjectValue();
+          postBody.append(arg.getEncodedValue(contentCharset.name()));
+        }
+        requestContent = new StringRequestContent(contentTypeHeader, postBody.toString(),
+            contentCharset);
+        request.body(requestContent);
+      } else if (isMethodWithBody(sampler.getMethod())) {
+        Fields fields = new Fields();
+        for (JMeterProperty p : sampler.getArguments()) {
+          HTTPArgument arg = (HTTPArgument) p.getObjectValue();
+          String parameterName = arg.getName();
+          if (!arg.isSkippable(parameterName)) {
+            String parameterValue = arg.getValue();
+            if (!arg.isAlwaysEncoded()) {
+              // The FormRequestContent always urlencodes both name and value, in this case the
+              // value is already encoded by the user so is needed to decode the value now, so
+              // that when the httpclient encodes it, we end up with the same value as the user
+              // had entered.
+              parameterName = URLDecoder.decode(parameterName, contentCharset.name());
+              parameterValue = URLDecoder.decode(parameterValue, contentCharset.name());
+            }
+            fields.add(parameterName, parameterValue);
+          }
+        }
+        requestContent = new FormRequestContent(fields, contentCharset);
+        postBody.append(FormRequestContent.convert(fields));
+        request.body(requestContent);
+      }
+      result.setQueryString(postBody.toString());
     }
   }
 

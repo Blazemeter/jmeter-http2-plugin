@@ -43,7 +43,7 @@ public class HTTP2SamplerPanel extends JPanel {
 
   private JTabbedPane createTabbedConfigPane(boolean isSampler) {
     final JTabbedPane tabbedPane = new JTabbedPane();
-    urlConfigGui = new UrlConfigGui(isSampler, true, false);
+    urlConfigGui = new UrlConfigGui(isSampler, true, true);
     tabbedPane.add(JMeterUtils.getResString("web_testing_basic"), urlConfigGui);
     final JPanel advancedPanel = createAdvancedConfigPanel();
     tabbedPane.add(JMeterUtils.getResString("web_testing_advanced"), advancedPanel);
