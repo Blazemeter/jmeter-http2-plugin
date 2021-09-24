@@ -102,13 +102,13 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
     JMeterVariables jMeterVariables = JMeterContextService.getContext().getVariables();
     if (!jMeterVariables.isSameUserOnNextIteration()) {
       closeConnections();
+      clearClientAuthenticationResultsIfClearEachIterationChecked();
     }
   }
 
   private void closeConnections() {
     Map<HTTP2ClientKey, HTTP2JettyClient> clients = CONNECTIONS.get();
     for (HTTP2JettyClient client : clients.values()) {
-      clearAuthManager(client);
       try {
         client.stop();
       } catch (Exception e) {
@@ -118,10 +118,13 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
     clients.clear();
   }
 
-  private void clearAuthManager(HTTP2JettyClient client) {
+  private void clearClientAuthenticationResultsIfClearEachIterationChecked() {
     AuthManager authManager = getAuthManager();
     if (authManager.getClearEachIteration()) {
-      client.clearAuthenticationResults();
+      Map<HTTP2ClientKey, HTTP2JettyClient> clients = CONNECTIONS.get();
+      for (HTTP2JettyClient client : clients.values()) {
+        client.clearClientAuthenticationResults();
+      }
     }
   }
 
