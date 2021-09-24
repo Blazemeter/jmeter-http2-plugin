@@ -129,7 +129,7 @@ public class HTTP2JettyClient {
           sampler);
     }
 
-    // Get headers request and convert to pass to cache manager
+    // Get headers request and convert it to pass to Cache Manager
     final HttpFields fields = request.getHeaders();
     final org.apache.http.Header[] headersRequest = StreamSupport.stream(
         Spliterators
@@ -163,6 +163,7 @@ public class HTTP2JettyClient {
     }
 
     setBody(request, sampler, result);
+    HttpResponse httpResponse = null;
     if (!isSupportedMethod(method)) {
       throw new UnsupportedOperationException(
           String.format("Method %s is not supported", method));
@@ -179,16 +180,17 @@ public class HTTP2JettyClient {
         }
         result.setRedirectLocation(redirectLocation);
       }
-
-      // Update cache with new information
-      if (cacheManager != null) {
-        // Map content response data with http response
-        final HttpResponse httpResponse = createHttpResponse(contentResponse);
-        cacheManager.saveDetails(httpResponse, result);
-      }
+      // Map content response data with http response
+      httpResponse = createHttpResponse(contentResponse);
     }
 
     result.setRequestHeaders(request.getHeaders() != null ? request.getHeaders().asString() : "");
+
+    // Update cache with new information
+    if (cacheManager != null) {
+      cacheManager.saveDetails(httpResponse, result);
+    }
+
     result = sampler.resultProcessing(areFollowingRedirect, depth, result);
     return result;
   }
