@@ -121,7 +121,7 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
   private void clearAuthManager(HTTP2JettyClient client) {
     AuthManager authManager = getAuthManager();
     if (authManager.getClearEachIteration()) {
-          client.clearAuthenticationResults();
+      client.clearAuthenticationResults();
     }
   }
 
