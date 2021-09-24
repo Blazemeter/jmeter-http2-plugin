@@ -42,6 +42,7 @@ import org.eclipse.jetty.client.api.Request.Content;
 import org.eclipse.jetty.client.dynamic.HttpClientTransportDynamic;
 import org.eclipse.jetty.client.http.HttpClientConnectionFactory;
 import org.eclipse.jetty.client.util.BasicAuthentication;
+import org.eclipse.jetty.client.util.DigestAuthentication;
 import org.eclipse.jetty.client.util.FormRequestContent;
 import org.eclipse.jetty.client.util.PathRequestContent;
 import org.eclipse.jetty.client.util.StringRequestContent;
@@ -65,7 +66,7 @@ public class HTTP2JettyClient {
   private static final boolean ADD_CONTENT_TYPE_TO_POST_IF_MISSING = JMeterUtils.getPropDefault(
       "http.post_add_content_type_if_missing", false);
   private static final boolean BASIC_AUTH_PREEMPTIVE = JMeterUtils.getPropDefault(
-      "httpclient4.auth.preemptive", true);
+      "httpclient4.auth.preemptive", false);
   private static final Pattern PORT_PATTERN = Pattern.compile("\\d+");
   private final HttpClient httpClient;
 
@@ -153,31 +154,52 @@ public class HTTP2JettyClient {
     AuthManager authManager = sampler.getAuthManager();
     if (authManager != null) {
 
-      boolean byThread = authManager.getControlledByThread();
-      boolean clearOnEachIteration = authManager.getClearEachIteration();
-      int count = authManager.getAuthCount();
-      System.out.println(count + " " + byThread + clearOnEachIteration);
-
       if (BASIC_AUTH_PREEMPTIVE) {
         StreamSupport.stream(authManager.getAuthObjects().spliterator(), false)
             .map(jMeterProperty -> (Authorization) jMeterProperty.getObjectValue())
-            .filter(auth -> auth.getMechanism().name().equals(Mechanism.BASIC.name()))
+            .filter(auth -> isMechanismBasic(auth) && isURL(auth))
             .forEach(auth -> httpClient.getAuthenticationStore().addAuthenticationResult(
                 new BasicAuthentication.BasicResult(URI.create(auth.getURL()), auth.getUser(),
                     auth.getPass())));
+        StreamSupport.stream(authManager.getAuthObjects().spliterator(), false)
+            .map(jMeterProperty -> (Authorization) jMeterProperty.getObjectValue())
+            .filter(auth -> auth.getMechanism().name().equals(Mechanism.DIGEST.name()))
+            .findAny()
+            .ifPresent(authorization -> {
+              throw new IllegalArgumentException("PREEMPTIVE DIGEST "
+                  + "mechanism not supported");
+            });
       } else {
         StreamSupport.stream(authManager.getAuthObjects().spliterator(), false)
             .map(jMeterProperty -> (Authorization) jMeterProperty.getObjectValue())
-            .filter(auth -> auth.getMechanism().name().equals(Mechanism.BASIC.name()))
+            .filter(auth -> isMechanismBasic(auth) && isURL(auth))
             .forEach(auth -> httpClient.getAuthenticationStore().addAuthentication(
                 new BasicAuthentication(URI.create(auth.getURL()), auth.getRealm(), auth.getUser(),
                     auth.getPass())));
+        StreamSupport.stream(authManager.getAuthObjects().spliterator(), false)
+            .map(jMeterProperty -> (Authorization) jMeterProperty.getObjectValue())
+            .filter(auth -> isMechanismDigest(auth) && isURL(auth))
+            .forEach(auth -> httpClient.getAuthenticationStore()
+                .addAuthentication(new DigestAuthentication(URI.create(auth.getURL()),
+                    auth.getRealm(), auth.getUser(), auth.getPass())));
       }
     }
 
   }
 
-  public void clearAuthenticationResults() {
+  private boolean isURL(Authorization authorization) {
+    return authorization.getURL() != null && !authorization.getURL().isEmpty();
+  }
+
+  private boolean isMechanismBasic(Authorization authorization) {
+    return authorization.getMechanism().name().equals(Mechanism.BASIC.name());
+  }
+
+  private boolean isMechanismDigest(Authorization authorization) {
+    return authorization.getMechanism().name().equals(Mechanism.DIGEST.name());
+  }
+
+  public void clearClientAuthenticationResults() {
     httpClient.getAuthenticationStore().clearAuthenticationResults();
   }
 
