@@ -57,6 +57,7 @@ public class HTTP2JettyClientTest {
   private static final String SERVER_RESPONSE = "Hello World!";
   private static final String REQUEST_HEADERS = "Accept-Encoding: gzip\r\nUser-Agent: Jetty/11.0"
       + ".6\r\n\r\n";
+  private static final String SERVER_IMAGE = "/test/image.png";
   private static final String SERVER_PATH = "/test";
   private static final String SERVER_PATH_200 = "/test/200";
   private static final String SERVER_PATH_SLOW = "/test/slow";
@@ -66,7 +67,7 @@ public class HTTP2JettyClientTest {
   private static final String SERVER_PATH_302 = "/test/302";
   private static final int SERVER_PORT = 6666;
   private static final String BASIC_HTML_TEMPLATE = "<!DOCTYPE html><html><head><title>Page "
-      + "Title</title></head><body><div><img src=%s></div></body></html>";
+      + "Title</title></head><body><div><img src='image.png'></div></body></html>";
   private final String imagePath = getClass().getResource("blazemeter-labs-logo"
       + ".png").getPath();
 
@@ -114,8 +115,6 @@ public class HTTP2JettyClientTest {
   }
 
   private HttpServlet createGetServerResponse() {
-    String imagePath = this.getBasicHtmlTemplate();
-
     return new HttpServlet() {
       @Override
       protected void service(HttpServletRequest req, HttpServletResponse resp) throws IOException {
@@ -143,8 +142,10 @@ public class HTTP2JettyClientTest {
             break;
           case SERVER_PATH_200_EMBEDDED:
             resp.setContentType(MimeTypes.MIME_TEXT_HTML + ";" + StandardCharsets.UTF_8.name());
-            resp.getWriter().write(imagePath);
+            resp.getWriter().write(BASIC_HTML_TEMPLATE);
             return;
+          case SERVER_IMAGE:
+            resp.getOutputStream().write(new byte[]{1, 2, 3, 4, 5});
           case SERVER_PATH_200_FILE_SENT:
             resp.setContentType("image/png");
             byte[] requestBody = req.getInputStream().readAllBytes();
@@ -206,7 +207,7 @@ public class HTTP2JettyClientTest {
     expected.setSuccessful(true);
     expected.setResponseCode(String.valueOf(HttpStatus.OK_200));
     expected.setRequestHeaders(REQUEST_HEADERS);
-    expected.setResponseData(this.getBasicHtmlTemplate(),
+    expected.setResponseData(BASIC_HTML_TEMPLATE,
         StandardCharsets.UTF_8.name());
     startServer(createGetServerResponse());
     sampler.setImageParser(true);
@@ -319,7 +320,7 @@ public class HTTP2JettyClientTest {
     expected.setSuccessful(true);
     expected.setResponseCode(String.valueOf(HttpStatus.OK_200));
     expected.setRequestHeaders(REQUEST_HEADERS);
-    expected.setResponseData(this.getBasicHtmlTemplate(),
+    expected.setResponseData(BASIC_HTML_TEMPLATE,
         StandardCharsets.UTF_8.name());
     startServer(createGetServerResponse());
     sampler.setImageParser(true);
@@ -400,8 +401,8 @@ public class HTTP2JettyClientTest {
     softly.assertThat(results[0].getDataType()).isEqualTo(SampleResult.TEXT);
     softly.assertThat(results[0].getUrlAsString())
         .isEqualTo("https://localhost:6666/test/embedded");
-    softly.assertThat(results[1].getDataType()).isEqualTo(SampleResult.TEXT);
-    softly.assertThat(results[1].getUrlAsString()).isEqualTo(imagePath);
+    softly.assertThat(results[1].getDataType()).isEqualTo(SampleResult.BINARY);
+    softly.assertThat(results[1].getUrlAsString()).isEqualTo("https://localhost:6666/test/image.png");
   }
 
   /**
@@ -411,11 +412,6 @@ public class HTTP2JettyClientTest {
   private void validateEmbeddedResultCached(HTTPSampleResult result, HTTPSampleResult expected) {
     this.validateEmbeddedResources(result, expected);
     softly.assertThat(result.getResponseData().length).isEqualTo(0);
-  }
-
-  private String getBasicHtmlTemplate() {
-    String filePath = getClass().getResource("blazemeter-labs-logo.png").getPath();
-    return String.format(BASIC_HTML_TEMPLATE, filePath);
   }
 
 }
