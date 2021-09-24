@@ -199,14 +199,6 @@ public class HTTP2JettyClient {
             .forEach(auth -> httpClient.getAuthenticationStore().addAuthenticationResult(
                 new BasicAuthentication.BasicResult(URI.create(auth.getURL()), auth.getUser(),
                     auth.getPass())));
-        StreamSupport.stream(authManager.getAuthObjects().spliterator(), false)
-            .map(jMeterProperty -> (Authorization) jMeterProperty.getObjectValue())
-            .filter(auth -> auth.getMechanism().name().equals(Mechanism.DIGEST.name()))
-            .findAny()
-            .ifPresent(authorization -> {
-              throw new IllegalArgumentException("PREEMPTIVE DIGEST "
-                  + "mechanism not supported");
-            });
       } else {
         StreamSupport.stream(authManager.getAuthObjects().spliterator(), false)
             .map(jMeterProperty -> (Authorization) jMeterProperty.getObjectValue())
