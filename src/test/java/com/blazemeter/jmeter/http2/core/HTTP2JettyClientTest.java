@@ -287,6 +287,7 @@ public class HTTP2JettyClientTest {
     validateResponse(result, expected);
   }
 
+  @Ignore
   @Test
   public void shouldReturnErrorMessageWhenConnectTimeIsOver() {
     configureSampler(HTTPConstants.GET);
