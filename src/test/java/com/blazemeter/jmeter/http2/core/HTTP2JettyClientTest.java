@@ -11,15 +11,19 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.io.InputStream;
+import java.lang.reflect.Constructor;
+import java.lang.reflect.InvocationTargetException;
 import java.net.URISyntaxException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.util.Map;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import jodd.net.MimeTypes;
+import org.apache.commons.collections.map.LRUMap;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.jmeter.protocol.http.control.CacheManager;
 import org.apache.jmeter.protocol.http.control.Header;
@@ -28,7 +32,6 @@ import org.apache.jmeter.protocol.http.sampler.HTTPSampleResult;
 import org.apache.jmeter.protocol.http.util.HTTPConstants;
 import org.apache.jmeter.protocol.http.util.HTTPFileArg;
 import org.apache.jmeter.samplers.SampleResult;
-import org.apache.jmeter.util.JMeterUtils;
 import org.assertj.core.api.JUnitSoftAssertions;
 import org.eclipse.jetty.http.HttpStatus;
 import org.eclipse.jetty.http2.HTTP2Cipher;
@@ -335,7 +338,6 @@ public class HTTP2JettyClientTest {
     validateEmbeddedResources(resultNotCached, expected);
   }
 
-  @Ignore
   @Test
   public void shouldNotGetSubresultWhenResourceIsCachedWithNoMsg() throws Exception {
     HTTPSampleResult expected = new HTTPSampleResult();
@@ -353,11 +355,13 @@ public class HTTP2JettyClientTest {
     validateEmbeddedResources(result, expected);
     HTTPSampleResult resultCached = client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS,
         HOST_NAME, SERVER_PORT, SERVER_PATH_200_EMBEDDED), HTTPConstants.GET, false, 0);
-    // Same request use cached result with no message response
+    // Same request use cached result with no message, request and data response
+    expected.setRequestHeaders("");
+    expected.setResponseData("",
+        StandardCharsets.UTF_8.name());
     validateEmbeddedResultCached(resultCached, expected, "");
   }
 
-  @Ignore
   @Test
   public void shouldNotGetSubresultWhenResourceIsCachedWithMsg() throws Exception {
     HTTPSampleResult expected = new HTTPSampleResult();
@@ -375,7 +379,10 @@ public class HTTP2JettyClientTest {
     validateEmbeddedResources(result, expected);
     HTTPSampleResult resultCached = client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS,
         HOST_NAME, SERVER_PORT, SERVER_PATH_200_EMBEDDED), HTTPConstants.GET, false, 0);
-    // Same request use cached result with message response
+    // Same request use cached result with message response from property system
+    expected.setRequestHeaders("");
+    expected.setResponseData("",
+        StandardCharsets.UTF_8.name());
     validateEmbeddedResultCached(resultCached, expected, MESSAGE_CACHED);
   }
 
@@ -415,9 +422,14 @@ public class HTTP2JettyClientTest {
     sampler.setHeaderManager(hm);
   }
 
-  private void configureCacheManagerToSampler(boolean useExpire, boolean clearCacheIteration) {
-    CacheManager cacheManager = new CacheManager();
-    cacheManager.setUseExpires(useExpire);
+  private void configureCacheManagerToSampler(boolean useExpire, boolean clearCacheIteration)
+      throws ClassNotFoundException, NoSuchMethodException, IllegalAccessException,
+      InvocationTargetException, InstantiationException {
+    // Use Reflection to access a private cosntructor (necessary for useExpire)
+    Class ref = Class.forName("org.apache.jmeter.protocol.http.control.CacheManager");
+    Constructor<?> con = ref.getDeclaredConstructor(Map.class, boolean.class);
+    con.setAccessible(true);
+    CacheManager cacheManager = (CacheManager) con.newInstance(new LRUMap(), useExpire);
     cacheManager.setClearEachIteration(clearCacheIteration);
     sampler.setCacheManager(cacheManager);
   }
@@ -456,10 +468,10 @@ public class HTTP2JettyClientTest {
    */
   private void validateEmbeddedResultCached(HTTPSampleResult result, HTTPSampleResult expected,
       String messageResponse) {
+    this.validateResponse(result, expected);
     if (StringUtils.isNotBlank(messageResponse)) {
       softly.assertThat(result.getResponseMessage()).isEqualTo(MESSAGE_CACHED);
     }
-    this.validateEmbeddedResources(result, expected);
     softly.assertThat(result.getResponseData().length).isEqualTo(0);
   }
 

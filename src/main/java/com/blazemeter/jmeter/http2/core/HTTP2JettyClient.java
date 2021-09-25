@@ -12,8 +12,6 @@ import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.Arrays;
-import java.util.Calendar;
-import java.util.Date;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.Spliterator;
@@ -93,6 +91,7 @@ public class HTTP2JettyClient {
       JMeterUtils.getProperty("RETURN_CUSTOM_STATUS.code");
   private static final String RETURN_CUSTOM_STATUS_MESSAGE =
       JMeterUtils.getProperty("RETURN_CUSTOM_STATUS.message");
+  private static final String DEFAULT_EXPIRE_DATE = "Sat, 25 Sep 2041 00:00:00 GMT";
   private final HttpClient httpClient;
 
   public HTTP2JettyClient() {
@@ -452,14 +451,10 @@ public class HTTP2JettyClient {
         .addHeader(HTTPConstants.VARY, contentResponse.getHeaders().get(HTTPConstants.VARY));
     httpResponse.addHeader(HTTPConstants.LAST_MODIFIED,
         contentResponse.getHeaders().get(HTTPConstants.LAST_MODIFIED));
-    // If not expire Date setted, add 30 mins by default. This is necesary to cache the entry
-    final Calendar calendar = Calendar.getInstance();
-    calendar.setTime(new Date());
-    calendar.add(Calendar.MINUTE, 30);
-    final String expireDate = (contentResponse.getHeaders().get(HTTPConstants.EXPIRES) != null)
-        ? contentResponse.getHeaders().get(HTTPConstants.EXPIRES) : calendar.getTime().toString();
+    // TODO dfilgueiras: Discuss about this approach. It need a default expiration date to save
+    //  entries in Cache.
     httpResponse
-        .addHeader(HTTPConstants.EXPIRES, expireDate);
+        .addHeader(HTTPConstants.EXPIRES, DEFAULT_EXPIRE_DATE);
     httpResponse
         .addHeader(HTTPConstants.ETAG, contentResponse.getHeaders().get(HTTPConstants.ETAG));
     httpResponse.addHeader(HTTPConstants.CACHE_CONTROL,
