@@ -27,6 +27,8 @@ public class JMeterTestUtils {
       JMeterUtils
           .setProperty("cssParser.className", "org.apache.jmeter.protocol.http.parser.CssParser");
       JMeterUtils.setProperty("cssParser.types", "text/css");
+      JMeterUtils.setProperty("cache_manager.cached_resource_mode", "RETURN_200_CACHE");
+      JMeterUtils.setProperty("RETURN_200_CACHE.message", "(ex cache)");
     }
   }
 }

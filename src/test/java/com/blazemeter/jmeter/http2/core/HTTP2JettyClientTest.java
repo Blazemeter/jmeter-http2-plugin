@@ -20,6 +20,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import jodd.net.MimeTypes;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.jmeter.protocol.http.control.CacheManager;
 import org.apache.jmeter.protocol.http.control.Header;
 import org.apache.jmeter.protocol.http.control.HeaderManager;
@@ -27,6 +28,7 @@ import org.apache.jmeter.protocol.http.sampler.HTTPSampleResult;
 import org.apache.jmeter.protocol.http.util.HTTPConstants;
 import org.apache.jmeter.protocol.http.util.HTTPFileArg;
 import org.apache.jmeter.samplers.SampleResult;
+import org.apache.jmeter.util.JMeterUtils;
 import org.assertj.core.api.JUnitSoftAssertions;
 import org.eclipse.jetty.http.HttpStatus;
 import org.eclipse.jetty.http2.HTTP2Cipher;
@@ -70,6 +72,7 @@ public class HTTP2JettyClientTest {
       + "Title</title></head><body><div><img src='image.png'></div></body></html>";
   private final String imagePath = getClass().getResource("blazemeter-labs-logo"
       + ".png").getPath();
+  private static final String MESSAGE_CACHED = "(ex cache)";
 
   @Rule
   public final JUnitSoftAssertions softly = new JUnitSoftAssertions();
@@ -200,7 +203,6 @@ public class HTTP2JettyClientTest {
         "MethodNotSupported", false, 0);
   }
 
-  @Ignore
   @Test
   public void shouldGetEmbeddedResourcesWithSubSampleWhenImageParserIsEnabled() throws Exception {
     HTTPSampleResult expected = new HTTPSampleResult();
@@ -282,7 +284,6 @@ public class HTTP2JettyClientTest {
     validateResponse(result, expected);
   }
 
-  @Ignore
   @Test
   public void shouldReturnErrorMessageWhenConnectTimeIsOver() {
     configureSampler(HTTPConstants.GET);
@@ -313,6 +314,27 @@ public class HTTP2JettyClientTest {
     softly.assertThat(waitTime.elapsed(TimeUnit.MILLISECONDS)).isGreaterThanOrEqualTo(timeout);
   }
 
+  @Test
+  public void shouldNoUseCacheWhenNotUseExpire() throws Exception {
+    HTTPSampleResult expected = new HTTPSampleResult();
+    expected.setSuccessful(true);
+    expected.setResponseCode(String.valueOf(HttpStatus.OK_200));
+    expected.setRequestHeaders(REQUEST_HEADERS);
+    expected.setResponseData(BASIC_HTML_TEMPLATE,
+        StandardCharsets.UTF_8.name());
+    startServer(createGetServerResponse());
+    sampler.setImageParser(true);
+    configureCacheManagerToSampler(false, false);
+    HTTPSampleResult result = client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS,
+        HOST_NAME, SERVER_PORT, SERVER_PATH_200_EMBEDDED), HTTPConstants.GET, false, 0);
+    // First request must connect to the server
+    validateEmbeddedResources(result, expected);
+    HTTPSampleResult resultNotCached = client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS,
+        HOST_NAME, SERVER_PORT, SERVER_PATH_200_EMBEDDED), HTTPConstants.GET, false, 0);
+    // Same request connect again because use expire is false
+    validateEmbeddedResources(resultNotCached, expected);
+  }
+
   @Ignore
   @Test
   public void shouldNotGetSubresultWhenResourceIsCachedWithNoMsg() throws Exception {
@@ -324,40 +346,58 @@ public class HTTP2JettyClientTest {
         StandardCharsets.UTF_8.name());
     startServer(createGetServerResponse());
     sampler.setImageParser(true);
-    configureCacheManagerToSampler();
+    configureCacheManagerToSampler(true, false);
     HTTPSampleResult result = client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS,
         HOST_NAME, SERVER_PORT, SERVER_PATH_200_EMBEDDED), HTTPConstants.GET, false, 0);
     // First request must connect to the server
     validateEmbeddedResources(result, expected);
     HTTPSampleResult resultCached = client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS,
         HOST_NAME, SERVER_PORT, SERVER_PATH_200_EMBEDDED), HTTPConstants.GET, false, 0);
-    // Same request should use results cached in Cache Manager
-    validateEmbeddedResultCached(resultCached, expected);
+    // Same request use cached result with no message response
+    validateEmbeddedResultCached(resultCached, expected, "");
   }
 
   @Ignore
   @Test
-  public void shouldNotGetSubresultWhenResourceIsCachedWithOkMsg() {
-    // Setear property ex cache
-    // Comprobar que no haya subresultados para recurso (response body)
-    // Comprobar que mensaje de respuesta sea (ex cache)
-
+  public void shouldNotGetSubresultWhenResourceIsCachedWithMsg() throws Exception {
+    HTTPSampleResult expected = new HTTPSampleResult();
+    expected.setSuccessful(true);
+    expected.setResponseCode(String.valueOf(HttpStatus.OK_200));
+    expected.setRequestHeaders(REQUEST_HEADERS);
+    expected.setResponseData(BASIC_HTML_TEMPLATE,
+        StandardCharsets.UTF_8.name());
+    startServer(createGetServerResponse());
+    sampler.setImageParser(true);
+    configureCacheManagerToSampler(true, false);
+    HTTPSampleResult result = client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS,
+        HOST_NAME, SERVER_PORT, SERVER_PATH_200_EMBEDDED), HTTPConstants.GET, false, 0);
+    // First request must connect to the server
+    validateEmbeddedResources(result, expected);
+    HTTPSampleResult resultCached = client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS,
+        HOST_NAME, SERVER_PORT, SERVER_PATH_200_EMBEDDED), HTTPConstants.GET, false, 0);
+    // Same request use cached result with message response
+    validateEmbeddedResultCached(resultCached, expected, MESSAGE_CACHED);
   }
 
-  @Ignore
   @Test
-  public void shouldNotGetSubresultWhenResourceIsCachedWithCustomMsg() {
-    // Comprobar que no haya subresultados para recurso (response body)
-    // Comprobar que mensaje de respuesta sea el customizado
-  }
-
-  @Ignore
-  @Test
-  public void shouldGetSubresultWhenCacheCleanBetweenIterationsAndNotMshOk() {
-    // Setear property ex cache
-    // Check Clear Cache in each iteration
-    // Comprobar que trajo subresultado y es el mismo en ambas iterciones
-    // Comprobar que no aparece mensaje (ex cache)
+  public void shouldGetSubresultWhenCacheCleanBetweenIterations() throws Exception {
+    HTTPSampleResult expected = new HTTPSampleResult();
+    expected.setSuccessful(true);
+    expected.setResponseCode(String.valueOf(HttpStatus.OK_200));
+    expected.setRequestHeaders(REQUEST_HEADERS);
+    expected.setResponseData(BASIC_HTML_TEMPLATE,
+        StandardCharsets.UTF_8.name());
+    startServer(createGetServerResponse());
+    sampler.setImageParser(true);
+    configureCacheManagerToSampler(false, true);
+    HTTPSampleResult result = client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS,
+        HOST_NAME, SERVER_PORT, SERVER_PATH_200_EMBEDDED), HTTPConstants.GET, false, 0);
+    // First request must connect to the server
+    validateEmbeddedResources(result, expected);
+    HTTPSampleResult resultNotCached = client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS,
+        HOST_NAME, SERVER_PORT, SERVER_PATH_200_EMBEDDED), HTTPConstants.GET, false, 0);
+    // Same request connect again because clear cache iteration is setted
+    validateEmbeddedResources(resultNotCached, expected);
   }
 
   private void configureSampler(String method) {
@@ -375,8 +415,10 @@ public class HTTP2JettyClientTest {
     sampler.setHeaderManager(hm);
   }
 
-  private void configureCacheManagerToSampler() {
+  private void configureCacheManagerToSampler(boolean useExpire, boolean clearCacheIteration) {
     CacheManager cacheManager = new CacheManager();
+    cacheManager.setUseExpires(useExpire);
+    cacheManager.setClearEachIteration(clearCacheIteration);
     sampler.setCacheManager(cacheManager);
   }
 
@@ -402,14 +444,21 @@ public class HTTP2JettyClientTest {
     softly.assertThat(results[0].getUrlAsString())
         .isEqualTo("https://localhost:6666/test/embedded");
     softly.assertThat(results[1].getDataType()).isEqualTo(SampleResult.BINARY);
-    softly.assertThat(results[1].getUrlAsString()).isEqualTo("https://localhost:6666/test/image.png");
+    softly.assertThat(results[1].getUrlAsString())
+        .isEqualTo("https://localhost:6666/test/image.png");
   }
 
   /**
    * Validate same result as expected, but also control that not sample result was added for
    * resoruce.
+   *
+   * @param messageResponse if passed, validate if message response is equal to defined.
    */
-  private void validateEmbeddedResultCached(HTTPSampleResult result, HTTPSampleResult expected) {
+  private void validateEmbeddedResultCached(HTTPSampleResult result, HTTPSampleResult expected,
+      String messageResponse) {
+    if (StringUtils.isNotBlank(messageResponse)) {
+      softly.assertThat(result.getResponseMessage()).isEqualTo(MESSAGE_CACHED);
+    }
     this.validateEmbeddedResources(result, expected);
     softly.assertThat(result.getResponseData().length).isEqualTo(0);
   }
