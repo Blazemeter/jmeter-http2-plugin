@@ -75,7 +75,7 @@ public class HTTP2JettyClient {
   private static final Logger LOG = LoggerFactory.getLogger(HTTP2JettyClient.class);
   private static final CachedResourceMode CACHED_RESOURCE_MODE =
       CachedResourceMode.valueOf(
-          JMeterUtils.getPropDefault("cache_manager.cached_resource_mode", //$NON-NLS-1$
+          JMeterUtils.getPropDefault("cache_manager.cached_resource_mode",
               CachedResourceMode.RETURN_NO_SAMPLE.toString()));
   private static final Set<String> SUPPORTED_METHODS = new HashSet<>(Arrays
       .asList(HTTPConstants.GET, HTTPConstants.POST, HTTPConstants.PUT, HTTPConstants.PATCH,
@@ -181,13 +181,13 @@ public class HTTP2JettyClient {
         }
         result.setRedirectLocation(redirectLocation);
       }
-      // Map content response data with http response
+      // Map content response data to http response
       httpResponse = createHttpResponse(contentResponse);
     }
 
     result.setRequestHeaders(request.getHeaders() != null ? request.getHeaders().asString() : "");
 
-    // Update cache with new information
+    // Update Cache with new information
     if (cacheManager != null) {
       cacheManager.saveDetails(httpResponse, result);
     }
@@ -353,7 +353,7 @@ public class HTTP2JettyClient {
           areFollowingRedirect, sampler);
       // Set header to Cache manager
       cacheManager.setHeaders(url, reqBase);
-      // Set header for jetty request if Cache setted in its headers
+      // Set header for jetty request if Cache has them set
       if (reqBase.getFirstHeader(HTTPConstants.VARY) != null) {
         request.addHeader(createJettyHeader(new Header(HTTPConstants.VARY,
             reqBase.getFirstHeader(HTTPConstants.VARY).getValue()), url));
@@ -412,7 +412,7 @@ public class HTTP2JettyClient {
   }
 
   /**
-   * Update HTTPSampleResult for a resource in cache.
+   * Update HTTPSampleResult for a resource in Cache.
    *
    * @param res {@link HTTPSampleResult}
    * @return HTTPSampleResult
@@ -465,12 +465,6 @@ public class HTTP2JettyClient {
     return httpResponse;
   }
 
-  private enum CachedResourceMode {
-    RETURN_200_CACHE(),
-    RETURN_NO_SAMPLE(),
-    RETURN_CUSTOM_STATUS()
-  }
-
   /**
    * @param uri {@link URI}
    * @param method HTTP Method
@@ -512,6 +506,12 @@ public class HTTP2JettyClient {
       throw new IllegalArgumentException("Unexpected method: '" + method + "'");
     }
     return result;
+  }
+
+  private enum CachedResourceMode {
+    RETURN_200_CACHE(),
+    RETURN_NO_SAMPLE(),
+    RETURN_CUSTOM_STATUS()
   }
 
 }
