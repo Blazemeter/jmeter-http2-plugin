@@ -404,7 +404,7 @@ public class HTTP2JettyClientTest {
     validateEmbeddedResources(result, expected);
     HTTPSampleResult resultNotCached = client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS,
         HOST_NAME, SERVER_PORT, SERVER_PATH_200_EMBEDDED), HTTPConstants.GET, false, 0);
-    // Same request connect again because clear cache iteration is setted
+    // Same request connect again because clear cache iteration is enabled
     validateEmbeddedResources(resultNotCached, expected);
   }
 

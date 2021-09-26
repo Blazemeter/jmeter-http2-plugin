@@ -503,7 +503,7 @@ public class HTTP2JettyClient {
     } else if (HttpWebdav.isWebdavMethod(method)) {
       result = new HttpWebdav(method, uri);
     } else {
-      throw new IllegalArgumentException("Unexpected method: '" + method + "'");
+      throw new IllegalArgumentException(String.format("Unexpected method: '%s'", method));
     }
     return result;
   }
