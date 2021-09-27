@@ -6,7 +6,6 @@ import org.apache.jmeter.util.JMeterUtils;
 public class JMeterTestUtils {
 
   private static boolean jeerEnvironmentInitialized = false;
-  private static String filePrefix;
 
   public JMeterTestUtils() {
   }
@@ -26,6 +25,7 @@ public class JMeterTestUtils {
       JMeterUtils
           .setProperty("cssParser.className", "org.apache.jmeter.protocol.http.parser.CssParser");
       JMeterUtils.setProperty("cssParser.types", "text/css");
+      JMeterUtils.setProperty("httpclient4.auth.preemptive", "false");
     }
   }
 }
