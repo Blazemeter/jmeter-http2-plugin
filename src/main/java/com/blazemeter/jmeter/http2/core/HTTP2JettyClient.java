@@ -68,8 +68,6 @@ public class HTTP2JettyClient {
       .asList(HTTPConstants.POST, HTTPConstants.PUT, HTTPConstants.PATCH));
   private static final boolean ADD_CONTENT_TYPE_TO_POST_IF_MISSING = JMeterUtils.getPropDefault(
       "http.post_add_content_type_if_missing", false);
-  private static final boolean BASIC_AUTH_PREEMPTIVE = JMeterUtils.getPropDefault(
-      "httpclient4.auth.preemptive", false);
   private static final Pattern PORT_PATTERN = Pattern.compile("\\d+");
   private final HttpClient httpClient;
 
@@ -192,7 +190,8 @@ public class HTTP2JettyClient {
     AuthManager authManager = sampler.getAuthManager();
     if (authManager != null) {
 
-      if (BASIC_AUTH_PREEMPTIVE) {
+      if (JMeterUtils.getPropDefault(
+          "httpclient4.auth.preemptive", false)) {
         StreamSupport.stream(authManager.getAuthObjects().spliterator(), false)
             .map(jMeterProperty -> (Authorization) jMeterProperty.getObjectValue())
             .filter(auth -> isMechanismBasic(auth) && isURL(auth))

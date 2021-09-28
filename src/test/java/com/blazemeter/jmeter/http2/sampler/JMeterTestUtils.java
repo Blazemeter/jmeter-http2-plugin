@@ -25,7 +25,6 @@ public class JMeterTestUtils {
       JMeterUtils
           .setProperty("cssParser.className", "org.apache.jmeter.protocol.http.parser.CssParser");
       JMeterUtils.setProperty("cssParser.types", "text/css");
-      JMeterUtils.setProperty("httpclient4.auth.preemptive", "false");
     }
   }
 }
