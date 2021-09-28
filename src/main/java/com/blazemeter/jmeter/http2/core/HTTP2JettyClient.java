@@ -58,6 +58,7 @@ import org.eclipse.jetty.client.api.Request.Content;
 import org.eclipse.jetty.client.dynamic.HttpClientTransportDynamic;
 import org.eclipse.jetty.client.http.HttpClientConnectionFactory;
 import org.eclipse.jetty.client.util.FormRequestContent;
+import org.eclipse.jetty.client.util.MultiPartRequestContent;
 import org.eclipse.jetty.client.util.PathRequestContent;
 import org.eclipse.jetty.client.util.StringRequestContent;
 import org.eclipse.jetty.http.HttpField;
@@ -256,73 +257,123 @@ public class HTTP2JettyClient {
   private void setBody(HttpRequest request, HTTP2Sampler sampler, HTTPSampleResult result)
       throws IOException {
     final String contentEncoding = sampler.getContentEncoding();
-    Charset contentCharset =
+    final Charset contentCharset =
         !contentEncoding.isEmpty() ? Charset.forName(contentEncoding) : StandardCharsets.UTF_8;
-    String contentTypeHeader =
+    final String contentTypeHeader =
         request.getHeaders() != null ? request.getHeaders().get(HTTPConstants.HEADER_CONTENT_TYPE)
             : null;
-    boolean hasContentTypeHeader = contentTypeHeader != null && contentTypeHeader.isEmpty();
+    final boolean hasContentTypeHeader = contentTypeHeader != null && contentTypeHeader.isEmpty();
     StringBuilder postBody = new StringBuilder();
     Content requestContent;
-    if (!sampler.hasArguments() && sampler.getSendFileAsPostBody()) {
-      // Only one File support in not multipart scenario
-      final HTTPFileArg file = sampler.getHTTPFiles()[0];
-      if (sampler.getHTTPFiles().length > 1) {
-        LOG.info("Send multiples files is not currently supported, only first file will be "
-            + "sending");
-      }
-      String mimeTypeFile = null;
-      if (!hasContentTypeHeader) {
-        if (file.getMimeType() != null && !file.getMimeType().isEmpty()) {
-          mimeTypeFile = file.getMimeType();
-        } else if (ADD_CONTENT_TYPE_TO_POST_IF_MISSING) {
-          mimeTypeFile = HTTPConstants.APPLICATION_X_WWW_FORM_URLENCODED;
+
+    if (sampler.getUseMultipart()) {
+
+      // Create and add Fields and Files Parts
+      final MultiPartRequestContent multipartEntityBuilder = new MultiPartRequestContent();
+
+      // Add all parameters
+      for (final JMeterProperty jMeterProperty : sampler.getArguments()) {
+        final HTTPArgument arg = (HTTPArgument) jMeterProperty.getObjectValue();
+        final String parameterName = arg.getName();
+        if (arg.isSkippable(parameterName)) {
+          continue;
         }
+
+        multipartEntityBuilder.addFieldPart(parameterName,
+            new StringRequestContent(contentTypeHeader, arg.getEncodedValue(contentCharset.name()),
+                contentCharset), null); // TODO Fields Header?
       }
-      if (mimeTypeFile != null) {
-        request.addHeader(new HttpField(HTTPConstants.HEADER_CONTENT_TYPE, mimeTypeFile));
-        requestContent = new PathRequestContent(mimeTypeFile, Path.of(file.getPath()));
-      } else {
-        requestContent = new PathRequestContent(Path.of(file.getPath()));
-      }
-      request.body(requestContent);
-      postBody.append("<actual file content, not shown here>");
-    } else {
-      if (!hasContentTypeHeader && ADD_CONTENT_TYPE_TO_POST_IF_MISSING) {
-        request.addHeader(new HttpField(HTTPConstants.HEADER_CONTENT_TYPE,
-            HTTPConstants.APPLICATION_X_WWW_FORM_URLENCODED));
-      }
-      if (sampler.getSendParameterValuesAsPostBody()) {
-        for (JMeterProperty jMeterProperty : sampler.getArguments()) {
-          HTTPArgument arg = (HTTPArgument) jMeterProperty.getObjectValue();
-          postBody.append(arg.getEncodedValue(contentCharset.name()));
-        }
-        requestContent = new StringRequestContent(contentTypeHeader, postBody.toString(),
-            contentCharset);
-        request.body(requestContent);
-      } else if (isMethodWithBody(sampler.getMethod())) {
-        Fields fields = new Fields();
-        for (JMeterProperty p : sampler.getArguments()) {
-          HTTPArgument arg = (HTTPArgument) p.getObjectValue();
-          String parameterName = arg.getName();
-          if (!arg.isSkippable(parameterName)) {
-            String parameterValue = arg.getValue();
-            if (!arg.isAlwaysEncoded()) {
-              // The FormRequestContent always urlencodes both name and value, in this case the
-              // value is already encoded by the user so is needed to decode the value now, so
-              // that when the httpclient encodes it, we end up with the same value as the user
-              // had entered.
-              parameterName = URLDecoder.decode(parameterName, contentCharset.name());
-              parameterValue = URLDecoder.decode(parameterValue, contentCharset.name());
-            }
-            fields.add(parameterName, parameterValue);
+
+      // Add all files
+      final Content[] fileBodies = new PathRequestContent[sampler
+          .getHTTPFiles().length]; // Cannot retrieve parts once added
+      for (int i = 0; i < sampler.getHTTPFiles().length; i++) {
+        final HTTPFileArg file = sampler.getHTTPFiles()[i];
+
+        String mimeTypeFile = null;
+        if (!hasContentTypeHeader) {
+          if (file.getMimeType() != null && !file.getMimeType().isEmpty()) {
+            mimeTypeFile = file.getMimeType();
+          } else if (ADD_CONTENT_TYPE_TO_POST_IF_MISSING) {
+            mimeTypeFile = HTTPConstants.APPLICATION_X_WWW_FORM_URLENCODED;
           }
         }
-        requestContent = new FormRequestContent(fields, contentCharset);
-        postBody.append(FormRequestContent.convert(fields));
-        request.body(requestContent);
+        if (mimeTypeFile != null) {
+          //request.addHeader(new HttpField(HTTPConstants.HEADER_CONTENT_TYPE, mimeTypeFile));
+          fileBodies[i] = new PathRequestContent(mimeTypeFile, Path.of(file.getPath()));
+        } else {
+          fileBodies[i] = new PathRequestContent(Path.of(file.getPath()));
+        }
+
+        multipartEntityBuilder.addFilePart(file.getParamName(), file.getName(), fileBodies[i],
+            null); // TODO Fields Header?
       }
-      result.setQueryString(postBody.toString());
+
+      request.body(multipartEntityBuilder);
+      postBody.append("<MULTIPART CONTENT>");
+      //writeEntityToSB(postBody, multipartEntityBuilder, fileBodies, contentEncoding);
+
+    } else {
+      if (!sampler.hasArguments() && sampler.getSendFileAsPostBody()) {
+        // Only one File support in not multipart scenario
+        final HTTPFileArg file = sampler.getHTTPFiles()[0];
+        if (sampler.getHTTPFiles().length > 1) {
+          LOG.info("Send multiples files is not currently supported, only first file will be "
+              + "sending");
+        }
+        String mimeTypeFile = null;
+        if (!hasContentTypeHeader) {
+          if (file.getMimeType() != null && !file.getMimeType().isEmpty()) {
+            mimeTypeFile = file.getMimeType();
+          } else if (ADD_CONTENT_TYPE_TO_POST_IF_MISSING) {
+            mimeTypeFile = HTTPConstants.APPLICATION_X_WWW_FORM_URLENCODED;
+          }
+        }
+        if (mimeTypeFile != null) {
+          request.addHeader(new HttpField(HTTPConstants.HEADER_CONTENT_TYPE, mimeTypeFile));
+          requestContent = new PathRequestContent(mimeTypeFile, Path.of(file.getPath()));
+        } else {
+          requestContent = new PathRequestContent(Path.of(file.getPath()));
+        }
+        request.body(requestContent);
+        postBody.append("<actual file content, not shown here>");
+      } else {
+        if (!hasContentTypeHeader && ADD_CONTENT_TYPE_TO_POST_IF_MISSING) {
+          request.addHeader(new HttpField(HTTPConstants.HEADER_CONTENT_TYPE,
+              HTTPConstants.APPLICATION_X_WWW_FORM_URLENCODED));
+        }
+        if (sampler.getSendParameterValuesAsPostBody()) {
+          for (JMeterProperty jMeterProperty : sampler.getArguments()) {
+            HTTPArgument arg = (HTTPArgument) jMeterProperty.getObjectValue();
+            postBody.append(arg.getEncodedValue(contentCharset.name()));
+          }
+          requestContent = new StringRequestContent(contentTypeHeader, postBody.toString(),
+              contentCharset);
+          request.body(requestContent);
+        } else if (isMethodWithBody(sampler.getMethod())) {
+          Fields fields = new Fields();
+          for (JMeterProperty p : sampler.getArguments()) {
+            HTTPArgument arg = (HTTPArgument) p.getObjectValue();
+            String parameterName = arg.getName();
+            if (!arg.isSkippable(parameterName)) {
+              String parameterValue = arg.getValue();
+              if (!arg.isAlwaysEncoded()) {
+                // The FormRequestContent always urlencodes both name and value, in this case the
+                // value is already encoded by the user so is needed to decode the value now, so
+                // that when the httpclient encodes it, we end up with the same value as the user
+                // had entered.
+                parameterName = URLDecoder.decode(parameterName, contentCharset.name());
+                parameterValue = URLDecoder.decode(parameterValue, contentCharset.name());
+              }
+              fields.add(parameterName, parameterValue);
+            }
+          }
+          requestContent = new FormRequestContent(fields, contentCharset);
+          postBody.append(FormRequestContent.convert(fields));
+          request.body(requestContent);
+        }
+        result.setQueryString(postBody.toString());
+      }
     }
   }
 
