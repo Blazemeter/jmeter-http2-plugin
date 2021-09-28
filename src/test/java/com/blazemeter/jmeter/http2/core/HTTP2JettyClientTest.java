@@ -292,14 +292,14 @@ public class HTTP2JettyClientTest {
   }
 
   @Test
-  public void shouldReturnSuccessSampleResultWhenPreemptiveIsFalse() throws Exception {
+  public void shouldReturnSuccessBasicAuthSampleResultWhenPreemptiveIsFalse() throws Exception {
     HTTPSampleResult expected = new HTTPSampleResult();
     expected.setResponseData(SERVER_RESPONSE, StandardCharsets.UTF_8.name());
     expected.setResponseCode(String.valueOf(HttpStatus.OK_200));
     expected.setSuccessful(true);
     expected.setRequestHeaders(REQUEST_HEADERS);
     Server server = setupServer(createGetServerResponse());
-    addBasicAuth(server);
+    configureAuthenticationMechanisms(server, Constraint.__BASIC_AUTH);
     startServer(server);
     configureAuthManager();
     HTTPSampleResult result = client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS,
@@ -308,7 +308,7 @@ public class HTTP2JettyClientTest {
   }
 
   @Test
-  public void shouldReturnSuccessSampleResultWhenAuthHeaderIsSet() throws Exception {
+  public void shouldReturnSuccessBasicAuthSampleResultWhenHeaderIsSet() throws Exception {
     HTTPSampleResult expected = new HTTPSampleResult();
     expected.setResponseData(SERVER_RESPONSE, StandardCharsets.UTF_8.name());
     expected.setResponseCode(String.valueOf(HttpStatus.OK_200));
@@ -318,7 +318,7 @@ public class HTTP2JettyClientTest {
         + "Authorization: Basic dXNlcm5hbWU6cGFzc3dvcmQ=\r\n"
         + "\r\n");
     Server server = setupServer(createGetServerResponse());
-    addBasicAuth(server);
+    configureAuthenticationMechanisms(server, Constraint.__BASIC_AUTH);
     startServer(server);
     configureAuthManager();
     HTTPSampleResult result = client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS,
@@ -448,13 +448,43 @@ public class HTTP2JettyClientTest {
         "https://localhost:" + SERVER_PORT + SERVER_PATH_200);
   }
 
-  private void addBasicAuth(Server server) {
+  private void configureAuthenticationMechanisms(Server server, String mechanism) {
+    HashLoginService loginService = getLoginService();
+    // server.addBean(loginService);
+
+    switch (mechanism) {
+      case Constraint.__BASIC_AUTH:
+        server.setHandler(addBasicAuth(server, loginService));
+        break;
+      case Constraint.__DIGEST_AUTH:
+        break;
+    }
+
+  }
+
+  private ConstraintSecurityHandler addBasicAuth(Server server, HashLoginService loginService) {
     ConstraintSecurityHandler securityHandler = new ConstraintSecurityHandler();
     securityHandler.setAuthenticator(new BasicAuthenticator());
     securityHandler.setRealmName("realm");
+    securityHandler.setConstraintMappings(
+        Collections.singletonList(getConstraintByMechanism(Constraint.__BASIC_AUTH)));
+    securityHandler.setLoginService(loginService);
+    securityHandler.setHandler(server.getHandler());
 
+    return securityHandler;
+  }
+
+  private HashLoginService getLoginService() {
+    HashLoginService loginService = new HashLoginService();
+    loginService.setName("realm");
+    loginService.setUserStore(buildUserStore());
+
+    return loginService;
+  }
+
+  private ConstraintMapping getConstraintByMechanism(String mechanism) {
     Constraint constraint = new Constraint();
-    constraint.setName(Constraint.__BASIC_AUTH);
+    constraint.setName(mechanism);
     constraint.setAuthenticate(true);
     constraint.setRoles(ROLES);
 
@@ -462,16 +492,7 @@ public class HTTP2JettyClientTest {
     mapping.setPathSpec("/*");
     mapping.setConstraint(constraint);
 
-    securityHandler.setConstraintMappings(Collections.singletonList(mapping));
-
-    HashLoginService loginService = new HashLoginService();
-    loginService.setName("realm");
-    loginService.setUserStore(buildUserStore());
-
-    server.addBean(loginService);
-    securityHandler.setLoginService(loginService);
-    securityHandler.setHandler(server.getHandler());
-    server.setHandler(securityHandler);
+    return mapping;
   }
 
   private UserStore buildUserStore() {
