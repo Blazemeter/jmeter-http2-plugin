@@ -23,6 +23,7 @@ import java.util.concurrent.TimeoutException;
 import java.util.zip.GZIPOutputStream;
 import jodd.net.MimeTypes;
 import org.apache.jmeter.protocol.http.control.AuthManager;
+import org.apache.jmeter.protocol.http.control.AuthManager.Mechanism;
 import org.apache.jmeter.protocol.http.control.Authorization;
 import org.apache.jmeter.protocol.http.control.Header;
 import org.apache.jmeter.protocol.http.control.HeaderManager;
@@ -39,6 +40,7 @@ import org.eclipse.jetty.security.ConstraintSecurityHandler;
 import org.eclipse.jetty.security.HashLoginService;
 import org.eclipse.jetty.security.UserStore;
 import org.eclipse.jetty.security.authentication.BasicAuthenticator;
+import org.eclipse.jetty.security.authentication.DigestAuthenticator;
 import org.eclipse.jetty.server.ConnectionFactory;
 import org.eclipse.jetty.server.HttpConfiguration;
 import org.eclipse.jetty.server.SecureRequestCustomizer;
@@ -266,6 +268,22 @@ public class HTTP2JettyClientTest {
   }
 
   @Test
+  public void shouldReturnSuccessDigestAuthSampleResultWhenPreemptiveIsFalse() throws Exception {
+    HTTPSampleResult expected = new HTTPSampleResult();
+    expected.setResponseData(SERVER_RESPONSE, StandardCharsets.UTF_8.name());
+    expected.setResponseCode(String.valueOf(HttpStatus.OK_200));
+    expected.setSuccessful(true);
+    expected.setRequestHeaders(REQUEST_HEADERS);
+    Server server = setupServer(createGetServerResponse());
+    configureAuthenticationMechanisms(server, Constraint.__DIGEST_AUTH);
+    startServer(server);
+    configureAuthManager(Mechanism.DIGEST);
+    HTTPSampleResult result = client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS,
+        HOST_NAME, SERVER_PORT, SERVER_PATH_200), HTTPConstants.GET, false, 0);
+    validateResponse(result, expected);
+  }
+
+  @Test
   public void shouldReturnSuccessBasicAuthSampleResultWhenPreemptiveIsFalse() throws Exception {
     HTTPSampleResult expected = new HTTPSampleResult();
     expected.setResponseData(SERVER_RESPONSE, StandardCharsets.UTF_8.name());
@@ -275,7 +293,7 @@ public class HTTP2JettyClientTest {
     Server server = setupServer(createGetServerResponse());
     configureAuthenticationMechanisms(server, Constraint.__BASIC_AUTH);
     startServer(server);
-    configureAuthManager();
+    configureAuthManager(Mechanism.BASIC);
     HTTPSampleResult result = client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS,
         HOST_NAME, SERVER_PORT, SERVER_PATH_200), HTTPConstants.GET, false, 0);
     validateResponse(result, expected);
@@ -294,7 +312,7 @@ public class HTTP2JettyClientTest {
     Server server = setupServer(createGetServerResponse());
     configureAuthenticationMechanisms(server, Constraint.__BASIC_AUTH);
     startServer(server);
-    configureAuthManager();
+    configureAuthManager(Mechanism.BASIC);
     HTTPSampleResult result = client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS,
         HOST_NAME, SERVER_PORT, SERVER_PATH_200), HTTPConstants.GET, false, 0);
     validateResponse(result, expected);
@@ -396,7 +414,7 @@ public class HTTP2JettyClientTest {
     sampler.setHeaderManager(hm);
   }
 
-  private void configureAuthManager() {
+  private void configureAuthManager(Mechanism mechanism) {
     AuthManager authManager = new AuthManager();
 
     Authorization authorization = new Authorization();
@@ -409,6 +427,7 @@ public class HTTP2JettyClientTest {
     authorization.setUser("username");
     authorization.setPass("password");
     authorization.setRealm("realm");
+    authorization.setMechanism(mechanism);
 
     authManager.addAuth(authorization);
     sampler.setAuthManager(authManager);
@@ -453,9 +472,22 @@ public class HTTP2JettyClientTest {
         server.setHandler(addBasicAuth(server, loginService));
         break;
       case Constraint.__DIGEST_AUTH:
+        server.setHandler(addDigestAuth(server,loginService));
         break;
     }
 
+  }
+
+  private ConstraintSecurityHandler addDigestAuth(Server server, HashLoginService loginService) {
+    ConstraintSecurityHandler securityHandler = new ConstraintSecurityHandler();
+    securityHandler.setAuthenticator(new DigestAuthenticator());
+    securityHandler.setRealmName("realm");
+    securityHandler.setConstraintMappings(
+        Collections.singletonList(getConstraintByMechanism(Constraint.__DIGEST_AUTH)));
+    securityHandler.setLoginService(loginService);
+    securityHandler.setHandler(server.getHandler());
+
+    return securityHandler;
   }
 
   private ConstraintSecurityHandler addBasicAuth(Server server, HashLoginService loginService) {
