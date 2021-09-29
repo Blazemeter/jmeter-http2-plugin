@@ -14,6 +14,7 @@ import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.Spliterator;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -154,21 +155,21 @@ public class HTTP2JettyClient {
 
       if (JMeterUtils.getPropDefault(
           "httpclient4.auth.preemptive", false)) {
-        StreamSupport.stream(authManager.getAuthObjects().spliterator(), false)
-            .map(jMeterProperty -> (Authorization) jMeterProperty.getObjectValue())
+        StreamSupport.stream(authManagerToSpliterator(authManager), false)
+            .map(this::getAuthorizationObjectFromProperty)
             .filter(auth -> isMechanismBasic(auth) && isURL(auth))
             .forEach(auth -> httpClient.getAuthenticationStore().addAuthenticationResult(
                 new BasicAuthentication.BasicResult(URI.create(auth.getURL()), auth.getUser(),
                     auth.getPass())));
       } else {
-        StreamSupport.stream(authManager.getAuthObjects().spliterator(), false)
-            .map(jMeterProperty -> (Authorization) jMeterProperty.getObjectValue())
+        StreamSupport.stream(authManagerToSpliterator(authManager), false)
+            .map(this::getAuthorizationObjectFromProperty)
             .filter(auth -> isMechanismBasic(auth) && isURL(auth))
             .forEach(auth -> httpClient.getAuthenticationStore().addAuthentication(
                 new BasicAuthentication(URI.create(auth.getURL()), auth.getRealm(), auth.getUser(),
                     auth.getPass())));
-        StreamSupport.stream(authManager.getAuthObjects().spliterator(), false)
-            .map(jMeterProperty -> (Authorization) jMeterProperty.getObjectValue())
+        StreamSupport.stream(authManagerToSpliterator(authManager), false)
+            .map(this::getAuthorizationObjectFromProperty)
             .filter(auth -> isMechanismDigest(auth) && isURL(auth))
             .forEach(auth -> httpClient.getAuthenticationStore()
                 .addAuthentication(new DigestAuthentication(URI.create(auth.getURL()),
@@ -176,6 +177,14 @@ public class HTTP2JettyClient {
       }
     }
 
+  }
+
+  private Spliterator<JMeterProperty> authManagerToSpliterator(AuthManager authManager) {
+    return authManager.getAuthObjects().spliterator();
+  }
+
+  private Authorization getAuthorizationObjectFromProperty(JMeterProperty jMeterProperty) {
+    return  (Authorization) jMeterProperty.getObjectValue();
   }
 
   private boolean isURL(Authorization authorization) {
