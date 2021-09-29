@@ -81,7 +81,7 @@ public class HTTP2JettyClientTest {
   private static final String[] ROLES = new String[]{"can-access"};
   private static final String BASIC_HTML_TEMPLATE = "<!DOCTYPE html><html><head><title>Page "
       + "Title</title></head><body><div><img src=%s></div></body></html>";
-  private static final byte[] content = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
+  private static final byte[] BINARY_RESPONSE_BODY = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
 
   @Rule
   public final JUnitSoftAssertions softly = new JUnitSoftAssertions();
@@ -129,16 +129,10 @@ public class HTTP2JettyClientTest {
   @Test
   public void shouldReturnSuccessSampleResultWhenSuccessResponseWithContentTypeGzip()
       throws Exception {
-    HTTPSampleResult expected = new HTTPSampleResult();
-    expected.setSuccessful(true);
-    expected.setResponseCode(String.valueOf(HttpStatus.OK_200));
-    expected.setRequestHeaders(REQUEST_HEADERS);
-    expected.setResponseData(HTTP2JettyClientTest.getBasicHtmlTemplate(),
-        StandardCharsets.UTF_8.name());
-    startServer(setupServer(createGetServerResponse()));
+    startServer(createGetServerResponse());
     HTTPSampleResult result = client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS,
         HOST_NAME, SERVER_PORT, SERVER_PATH_200_GZIP), HTTPConstants.GET, false, 0);
-    softly.assertThat(HTTP2JettyClientTest.content).isEqualTo(result.getResponseData());
+    assertThat(HTTP2JettyClientTest.BINARY_RESPONSE_BODY).isEqualTo(result.getResponseData());
   }
 
   private HttpServlet createGetServerResponse() {
@@ -180,7 +174,7 @@ public class HTTP2JettyClientTest {
           case SERVER_PATH_200_GZIP:
             resp.addHeader("Content-Encoding", "gzip");
             GZIPOutputStream gzipOutputStream = new GZIPOutputStream(resp.getOutputStream());
-            gzipOutputStream.write(HTTP2JettyClientTest.content);
+            gzipOutputStream.write(HTTP2JettyClientTest.BINARY_RESPONSE_BODY);
             gzipOutputStream.close();
             break;
         }
