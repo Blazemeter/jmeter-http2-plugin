@@ -129,7 +129,7 @@ public class HTTP2JettyClientTest {
   @Test
   public void shouldReturnSuccessSampleResultWhenSuccessResponseWithContentTypeGzip()
       throws Exception {
-    startServer(createGetServerResponse());
+    startServer(setupServer(createGetServerResponse()));
     HTTPSampleResult result = client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS,
         HOST_NAME, SERVER_PORT, SERVER_PATH_200_GZIP), HTTPConstants.GET, false, 0);
     assertThat(HTTP2JettyClientTest.BINARY_RESPONSE_BODY).isEqualTo(result.getResponseData());
