@@ -19,6 +19,7 @@ import java.nio.file.Paths;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.zip.GZIPOutputStream;
 import jodd.net.MimeTypes;
 import org.apache.jmeter.protocol.http.control.Header;
 import org.apache.jmeter.protocol.http.control.HeaderManager;
@@ -58,6 +59,7 @@ public class HTTP2JettyClientTest {
   private static final String SERVER_PATH = "/test";
   private static final String SERVER_PATH_200 = "/test/200";
   private static final String SERVER_PATH_SLOW = "/test/slow";
+  private static final String SERVER_PATH_200_GZIP = "/test/gzip";
   private static final String SERVER_PATH_200_EMBEDDED = "/test/embedded";
   private static final String SERVER_PATH_200_FILE_SENT = "/test/file";
   private static final String SERVER_PATH_400 = "/test/400";
@@ -65,6 +67,7 @@ public class HTTP2JettyClientTest {
   private static final int SERVER_PORT = 6666;
   private static final String BASIC_HTML_TEMPLATE = "<!DOCTYPE html><html><head><title>Page "
       + "Title</title></head><body><div><img src=%s></div></body></html>";
+  private static final byte[] BINARY_RESPONSE_BODY = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
 
   @Rule
   public final JUnitSoftAssertions softly = new JUnitSoftAssertions();
@@ -109,6 +112,15 @@ public class HTTP2JettyClientTest {
         HTTPConstants.GET, false, 0);
   }
 
+  @Test
+  public void shouldReturnSuccessSampleResultWhenSuccessResponseWithContentTypeGzip()
+      throws Exception {
+    startServer(createGetServerResponse());
+    HTTPSampleResult result = client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS,
+        HOST_NAME, SERVER_PORT, SERVER_PATH_200_GZIP), HTTPConstants.GET, false, 0);
+    assertThat(HTTP2JettyClientTest.BINARY_RESPONSE_BODY).isEqualTo(result.getResponseData());
+  }
+
   private HttpServlet createGetServerResponse() {
 
     return new HttpServlet() {
@@ -142,9 +154,15 @@ public class HTTP2JettyClientTest {
             return;
           case SERVER_PATH_200_FILE_SENT:
             resp.setContentType("image/png");
-            byte [] requestBody = req.getInputStream().readAllBytes();
+            byte[] requestBody = req.getInputStream().readAllBytes();
             resp.getOutputStream().write(requestBody);
             return;
+          case SERVER_PATH_200_GZIP:
+            resp.addHeader("Content-Encoding", "gzip");
+            GZIPOutputStream gzipOutputStream = new GZIPOutputStream(resp.getOutputStream());
+            gzipOutputStream.write(HTTP2JettyClientTest.BINARY_RESPONSE_BODY);
+            gzipOutputStream.close();
+            break;
         }
       }
     };

@@ -155,9 +155,11 @@ public class HTTP2JettyClient {
     result
         .setResponseMessage(contentResponse.getReason() != null ? contentResponse.getReason() : "");
     result.setResponseHeaders(contentResponse.getHeaders().asString());
+
     InputStream inputStream = new ByteArrayInputStream(contentResponse.getContent());
     result.setResponseData(sampler.readResponse(result, inputStream,
         contentResponse.getContent().length));
+
     String contentType = contentResponse.getHeaders() != null
         ? contentResponse.getHeaders().get(HTTPConstants.HEADER_CONTENT_TYPE)
         : null;
