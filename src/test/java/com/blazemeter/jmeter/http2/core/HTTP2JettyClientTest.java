@@ -343,6 +343,18 @@ public class HTTP2JettyClientTest {
   }
 
   @Test
+  public void shouldGetOnlyRedirectedResultWhenRedirectAutomaticallyEnabledAndRedirected()
+      throws Exception {
+    startServer(setupServer(createGetServerResponse()));
+    configureSampler(HTTPConstants.GET);
+    sampler.setAutoRedirects(true);
+    HTTPSampleResult result = client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS,
+        HOST_NAME, SERVER_PORT, SERVER_PATH_302), HTTPConstants.GET, false, 0);
+    softly.assertThat(result.getResponseCode()).isEqualTo("200");
+    softly.assertThat(result.getSubResults().length).isEqualTo(0);
+  }
+
+  @Test
   public void shouldGetFileDataWithFileIsSentAsBodyPart() throws Exception {
     HTTPSampleResult expected = new HTTPSampleResult();
     expected.setSuccessful(true);
