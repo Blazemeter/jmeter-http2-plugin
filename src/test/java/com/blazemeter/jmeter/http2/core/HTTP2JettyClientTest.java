@@ -471,14 +471,13 @@ public class HTTP2JettyClientTest {
 
   private void configureAuthenticationMechanisms(Server server, String mechanism) {
     HashLoginService loginService = getLoginService();
-    // server.addBean(loginService);
 
     switch (mechanism) {
       case Constraint.__BASIC_AUTH:
         server.setHandler(addBasicAuth(server, loginService));
         break;
       case Constraint.__DIGEST_AUTH:
-        server.setHandler(addDigestAuth(server,loginService));
+        server.setHandler(addDigestAuth(server, loginService));
         break;
     }
 
@@ -487,21 +486,24 @@ public class HTTP2JettyClientTest {
   private ConstraintSecurityHandler addDigestAuth(Server server, HashLoginService loginService) {
     ConstraintSecurityHandler securityHandler = new ConstraintSecurityHandler();
     securityHandler.setAuthenticator(new DigestAuthenticator());
-    securityHandler.setRealmName("realm");
     securityHandler.setConstraintMappings(
         Collections.singletonList(getConstraintByMechanism(Constraint.__DIGEST_AUTH)));
-    securityHandler.setLoginService(loginService);
-    securityHandler.setHandler(server.getHandler());
 
-    return securityHandler;
+    return setCommonPropertiesAndReturnHandler(securityHandler, server, loginService);
   }
 
   private ConstraintSecurityHandler addBasicAuth(Server server, HashLoginService loginService) {
     ConstraintSecurityHandler securityHandler = new ConstraintSecurityHandler();
     securityHandler.setAuthenticator(new BasicAuthenticator());
-    securityHandler.setRealmName("realm");
     securityHandler.setConstraintMappings(
         Collections.singletonList(getConstraintByMechanism(Constraint.__BASIC_AUTH)));
+
+    return setCommonPropertiesAndReturnHandler(securityHandler, server, loginService);
+  }
+
+  private ConstraintSecurityHandler setCommonPropertiesAndReturnHandler(
+      ConstraintSecurityHandler securityHandler, Server server, HashLoginService loginService) {
+    securityHandler.setRealmName("realm");
     securityHandler.setLoginService(loginService);
     securityHandler.setHandler(server.getHandler());
 
