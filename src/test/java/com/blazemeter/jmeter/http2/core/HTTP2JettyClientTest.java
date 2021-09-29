@@ -115,17 +115,10 @@ public class HTTP2JettyClientTest {
   @Test
   public void shouldReturnSuccessSampleResultWhenSuccessResponseWithContentTypeGzip()
       throws Exception {
-    HTTPSampleResult expected = new HTTPSampleResult();
-    expected.setSuccessful(true);
-    expected.setResponseCode(String.valueOf(HttpStatus.OK_200));
-    expected.setRequestHeaders(REQUEST_HEADERS);
-    expected.setResponseData(HTTP2JettyClientTest.getBasicHtmlTemplate(),
-        StandardCharsets.UTF_8.name());
     startServer(createGetServerResponse());
     HTTPSampleResult result = client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS,
         HOST_NAME, SERVER_PORT, SERVER_PATH_200_GZIP), HTTPConstants.GET, false, 0);
-    softly.assertThat(HTTP2JettyClientTest.BINARY_RESPONSE_BODY)
-        .isEqualTo(result.getResponseData());
+    assertThat(HTTP2JettyClientTest.BINARY_RESPONSE_BODY).isEqualTo(result.getResponseData());
   }
 
   private HttpServlet createGetServerResponse() {
