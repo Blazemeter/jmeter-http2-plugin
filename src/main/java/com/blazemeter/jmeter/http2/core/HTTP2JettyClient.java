@@ -323,16 +323,16 @@ public class HTTP2JettyClient {
           areFollowingRedirect, sampler);
       cacheManager.setHeaders(url, reqBase);
       if (reqBase.getFirstHeader(HTTPConstants.VARY) != null) {
-        request.addHeader(createJettyHeader(new Header(HTTPConstants.VARY,
-            reqBase.getFirstHeader(HTTPConstants.VARY).getValue()), url));
+        request.addHeader(new HttpField(HTTPConstants.VARY,
+            reqBase.getFirstHeader(HTTPConstants.VARY).getValue()));
       }
       if (reqBase.getFirstHeader(HTTPConstants.IF_MODIFIED_SINCE) != null) {
-        request.addHeader(createJettyHeader(new Header(HTTPConstants.IF_MODIFIED_SINCE,
-            reqBase.getFirstHeader(HTTPConstants.LAST_MODIFIED).getValue()), url));
+        request.addHeader(new HttpField(HTTPConstants.IF_MODIFIED_SINCE,
+            reqBase.getFirstHeader(HTTPConstants.LAST_MODIFIED).getValue()));
       }
       if (reqBase.getFirstHeader(HTTPConstants.IF_NONE_MATCH) != null) {
-        request.addHeader(createJettyHeader(new Header(HTTPConstants.IF_NONE_MATCH,
-            reqBase.getFirstHeader(HTTPConstants.ETAG).getValue()), url));
+        request.addHeader(new HttpField(HTTPConstants.IF_NONE_MATCH,
+            reqBase.getFirstHeader(HTTPConstants.ETAG).getValue()));
       }
     }
   }
@@ -431,12 +431,6 @@ public class HTTP2JettyClient {
     return httpResponse;
   }
 
-  /**
-   * @param uri {@link URI}
-   * @param method HTTP Method
-   * @param areFollowingRedirect Are we following redirects
-   * @return {@link HttpRequestBase}
-   */
   private HttpRequestBase createHttpRequest(URI uri, String method,
       boolean areFollowingRedirect,
       HTTP2Sampler sampler) {

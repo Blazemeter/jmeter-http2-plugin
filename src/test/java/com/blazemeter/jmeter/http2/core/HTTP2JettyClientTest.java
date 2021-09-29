@@ -287,7 +287,6 @@ public class HTTP2JettyClientTest {
     validateResponse(result, expected);
   }
 
-  @Ignore
   @Test
   public void shouldReturnErrorMessageWhenConnectTimeIsOver() {
     configureSampler(HTTPConstants.GET);
@@ -424,8 +423,7 @@ public class HTTP2JettyClientTest {
   }
 
   private void configureCacheManagerToSampler(boolean useExpire, boolean clearCacheIteration)
-      throws ClassNotFoundException, NoSuchMethodException, IllegalAccessException,
-      InvocationTargetException, InstantiationException {
+      throws Exception {
     // Use Reflection to access a private cosntructor (necessary for useExpire)
     Class ref = Class.forName("org.apache.jmeter.protocol.http.control.CacheManager");
     Constructor<?> con = ref.getDeclaredConstructor(Map.class, boolean.class);
@@ -462,8 +460,7 @@ public class HTTP2JettyClientTest {
   }
 
   /**
-   * Validate same result as expected, but also control that not sample result was added for
-   * resoruce.
+   * Validate same result as expected, but also control that not sample result was added.
    *
    * @param messageResponse if passed, validate if message response is equal to defined.
    */
