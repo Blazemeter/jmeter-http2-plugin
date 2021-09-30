@@ -124,16 +124,19 @@ public class HTTP2JettyClient {
       }
     }
 
-    result.setRequestHeaders(
-        request.getHeaders() != null ? getHeadersAsString(request.getHeaders()) + "\r\n\r\n" : "");
+    result.setRequestHeaders(getHeadersAsString(request.getHeaders()));
     result = sampler.resultProcessing(areFollowingRedirect, depth, result);
     return result;
   }
 
   private String getHeadersAsString(HttpFields headers) {
-    return headers.stream().filter(h -> !h.getName().equals(HTTPConstants.HEADER_COOKIE))
-        .map(h -> h
-            .getName() + ": " + h.getValue()).collect(Collectors.joining("\r\n"));
+    if (headers == null) {
+      return "";
+    } else {
+      return headers.stream().filter(h -> !h.getName().equals(HTTPConstants.HEADER_COOKIE))
+          .map(h -> h.getName() + ": " + h.getValue()).collect(Collectors.joining("\r\n"))
+          + "\r\n\r\n";
+    }
   }
 
   private void saveCookiesInCookieManager(ContentResponse response, URL url,
@@ -145,14 +148,13 @@ public class HTTP2JettyClient {
   }
 
   private String buildCookies(HttpRequest request, URL url, CookieManager cookieManager) {
-    if (cookieManager != null) {
-      String cookieString = cookieManager.getCookieHeaderForURL(url);
-      HttpField cookieHeader = new HttpField(HTTPConstants.HEADER_COOKIE, cookieString);
-      request.addHeader(cookieHeader);
-      return cookieString;
-    } else {
+    if (cookieManager == null) {
       return null;
     }
+    String cookieString = cookieManager.getCookieHeaderForURL(url);
+    HttpField cookieHeader = new HttpField(HTTPConstants.HEADER_COOKIE, cookieString);
+    request.addHeader(cookieHeader);
+    return cookieString;
   }
 
   private void setProxy(String host, int port, String protocol) {
