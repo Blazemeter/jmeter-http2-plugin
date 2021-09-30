@@ -321,18 +321,6 @@ public class HTTP2JettyClientTest {
   }
 
   @Test
-  public void shouldReturnErrorMessageWhenConnectTimeIsOver() {
-    configureSampler(HTTPConstants.GET);
-    sampler.setConnectTimeout("1");
-    Exception exception = assertThrows(Exception.class, () -> {
-      client.sample(sampler, createURL(SERVER_PATH_200), HTTPConstants.GET, false, 0);
-    });
-    String actual = exception.getMessage();
-    String expected = "java.net.SocketTimeoutException: Connect Timeout";
-    softly.assertThat(actual).contains(expected);
-  }
-
-  @Test
   public void shouldReturnErrorMessageWhenResponseTimeIsOver() throws Exception {
     long timeout = 1000;
     startServer(createGetServerResponse());
