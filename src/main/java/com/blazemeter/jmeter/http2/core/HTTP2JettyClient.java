@@ -308,6 +308,7 @@ public class HTTP2JettyClient {
         multipartEntityBuilder.addFilePart(file.getParamName(), file.getName(), fileBodies[i],
             null); // TODO Fields Header?
       }
+      multipartEntityBuilder.close();
 
       request.body(multipartEntityBuilder);
       postBody.append("<MULTIPART CONTENT>");
