@@ -379,12 +379,6 @@ public class HTTP2JettyClient {
     }
   }
 
-  /**
-   * Update HTTPSampleResult for a resource in Cache.
-   *
-   * @param res {@link HTTPSampleResult}
-   * @return HTTPSampleResult
-   */
   private HTTPSampleResult updateSampleResultForResourceInCache(HTTPSampleResult res) {
     switch (CACHED_RESOURCE_MODE) {
       case RETURN_NO_SAMPLE:
