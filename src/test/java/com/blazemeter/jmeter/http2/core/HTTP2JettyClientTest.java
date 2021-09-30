@@ -11,6 +11,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.MalformedURLException;
 import java.net.URISyntaxException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
@@ -21,6 +22,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.zip.GZIPOutputStream;
 import jodd.net.MimeTypes;
+import org.apache.jmeter.protocol.http.control.CookieManager;
 import org.apache.jmeter.protocol.http.control.Header;
 import org.apache.jmeter.protocol.http.control.HeaderManager;
 import org.apache.jmeter.protocol.http.sampler.HTTPSampleResult;
@@ -57,6 +59,9 @@ public class HTTP2JettyClientTest {
   private static final String REQUEST_HEADERS = "Accept-Encoding: gzip\r\nUser-Agent: Jetty/11.0"
       + ".6\r\n\r\n";
   private static final String SERVER_PATH = "/test";
+  private static final String SERVER_PATH_SET_COOKIES = "/test/set-cookies";
+  private static final String SERVER_PATH_USE_COOKIES = "/test/use-cookies";
+  private static final String RESPONSE_DATA_COOKIES = "testCookie=test";
   private static final String SERVER_PATH_200 = "/test/200";
   private static final String SERVER_PATH_SLOW = "/test/slow";
   private static final String SERVER_PATH_200_GZIP = "/test/gzip";
@@ -99,10 +104,13 @@ public class HTTP2JettyClientTest {
   @Test
   public void shouldGetResponseWhenGetMethodIsSent() throws Exception {
     startServer(createGetServerResponse());
-    HTTPSampleResult result = client.sample(sampler,
-        new URL(HTTPConstants.PROTOCOL_HTTPS, HOST_NAME, SERVER_PORT, SERVER_PATH_200),
-        HTTPConstants.GET, false, 0);
+    HTTPSampleResult result = client
+        .sample(sampler, createURL(SERVER_PATH_200), HTTPConstants.GET, false, 0);
     assertThat(result.getResponseDataAsString()).isEqualTo(SERVER_RESPONSE);
+  }
+
+  private URL createURL(String path) throws MalformedURLException {
+    return new URL(HTTPConstants.PROTOCOL_HTTPS, HOST_NAME, SERVER_PORT, path);
   }
 
   @Test(expected = ExecutionException.class)
@@ -116,8 +124,8 @@ public class HTTP2JettyClientTest {
   public void shouldReturnSuccessSampleResultWhenSuccessResponseWithContentTypeGzip()
       throws Exception {
     startServer(createGetServerResponse());
-    HTTPSampleResult result = client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS,
-        HOST_NAME, SERVER_PORT, SERVER_PATH_200_GZIP), HTTPConstants.GET, false, 0);
+    HTTPSampleResult result = client
+        .sample(sampler, createURL(SERVER_PATH_200_GZIP), HTTPConstants.GET, false, 0);
     assertThat(HTTP2JettyClientTest.BINARY_RESPONSE_BODY).isEqualTo(result.getResponseData());
   }
 
@@ -147,6 +155,14 @@ public class HTTP2JettyClientTest {
             resp.addHeader(HTTPConstants.HEADER_LOCATION,
                 "https://localhost:" + SERVER_PORT + SERVER_PATH_200);
             resp.setStatus(HttpStatus.FOUND_302);
+            break;
+          case SERVER_PATH_SET_COOKIES:
+            resp.addHeader(HTTPConstants.HEADER_SET_COOKIE,
+                RESPONSE_DATA_COOKIES);
+            break;
+          case SERVER_PATH_USE_COOKIES:
+            String cookie = req.getHeader(HTTPConstants.HEADER_COOKIE);
+            resp.getWriter().write(cookie);
             break;
           case SERVER_PATH_200_EMBEDDED:
             resp.setContentType(MimeTypes.MIME_TEXT_HTML + ";" + StandardCharsets.UTF_8.name());
@@ -190,73 +206,86 @@ public class HTTP2JettyClientTest {
 
   @Test
   public void shouldReturnFailureSampleResultWhenResponse400() throws Exception {
-    HTTPSampleResult expected = new HTTPSampleResult();
-    expected.setSuccessful(false);
-    expected.setResponseCode(String.valueOf(HttpStatus.BAD_REQUEST_400));
-    expected.setRequestHeaders(REQUEST_HEADERS);
+    HTTPSampleResult expected = createExpectedResult(false, HttpStatus.BAD_REQUEST_400,
+        REQUEST_HEADERS);
     startServer(createGetServerResponse());
     configureSampler(HTTPConstants.GET);
-    HTTPSampleResult result = client.sample(sampler,
-        new URL(HTTPConstants.PROTOCOL_HTTPS, HOST_NAME, SERVER_PORT, SERVER_PATH_400),
-        HTTPConstants.GET, false, 0);
+    HTTPSampleResult result = client
+        .sample(sampler, createURL(SERVER_PATH_400), HTTPConstants.GET, false, 0);
     validateResponse(result, expected);
   }
 
+  private HTTPSampleResult createExpectedResult(boolean successful, int responseCode,
+      String headers) {
+    HTTPSampleResult expected = new HTTPSampleResult();
+    expected.setSuccessful(successful);
+    expected.setResponseCode(String.valueOf(responseCode));
+    expected.setRequestHeaders(headers);
+    return expected;
+  }
 
   @Test(expected = UnsupportedOperationException.class)
   public void shouldReturnErrorMessageWhenMethodIsNotSupported()
       throws URISyntaxException, IOException, InterruptedException, ExecutionException,
       TimeoutException {
     configureSampler("MethodNotSupported");
-    client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS, HOST_NAME, 123, SERVER_PATH_200),
-        "MethodNotSupported", false, 0);
+    client.sample(sampler, createURL(SERVER_PATH_200), "MethodNotSupported", false, 0);
   }
 
   @Test
   public void shouldGetEmbeddedResourcesWithSubSampleWhenImageParserIsEnabled() throws Exception {
-    HTTPSampleResult expected = new HTTPSampleResult();
-    expected.setSuccessful(true);
-    expected.setResponseCode(String.valueOf(HttpStatus.OK_200));
-    expected.setRequestHeaders(REQUEST_HEADERS);
+    HTTPSampleResult expected = createExpectedResult(true, HttpStatus.OK_200, REQUEST_HEADERS);
     expected.setResponseData(HTTP2JettyClientTest.getBasicHtmlTemplate(),
         StandardCharsets.UTF_8.name());
     startServer(createGetServerResponse());
     sampler.setImageParser(true);
-    HTTPSampleResult result = client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS,
-        HOST_NAME, SERVER_PORT, SERVER_PATH_200_EMBEDDED), HTTPConstants.GET, false, 0);
+    HTTPSampleResult result = client
+        .sample(sampler, createURL(SERVER_PATH_200_EMBEDDED), HTTPConstants.GET, false, 0);
     validateEmbeddedResources(result, expected);
   }
 
+  @Test
+  public void shouldUseCookiesFromFirstRequestOnSecondRequestWhenSecondRequestIsSent()
+      throws Exception {
+    HTTPSampleResult expected = createExpectedResult(true, HttpStatus.OK_200, REQUEST_HEADERS);
+    expected.setCookies(RESPONSE_DATA_COOKIES);
+    expected.setResponseData(RESPONSE_DATA_COOKIES,
+        StandardCharsets.UTF_8.name());
+    startServer(createGetServerResponse());
+    CookieManager cookieManager = new CookieManager();
+    cookieManager.testStarted(HOST_NAME);
+    sampler.setCookieManager(cookieManager);
+    client.sample(sampler, createURL(SERVER_PATH_SET_COOKIES), HTTPConstants.GET, false, 0);
+    HTTPSampleResult result = client
+        .sample(sampler, createURL(SERVER_PATH_USE_COOKIES), HTTPConstants.GET, false, 0);
+    validateResponse(result, expected);
+    softly.assertThat(result.getCookies()).isEqualTo(expected.getCookies());
+  }
 
   @Test
   public void shouldReturnSuccessSampleResultWhenSuccessRequestWithHeaders() throws Exception {
-    HTTPSampleResult expected = new HTTPSampleResult();
+    HTTPSampleResult expected = createExpectedResult(true, HttpStatus.OK_200,
+        "Accept-Encoding: gzip\r\nUser-Agent: Jetty/11.0.6\r\nHeader1: "
+            + "value1\r\nHeader2: value2\r\n\r\n");
     expected.setResponseData(SERVER_RESPONSE, StandardCharsets.UTF_8.name());
-    expected.setResponseCode(String.valueOf(HttpStatus.OK_200));
-    expected.setSuccessful(true);
-    expected.setRequestHeaders("Accept-Encoding: gzip\r\nUser-Agent: Jetty/11.0.6\r\nHeader1: "
-        + "value1\r\nHeader2: value2\r\n\r\n");
     startServer(createGetServerResponse());
     configureHeaderManagerToSampler();
-    HTTPSampleResult result = client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS,
-        HOST_NAME, SERVER_PORT, SERVER_PATH_200), HTTPConstants.GET, false, 0);
+    HTTPSampleResult result = client
+        .sample(sampler, createURL(SERVER_PATH_200), HTTPConstants.GET, false, 0);
     validateResponse(result, expected);
   }
 
   @Test
   public void shouldGetRedirectedResultWithSubSampleWhenFollowRedirectEnabledAndRedirected()
       throws Exception {
-    HTTPSampleResult expected = new HTTPSampleResult();
+    HTTPSampleResult expected = createExpectedResult(true, HttpStatus.OK_200, REQUEST_HEADERS);
     expected.setResponseData(SERVER_RESPONSE, StandardCharsets.UTF_8.name());
-    expected.setRequestHeaders(REQUEST_HEADERS);
-    expected.setResponseCode(Integer.toString(HttpStatus.OK_200));
-    expected.setSuccessful(true);
     expected.setRedirectLocation("https://localhost:6666/test/200");
     startServer(createGetServerResponse());
     configureSampler(HTTPConstants.GET);
     sampler.setFollowRedirects(true);
-    HTTPSampleResult result = client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS,
-        HOST_NAME, SERVER_PORT, SERVER_PATH_302), HTTPConstants.GET, false, 0);
+    HTTPSampleResult result = client
+        .sample(sampler, createURL(SERVER_PATH_302), HTTPConstants.GET, false, 0);
     validateRedirects(result, expected);
   }
 
@@ -265,47 +294,30 @@ public class HTTP2JettyClientTest {
       throws Exception {
     startServer(createGetServerResponse());
     configureSampler(HTTPConstants.GET);
-    HTTPSampleResult result = client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS,
-        HOST_NAME, SERVER_PORT, SERVER_PATH_302), HTTPConstants.GET, false, 0);
+    HTTPSampleResult result = client
+        .sample(sampler, createURL(SERVER_PATH_302), HTTPConstants.GET, false, 0);
     softly.assertThat(result.getResponseCode()).isEqualTo("302");
     softly.assertThat(result.getSubResults().length).isEqualTo(0);
   }
 
   @Test
   public void shouldGetFileDataWithFileIsSentAsBodyPart() throws Exception {
-    HTTPSampleResult expected = new HTTPSampleResult();
-    expected.setSuccessful(true);
-    expected.setResponseCode(String.valueOf(HttpStatus.OK_200));
-    expected.setRequestHeaders(REQUEST_HEADERS);
+    HTTPSampleResult expected = createExpectedResult(true, HttpStatus.OK_200,
+        "Accept-Encoding: gzip\r\n"
+            + "User-Agent: Jetty/11.0.6\r\n"
+            + "Content-Type: image/png\r\n"
+            + "Content-Length: 9018\r\n"
+            + "\r\n");
     String filePath = getClass().getResource("blazemeter-labs-logo.png").getPath();
     InputStream inputStream = Files.newInputStream(Paths.get(filePath));
     expected.setResponseData(sampler.readResponse(expected, inputStream, 0));
-    expected.setRequestHeaders("Accept-Encoding: gzip\r\n"
-        + "User-Agent: Jetty/11.0.6\r\n"
-        + "Content-Type: image/png\r\n"
-        + "Content-Length: 9018\r\n"
-        + "\r\n");
     configureSampler(HTTPConstants.POST);
     HTTPFileArg fileArg = new HTTPFileArg(filePath, "", "image/png");
     sampler.setHTTPFiles(new HTTPFileArg[]{fileArg});
     startServer(createGetServerResponse());
-    HTTPSampleResult result = client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS,
-        HOST_NAME, SERVER_PORT, SERVER_PATH_200_FILE_SENT), HTTPConstants.POST, false, 0);
+    HTTPSampleResult result = client
+        .sample(sampler, createURL(SERVER_PATH_200_FILE_SENT), HTTPConstants.POST, false, 0);
     validateResponse(result, expected);
-  }
-
-  @Test
-  public void shouldReturnErrorMessageWhenConnectTimeIsOver() {
-    configureSampler(HTTPConstants.GET);
-    sampler.setConnectTimeout("1");
-    Exception exception = assertThrows(Exception.class, () -> {
-      client.sample(sampler,
-          new URL(HTTPConstants.PROTOCOL_HTTPS, HOST_NAME, SERVER_PORT, SERVER_PATH_200),
-          HTTPConstants.GET, false, 0);
-    });
-    String actual = exception.getMessage();
-    String expected = "java.net.SocketTimeoutException: Connect Timeout";
-    softly.assertThat(actual).contains(expected);
   }
 
   @Test
@@ -316,9 +328,7 @@ public class HTTP2JettyClientTest {
     sampler.setResponseTimeout(String.valueOf(timeout));
     Stopwatch waitTime = Stopwatch.createStarted();
     TimeoutException exception = assertThrows(TimeoutException.class, () -> {
-      client.sample(sampler,
-          new URL(HTTPConstants.PROTOCOL_HTTPS, HOST_NAME, SERVER_PORT, SERVER_PATH_SLOW),
-          HTTPConstants.GET, false, 0);
+      client.sample(sampler, createURL(SERVER_PATH_SLOW), HTTPConstants.GET, false, 0);
     });
     softly.assertThat(exception).isInstanceOf(TimeoutException.class);
     softly.assertThat(waitTime.elapsed(TimeUnit.MILLISECONDS)).isGreaterThanOrEqualTo(timeout);
