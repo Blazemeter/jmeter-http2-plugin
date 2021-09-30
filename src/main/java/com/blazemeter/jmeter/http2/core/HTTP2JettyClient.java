@@ -222,7 +222,7 @@ public class HTTP2JettyClient {
   }
 
   private Authorization getAuthorizationObjectFromProperty(JMeterProperty jMeterProperty) {
-    return  (Authorization) jMeterProperty.getObjectValue();
+    return (Authorization) jMeterProperty.getObjectValue();
   }
 
   private boolean isURL(Authorization authorization) {
