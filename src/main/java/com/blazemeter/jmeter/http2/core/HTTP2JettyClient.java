@@ -205,6 +205,7 @@ public class HTTP2JettyClient {
         .setResponseMessage(contentResponse.getReason() != null ? contentResponse.getReason() : "");
     result.setResponseHeaders(contentResponse.getHeaders().asString());
     InputStream inputStream = new ByteArrayInputStream(contentResponse.getContent());
+    // When a resource is cached, the sample result is empty
     result.setResponseData(sampler.readResponse(result, inputStream,
         contentResponse.getContent().length));
     String contentType = contentResponse.getHeaders() != null
