@@ -1,9 +1,6 @@
 package com.blazemeter.jmeter.http2.sampler;
 
-import java.io.File;
 import kg.apc.emulators.TestJMeterUtils;
-import org.apache.http.client.config.CookieSpecs;
-import org.apache.jmeter.protocol.http.control.HC4CookieHandler;
 import org.apache.jmeter.util.JMeterUtils;
 
 public class JMeterTestUtils {
