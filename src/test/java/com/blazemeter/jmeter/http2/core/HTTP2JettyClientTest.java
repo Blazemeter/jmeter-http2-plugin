@@ -270,7 +270,7 @@ public class HTTP2JettyClientTest {
     expected.setCookies(RESPONSE_DATA_COOKIES);
     expected.setResponseData(RESPONSE_DATA_COOKIES,
         StandardCharsets.UTF_8.name());
-    startServer(createGetServerResponse());
+    startServer(setupServer(createGetServerResponse()));
     CookieManager cookieManager = new CookieManager();
     cookieManager.testStarted(HOST_NAME);
     sampler.setCookieManager(cookieManager);
