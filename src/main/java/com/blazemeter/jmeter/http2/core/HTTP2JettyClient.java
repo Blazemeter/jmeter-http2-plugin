@@ -21,10 +21,10 @@ import java.util.concurrent.TimeoutException;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
-import org.apache.jmeter.protocol.http.control.CookieManager;
 import org.apache.jmeter.protocol.http.control.AuthManager;
 import org.apache.jmeter.protocol.http.control.AuthManager.Mechanism;
 import org.apache.jmeter.protocol.http.control.Authorization;
+import org.apache.jmeter.protocol.http.control.CookieManager;
 import org.apache.jmeter.protocol.http.control.Header;
 import org.apache.jmeter.protocol.http.control.HeaderManager;
 import org.apache.jmeter.protocol.http.sampler.HTTPSampleResult;
@@ -222,7 +222,7 @@ public class HTTP2JettyClient {
   }
 
   private Authorization getAuthorizationObjectFromProperty(JMeterProperty jMeterProperty) {
-    return  (Authorization) jMeterProperty.getObjectValue();
+    return (Authorization) jMeterProperty.getObjectValue();
   }
 
   private boolean isURL(Authorization authorization) {
