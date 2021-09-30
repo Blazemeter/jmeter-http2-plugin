@@ -19,7 +19,9 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
+import org.apache.jmeter.protocol.http.control.CookieManager;
 import org.apache.jmeter.protocol.http.control.AuthManager;
 import org.apache.jmeter.protocol.http.control.AuthManager.Mechanism;
 import org.apache.jmeter.protocol.http.control.Authorization;
@@ -48,6 +50,7 @@ import org.eclipse.jetty.client.util.FormRequestContent;
 import org.eclipse.jetty.client.util.PathRequestContent;
 import org.eclipse.jetty.client.util.StringRequestContent;
 import org.eclipse.jetty.http.HttpField;
+import org.eclipse.jetty.http.HttpFields;
 import org.eclipse.jetty.http2.client.HTTP2Client;
 import org.eclipse.jetty.http2.client.http.ClientConnectionFactoryOverHTTP2;
 import org.eclipse.jetty.io.ClientConnector;
@@ -105,12 +108,19 @@ public class HTTP2JettyClient {
     if (sampler.getHeaderManager() != null) {
       setHeaders(request, sampler.getHeaderManager(), url);
     }
+
+    CookieManager cookieManager = sampler.getCookieManager();
+    if (cookieManager != null) {
+      result.setCookies(buildCookies(request, url, cookieManager));
+    }
+
     setBody(request, sampler, result);
     if (!isSupportedMethod(method)) {
       throw new UnsupportedOperationException(
           String.format("Method %s is not supported", method));
     } else {
       ContentResponse contentResponse = request.send();
+      saveCookiesInCookieManager(contentResponse, url, sampler.getCookieManager());
       setResultContentResponse(result, contentResponse, sampler);
       result.sampleEnd();
       if (result.isRedirect()) {
@@ -124,9 +134,37 @@ public class HTTP2JettyClient {
       }
     }
 
-    result.setRequestHeaders(request.getHeaders() != null ? request.getHeaders().asString() : "");
+    result.setRequestHeaders(getHeadersAsString(request.getHeaders()));
     result = sampler.resultProcessing(areFollowingRedirect, depth, result);
     return result;
+  }
+
+  private String getHeadersAsString(HttpFields headers) {
+    if (headers == null) {
+      return "";
+    } else {
+      return headers.stream().filter(h -> !h.getName().equals(HTTPConstants.HEADER_COOKIE))
+          .map(h -> h.getName() + ": " + h.getValue()).collect(Collectors.joining("\r\n"))
+          + "\r\n\r\n";
+    }
+  }
+
+  private void saveCookiesInCookieManager(ContentResponse response, URL url,
+      CookieManager cookieManager) {
+    String cookieHeader = response.getHeaders().get(HTTPConstants.HEADER_SET_COOKIE);
+    if (cookieHeader != null && cookieManager != null) {
+      cookieManager.addCookieFromHeader(cookieHeader, url);
+    }
+  }
+
+  private String buildCookies(HttpRequest request, URL url, CookieManager cookieManager) {
+    if (cookieManager == null) {
+      return null;
+    }
+    String cookieString = cookieManager.getCookieHeaderForURL(url);
+    HttpField cookieHeader = new HttpField(HTTPConstants.HEADER_COOKIE, cookieString);
+    request.addHeader(cookieHeader);
+    return cookieString;
   }
 
   private void setProxy(String host, int port, String protocol) {
