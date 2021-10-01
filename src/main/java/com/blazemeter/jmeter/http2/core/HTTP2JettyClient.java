@@ -12,8 +12,6 @@ import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.Arrays;
-import java.util.Calendar;
-import java.util.Date;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.ExecutionException;
@@ -31,7 +29,6 @@ import org.apache.http.client.methods.HttpPost;
 import org.apache.http.client.methods.HttpPut;
 import org.apache.http.client.methods.HttpRequestBase;
 import org.apache.http.client.methods.HttpTrace;
-import org.apache.http.client.utils.DateUtils;
 import org.apache.http.message.BasicHeader;
 import org.apache.http.message.BasicHttpResponse;
 import org.apache.jmeter.protocol.http.control.CacheManager;
@@ -314,11 +311,10 @@ public class HTTP2JettyClient {
       throws URISyntaxException {
     StreamSupport.stream(headerManager.getHeaders().spliterator(), false)
         .map(prop -> (Header) prop.getObjectValue())
-        .filter(header -> !HTTPConstants.HEADER_CONTENT_LENGTH.equalsIgnoreCase(header.getName()))
+        .filter(header -> (!header.getName().isEmpty()) && (!HTTPConstants.HEADER_CONTENT_LENGTH
+            .equalsIgnoreCase(header.getName())))
         .forEach(header -> {
-          if (!header.getName().isEmpty()) {
-            request.addHeader(createJettyHeader(header, url));
-          }
+          request.addHeader(createJettyHeader(header, url));
         });
 
     if (cacheManager != null) {
@@ -415,15 +411,9 @@ public class HTTP2JettyClient {
         .addHeader(HTTPConstants.VARY, contentResponse.getHeaders().get(HTTPConstants.VARY));
     httpResponse.addHeader(HTTPConstants.LAST_MODIFIED,
         contentResponse.getHeaders().get(HTTPConstants.LAST_MODIFIED));
-    // TODO dfilgueiras: Discuss about this approach. It need a default expiration date to save
-    //  entries in Cache.
-    // Add default expire date in 30 mins if its null
-    Calendar calendar = Calendar.getInstance();
-    calendar.setTime(new Date());
-    calendar.add(Calendar.MINUTE, 30);
     httpResponse
         .addHeader(HTTPConstants.EXPIRES,
-            DateUtils.formatDate(calendar.getTime(), "EEE, dd MMM yyyy HH:mm:ss zzz"));
+            contentResponse.getHeaders().get(HTTPConstants.EXPIRES));
     httpResponse
         .addHeader(HTTPConstants.ETAG, contentResponse.getHeaders().get(HTTPConstants.ETAG));
     httpResponse.addHeader(HTTPConstants.CACHE_CONTROL,
