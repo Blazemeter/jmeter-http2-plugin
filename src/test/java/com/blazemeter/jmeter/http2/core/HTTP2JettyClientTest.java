@@ -145,6 +145,8 @@ public class HTTP2JettyClientTest {
           case SERVER_PATH_200_EMBEDDED:
             resp.setContentType(MimeTypes.MIME_TEXT_HTML + ";" + StandardCharsets.UTF_8.name());
             resp.getWriter().write(BASIC_HTML_TEMPLATE);
+            resp.addHeader(HTTPConstants.EXPIRES,
+                "Sat, 25 Sep 2041 00:00:00 GMT");
             return;
           case SERVER_IMAGE:
             resp.getOutputStream().write(new byte[]{1, 2, 3, 4, 5});
