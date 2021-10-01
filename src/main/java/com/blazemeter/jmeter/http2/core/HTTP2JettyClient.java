@@ -414,6 +414,7 @@ public class HTTP2JettyClient {
         contentResponse.getHeaders().get(HTTPConstants.LAST_MODIFIED));
     // TODO dfilgueiras: Discuss about this approach. It need a default expiration date to save
     //  entries in Cache.
+    // TODO dfilgueiras: Make it dinamically
     httpResponse
         .addHeader(HTTPConstants.EXPIRES, DEFAULT_EXPIRE_DATE);
     httpResponse
@@ -430,33 +431,45 @@ public class HTTP2JettyClient {
       boolean areFollowingRedirect,
       HTTP2Sampler sampler) {
     HttpRequestBase result;
-    if (method.equals(HTTPConstants.POST)) {
-      result = new HttpPost(uri);
-    } else if (method.equals(HTTPConstants.GET)) {
-      if (!areFollowingRedirect
-          && ((!sampler.hasArguments() && sampler.getSendFileAsPostBody())
-          || sampler.getSendParameterValuesAsPostBody())) {
-        result = new HttpGetWithEntity(uri);
-      } else {
-        result = new HttpGet(uri);
-      }
-    } else if (method.equals(HTTPConstants.PUT)) {
-      result = new HttpPut(uri);
-    } else if (method.equals(HTTPConstants.HEAD)) {
-      result = new HttpHead(uri);
-    } else if (method.equals(HTTPConstants.TRACE)) {
-      result = new HttpTrace(uri);
-    } else if (method.equals(HTTPConstants.OPTIONS)) {
-      result = new HttpOptions(uri);
-    } else if (method.equals(HTTPConstants.DELETE)) {
-      result = new HttpDelete(uri);
-    } else if (method.equals(HTTPConstants.PATCH)) {
-      result = new HttpPatch(uri);
-    } else if (HttpWebdav.isWebdavMethod(method)) {
-      result = new HttpWebdav(method, uri);
-    } else {
-      throw new IllegalArgumentException(String.format("Unexpected method: '%s'", method));
+    switch (method) {
+      case HTTPConstants.POST:
+        result = new HttpPost(uri);
+        break;
+      case HTTPConstants.GET:
+        if (!areFollowingRedirect
+            && ((!sampler.hasArguments() && sampler.getSendFileAsPostBody())
+            || sampler.getSendParameterValuesAsPostBody())) {
+          result = new HttpGetWithEntity(uri);
+        } else {
+          result = new HttpGet(uri);
+        }
+        break;
+      case HTTPConstants.PUT:
+        result = new HttpPut(uri);
+        break;
+      case HTTPConstants.HEAD:
+        result = new HttpHead(uri);
+        break;
+      case HTTPConstants.TRACE:
+        result = new HttpTrace(uri);
+        break;
+      case HTTPConstants.OPTIONS:
+        result = new HttpOptions(uri);
+        break;
+      case HTTPConstants.DELETE:
+        result = new HttpDelete(uri);
+        break;
+      case HTTPConstants.PATCH:
+        result = new HttpPatch(uri);
+        break;
+      default:
+        if (HttpWebdav.isWebdavMethod(method)) {
+          result = new HttpWebdav(method, uri);
+        } else {
+          throw new IllegalArgumentException(String.format("Unexpected method: '%s'", method));
+        }
     }
+
     return result;
   }
 
