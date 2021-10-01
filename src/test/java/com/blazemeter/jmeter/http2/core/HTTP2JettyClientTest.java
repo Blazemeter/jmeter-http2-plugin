@@ -411,8 +411,8 @@ public class HTTP2JettyClientTest {
   private void configureCacheManagerToSampler(boolean useExpire, boolean clearCacheIteration) {
     CacheManager cacheManager = new CacheManager();
     cacheManager.setUseExpires(useExpire);
-    cacheManager.setClearEachIteration(clearCacheIteration); // Use to initialize private attr
-    cacheManager.testIterationStart(null);
+    cacheManager.setClearEachIteration(clearCacheIteration);
+    cacheManager.testIterationStart(null); // Use to initialize private attrs
     sampler.setCacheManager(cacheManager);
   }
 
