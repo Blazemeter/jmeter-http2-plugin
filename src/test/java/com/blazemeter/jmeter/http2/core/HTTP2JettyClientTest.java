@@ -408,14 +408,11 @@ public class HTTP2JettyClientTest {
     sampler.setHeaderManager(hm);
   }
 
-  private void configureCacheManagerToSampler(boolean useExpire, boolean clearCacheIteration)
-      throws Exception {
-    // Use Reflection to access a private constructor (necessary for useExpire)
-    Class ref = Class.forName("org.apache.jmeter.protocol.http.control.CacheManager");
-    Constructor<?> con = ref.getDeclaredConstructor(Map.class, boolean.class);
-    con.setAccessible(true);
-    CacheManager cacheManager = (CacheManager) con.newInstance(new LRUMap(), useExpire);
-    cacheManager.setClearEachIteration(clearCacheIteration);
+  private void configureCacheManagerToSampler(boolean useExpire, boolean clearCacheIteration) {
+    CacheManager cacheManager = new CacheManager();
+    cacheManager.setUseExpires(useExpire);
+    cacheManager.setClearEachIteration(clearCacheIteration); // Use to initialize private attr
+    cacheManager.testIterationStart(null);
     sampler.setCacheManager(cacheManager);
   }
 
