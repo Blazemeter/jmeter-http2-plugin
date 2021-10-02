@@ -11,6 +11,7 @@ import java.net.URLDecoder;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Set;
@@ -21,6 +22,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.regex.Pattern;
 import java.util.stream.StreamSupport;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.http.HeaderElement;
 import org.apache.http.HttpResponse;
 import org.apache.http.ParseException;
@@ -281,7 +283,7 @@ public class HTTP2JettyClient {
 
         multipartEntityBuilder.addFieldPart(parameterName,
             new StringRequestContent(contentTypeHeader, arg.getEncodedValue(contentCharset.name()),
-                contentCharset), null); // TODO Fields Header?
+                contentCharset), null);
       }
 
       // Add all files
@@ -290,6 +292,10 @@ public class HTTP2JettyClient {
       for (int i = 0; i < sampler.getHTTPFiles().length; i++) {
         final HTTPFileArg file = sampler.getHTTPFiles()[i];
 
+        // Name is requiered
+        if (StringUtils.isBlank(file.getParamName())) {
+          throw new IllegalStateException("Name is blank");
+        }
         String mimeTypeFile = null;
         if (!hasContentTypeHeader) {
           if (file.getMimeType() != null && !file.getMimeType().isEmpty()) {
@@ -299,18 +305,19 @@ public class HTTP2JettyClient {
           }
         }
         if (mimeTypeFile != null) {
-          //request.addHeader(new HttpField(HTTPConstants.HEADER_CONTENT_TYPE, mimeTypeFile));
           fileBodies[i] = new PathRequestContent(mimeTypeFile, Path.of(file.getPath()));
         } else {
           fileBodies[i] = new PathRequestContent(Path.of(file.getPath()));
         }
 
-        multipartEntityBuilder.addFilePart(file.getParamName(), file.getName(), fileBodies[i],
-            null); // TODO Fields Header?
+        String fileName = Paths.get((file.getPath())).getFileName().toString();
+        multipartEntityBuilder.addFilePart(file.getParamName(), fileName, fileBodies[i],
+            null);
       }
       multipartEntityBuilder.close();
 
       request.body(multipartEntityBuilder);
+      // TODO dfilgueiras: What put here? Same as File? And Request Body (see POST data in Http1)?
       postBody.append("<MULTIPART CONTENT>");
       //writeEntityToSB(postBody, multipartEntityBuilder, fileBodies, contentEncoding);
 
