@@ -408,6 +408,31 @@ public class HTTP2JettyClientTest {
     validateEmbeddedResources(resultNotCached, expected);
   }
 
+  @Test
+  public void shouldGetTwoFilesAndTwoParams() {
+    // envia y recibe 2 archivo y 2 params
+  }
+
+  @Test
+  public void shouldGetOneFileAndOneParam() {
+    // envia y recibe 1 arhivo y 1 param
+  }
+
+  @Test
+  public void shouldGetOnlyTwoFiles() {
+    // envia solo 2 archivos
+  }
+
+  @Test
+  public void shouldGetOnlyTwoParams() {
+    // envia solo 2 param
+  }
+
+  @Test
+  public void shouldReturnErrorInBlankFileName() {
+    // error por archivo sin nombre
+  }
+
   private void configureSampler(String method) {
     sampler.setMethod(method);
     sampler.setDomain("server");
