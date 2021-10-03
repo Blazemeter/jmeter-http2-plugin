@@ -11,19 +11,15 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.io.InputStream;
-import java.lang.reflect.Constructor;
-import java.lang.reflect.InvocationTargetException;
 import java.net.URISyntaxException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
-import java.util.Map;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import jodd.net.MimeTypes;
-import org.apache.commons.collections.map.LRUMap;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.jmeter.protocol.http.control.CacheManager;
 import org.apache.jmeter.protocol.http.control.Header;
@@ -149,6 +145,8 @@ public class HTTP2JettyClientTest {
           case SERVER_PATH_200_EMBEDDED:
             resp.setContentType(MimeTypes.MIME_TEXT_HTML + ";" + StandardCharsets.UTF_8.name());
             resp.getWriter().write(BASIC_HTML_TEMPLATE);
+            resp.addHeader(HTTPConstants.EXPIRES,
+                "Sat, 25 Sep 2041 00:00:00 GMT");
             return;
           case SERVER_IMAGE:
             resp.getOutputStream().write(new byte[]{1, 2, 3, 4, 5});
@@ -215,7 +213,7 @@ public class HTTP2JettyClientTest {
     expected.setResponseData(BASIC_HTML_TEMPLATE,
         StandardCharsets.UTF_8.name());
     startServer(createGetServerResponse());
-    sampler.setImageParser(true);
+    sampler.setImageParser(true); // Indicates download embedded resources
     HTTPSampleResult result = client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS,
         HOST_NAME, SERVER_PORT, SERVER_PATH_200_EMBEDDED), HTTPConstants.GET, false, 0);
     validateEmbeddedResources(result, expected);
@@ -320,14 +318,7 @@ public class HTTP2JettyClientTest {
 
   @Test
   public void shouldNoUseCacheWhenNotUseExpire() throws Exception {
-    HTTPSampleResult expected = new HTTPSampleResult();
-    expected.setSuccessful(true);
-    expected.setResponseCode(String.valueOf(HttpStatus.OK_200));
-    expected.setRequestHeaders(REQUEST_HEADERS);
-    expected.setResponseData(BASIC_HTML_TEMPLATE,
-        StandardCharsets.UTF_8.name());
-    startServer(createGetServerResponse());
-    sampler.setImageParser(true);
+    HTTPSampleResult expected = createExpectedResultsAndServerResponse();
     configureCacheManagerToSampler(false, false);
     HTTPSampleResult result = client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS,
         HOST_NAME, SERVER_PORT, SERVER_PATH_200_EMBEDDED), HTTPConstants.GET, false, 0);
@@ -341,14 +332,7 @@ public class HTTP2JettyClientTest {
 
   @Test
   public void shouldNotGetSubresultWhenResourceIsCachedWithNoMsg() throws Exception {
-    HTTPSampleResult expected = new HTTPSampleResult();
-    expected.setSuccessful(true);
-    expected.setResponseCode(String.valueOf(HttpStatus.OK_200));
-    expected.setRequestHeaders(REQUEST_HEADERS);
-    expected.setResponseData(BASIC_HTML_TEMPLATE,
-        StandardCharsets.UTF_8.name());
-    startServer(createGetServerResponse());
-    sampler.setImageParser(true);
+    HTTPSampleResult expected = createExpectedResultsAndServerResponse();
     configureCacheManagerToSampler(true, false);
     HTTPSampleResult result = client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS,
         HOST_NAME, SERVER_PORT, SERVER_PATH_200_EMBEDDED), HTTPConstants.GET, false, 0);
@@ -365,14 +349,7 @@ public class HTTP2JettyClientTest {
 
   @Test
   public void shouldNotGetSubresultWhenResourceIsCachedWithMsg() throws Exception {
-    HTTPSampleResult expected = new HTTPSampleResult();
-    expected.setSuccessful(true);
-    expected.setResponseCode(String.valueOf(HttpStatus.OK_200));
-    expected.setRequestHeaders(REQUEST_HEADERS);
-    expected.setResponseData(BASIC_HTML_TEMPLATE,
-        StandardCharsets.UTF_8.name());
-    startServer(createGetServerResponse());
-    sampler.setImageParser(true);
+    HTTPSampleResult expected = createExpectedResultsAndServerResponse();
     configureCacheManagerToSampler(true, false);
     HTTPSampleResult result = client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS,
         HOST_NAME, SERVER_PORT, SERVER_PATH_200_EMBEDDED), HTTPConstants.GET, false, 0);
@@ -389,14 +366,7 @@ public class HTTP2JettyClientTest {
 
   @Test
   public void shouldGetSubresultWhenCacheCleanBetweenIterations() throws Exception {
-    HTTPSampleResult expected = new HTTPSampleResult();
-    expected.setSuccessful(true);
-    expected.setResponseCode(String.valueOf(HttpStatus.OK_200));
-    expected.setRequestHeaders(REQUEST_HEADERS);
-    expected.setResponseData(BASIC_HTML_TEMPLATE,
-        StandardCharsets.UTF_8.name());
-    startServer(createGetServerResponse());
-    sampler.setImageParser(true);
+    HTTPSampleResult expected = createExpectedResultsAndServerResponse();
     configureCacheManagerToSampler(false, true);
     HTTPSampleResult result = client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS,
         HOST_NAME, SERVER_PORT, SERVER_PATH_200_EMBEDDED), HTTPConstants.GET, false, 0);
@@ -406,6 +376,19 @@ public class HTTP2JettyClientTest {
         HOST_NAME, SERVER_PORT, SERVER_PATH_200_EMBEDDED), HTTPConstants.GET, false, 0);
     // Same request connect again because clear cache iteration is enabled
     validateEmbeddedResources(resultNotCached, expected);
+  }
+
+  private HTTPSampleResult createExpectedResultsAndServerResponse() throws Exception {
+    HTTPSampleResult expected = new HTTPSampleResult();
+    expected.setSuccessful(true);
+    expected.setResponseCode(String.valueOf(HttpStatus.OK_200));
+    expected.setRequestHeaders(REQUEST_HEADERS);
+    expected.setResponseData(BASIC_HTML_TEMPLATE,
+        StandardCharsets.UTF_8.name());
+    startServer(createGetServerResponse());
+    sampler.setImageParser(true); // Indicates download embedded resources
+
+    return expected;
   }
 
   @Test
@@ -448,15 +431,11 @@ public class HTTP2JettyClientTest {
     sampler.setHeaderManager(hm);
   }
 
-  private void configureCacheManagerToSampler(boolean useExpire, boolean clearCacheIteration)
-      throws ClassNotFoundException, NoSuchMethodException, IllegalAccessException,
-      InvocationTargetException, InstantiationException {
-    // Use Reflection to access a private cosntructor (necessary for useExpire)
-    Class ref = Class.forName("org.apache.jmeter.protocol.http.control.CacheManager");
-    Constructor<?> con = ref.getDeclaredConstructor(Map.class, boolean.class);
-    con.setAccessible(true);
-    CacheManager cacheManager = (CacheManager) con.newInstance(new LRUMap(), useExpire);
+  private void configureCacheManagerToSampler(boolean useExpire, boolean clearCacheIteration) {
+    CacheManager cacheManager = new CacheManager();
+    cacheManager.setUseExpires(useExpire);
     cacheManager.setClearEachIteration(clearCacheIteration);
+    cacheManager.testIterationStart(null); // Use to initialize private attrs
     sampler.setCacheManager(cacheManager);
   }
 
@@ -487,8 +466,7 @@ public class HTTP2JettyClientTest {
   }
 
   /**
-   * Validate same result as expected, but also control that not sample result was added for
-   * resoruce.
+   * Validate same result as expected, but also control that not sample result was added.
    *
    * @param messageResponse if passed, validate if message response is equal to defined.
    */

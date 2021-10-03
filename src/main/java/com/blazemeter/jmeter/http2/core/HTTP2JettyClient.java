@@ -1,6 +1,7 @@
 package com.blazemeter.jmeter.http2.core;
 
 import com.blazemeter.jmeter.http2.sampler.HTTP2Sampler;
+import com.blazemeter.jmeter.http2.utils.CacheManagerHelper;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -15,8 +16,6 @@ import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Set;
-import java.util.Spliterator;
-import java.util.Spliterators;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -25,24 +24,13 @@ import java.util.stream.StreamSupport;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.http.HeaderElement;
 import org.apache.http.HttpResponse;
-import org.apache.http.ParseException;
 import org.apache.http.ProtocolVersion;
-import org.apache.http.client.methods.HttpGet;
-import org.apache.http.client.methods.HttpHead;
-import org.apache.http.client.methods.HttpOptions;
-import org.apache.http.client.methods.HttpPatch;
-import org.apache.http.client.methods.HttpPost;
-import org.apache.http.client.methods.HttpPut;
 import org.apache.http.client.methods.HttpRequestBase;
-import org.apache.http.client.methods.HttpTrace;
 import org.apache.http.message.BasicHttpResponse;
 import org.apache.jmeter.protocol.http.control.CacheManager;
 import org.apache.jmeter.protocol.http.control.Header;
 import org.apache.jmeter.protocol.http.control.HeaderManager;
-import org.apache.jmeter.protocol.http.sampler.HTTPHC4Impl.HttpDelete;
-import org.apache.jmeter.protocol.http.sampler.HTTPHC4Impl.HttpGetWithEntity;
 import org.apache.jmeter.protocol.http.sampler.HTTPSampleResult;
-import org.apache.jmeter.protocol.http.sampler.HttpWebdav;
 import org.apache.jmeter.protocol.http.util.HTTPArgument;
 import org.apache.jmeter.protocol.http.util.HTTPConstants;
 import org.apache.jmeter.protocol.http.util.HTTPFileArg;
@@ -64,7 +52,6 @@ import org.eclipse.jetty.client.util.MultiPartRequestContent;
 import org.eclipse.jetty.client.util.PathRequestContent;
 import org.eclipse.jetty.client.util.StringRequestContent;
 import org.eclipse.jetty.http.HttpField;
-import org.eclipse.jetty.http.HttpFields;
 import org.eclipse.jetty.http2.client.HTTP2Client;
 import org.eclipse.jetty.http2.client.http.ClientConnectionFactoryOverHTTP2;
 import org.eclipse.jetty.io.ClientConnector;
@@ -76,10 +63,7 @@ import org.slf4j.LoggerFactory;
 public class HTTP2JettyClient {
 
   private static final Logger LOG = LoggerFactory.getLogger(HTTP2JettyClient.class);
-  private static final CachedResourceMode CACHED_RESOURCE_MODE =
-      CachedResourceMode.valueOf(
-          JMeterUtils.getPropDefault("cache_manager.cached_resource_mode",
-              CachedResourceMode.RETURN_NO_SAMPLE.toString()));
+
   private static final Set<String> SUPPORTED_METHODS = new HashSet<>(Arrays
       .asList(HTTPConstants.GET, HTTPConstants.POST, HTTPConstants.PUT, HTTPConstants.PATCH,
           HTTPConstants.OPTIONS, HTTPConstants.DELETE));
@@ -88,13 +72,6 @@ public class HTTP2JettyClient {
   private static final boolean ADD_CONTENT_TYPE_TO_POST_IF_MISSING = JMeterUtils.getPropDefault(
       "http.post_add_content_type_if_missing", false);
   private static final Pattern PORT_PATTERN = Pattern.compile("\\d+");
-  private static final String RETURN_200_CACHE_MESSAGE =
-      JMeterUtils.getPropDefault("RETURN_200_CACHE.message", "(ex cache)");
-  private static final String RETURN_CUSTOM_STATUS_CODE =
-      JMeterUtils.getProperty("RETURN_CUSTOM_STATUS.code");
-  private static final String RETURN_CUSTOM_STATUS_MESSAGE =
-      JMeterUtils.getProperty("RETURN_CUSTOM_STATUS.message");
-  private static final String DEFAULT_EXPIRE_DATE = "Sat, 25 Sep 2041 00:00:00 GMT";
   private final HttpClient httpClient;
 
   public HTTP2JettyClient() {
@@ -127,43 +104,20 @@ public class HTTP2JettyClient {
     request.followRedirects(false);
     request.method(method);
 
-    final CacheManager cacheManager = sampler.getCacheManager();
+    CacheManager cacheManager = sampler.getCacheManager();
     if (sampler.getHeaderManager() != null) {
       setHeaders(request, sampler.getHeaderManager(), url, cacheManager, areFollowingRedirect,
           sampler);
     }
 
     // Get headers request and convert it to pass to Cache Manager
-    final HttpFields fields = request.getHeaders();
-    final org.apache.http.Header[] headersRequest = StreamSupport.stream(
-        Spliterators
-            .spliterator(fields.getFieldNames().asIterator(), fields.size(), Spliterator.SIZED),
-        false)
-        .map(name -> {
-          final String value = fields.getField(name).getValue();
-          return new org.apache.http.Header() {
-            @Override
-            public HeaderElement[] getElements() throws ParseException {
-              return new HeaderElement[0];
-            }
-
-            @Override
-            public String getName() {
-              return name;
-            }
-
-            @Override
-            public String getValue() {
-              return value;
-            }
-          };
-        })
-        .toArray(org.apache.http.Header[]::new);
+    org.apache.http.Header[] headersRequest = CacheManagerHelper
+        .convertFieldsToHeaders(request.getHeaders());
 
     // If result of request is cached, then return it
     if (cacheManager != null && HTTPConstants.GET.equalsIgnoreCase(method) && cacheManager
-        .inCache(url, (org.apache.http.Header[]) headersRequest)) {
-      return updateSampleResultForResourceInCache(result);
+        .inCache(url, headersRequest)) {
+      return CacheManagerHelper.updateSampleResultForResourceInCache(result);
     }
 
     setBody(request, sampler, result);
@@ -184,13 +138,11 @@ public class HTTP2JettyClient {
         }
         result.setRedirectLocation(redirectLocation);
       }
-      // Map content response data to http response
-      httpResponse = createHttpResponse(contentResponse);
+      httpResponse = CacheManagerHelper.createHttpResponse(contentResponse);
     }
 
     result.setRequestHeaders(request.getHeaders() != null ? request.getHeaders().asString() : "");
 
-    // Update Cache with new information
     if (cacheManager != null) {
       cacheManager.saveDetails(httpResponse, result);
     }
@@ -236,6 +188,7 @@ public class HTTP2JettyClient {
         .setResponseMessage(contentResponse.getReason() != null ? contentResponse.getReason() : "");
     result.setResponseHeaders(contentResponse.getHeaders().asString());
     InputStream inputStream = new ByteArrayInputStream(contentResponse.getContent());
+    // When a resource is cached, the sample result is empty
     result.setResponseData(sampler.readResponse(result, inputStream,
         contentResponse.getContent().length));
     String contentType = contentResponse.getHeaders() != null
@@ -246,8 +199,7 @@ public class HTTP2JettyClient {
       result.setEncodingAndType(contentType);
     }
 
-    // Set size for header and body (\r\r\n)
-    final long headerBytes =
+    long headerBytes =
         (long) result.getResponseHeaders().length()
             + (long) contentResponse.getHeaders().asString().length()
             + 1L
@@ -259,7 +211,7 @@ public class HTTP2JettyClient {
   private void setBody(HttpRequest request, HTTP2Sampler sampler, HTTPSampleResult result)
       throws IOException {
     final String contentEncoding = sampler.getContentEncoding();
-    final Charset contentCharset =
+    Charset contentCharset =
         !contentEncoding.isEmpty() ? Charset.forName(contentEncoding) : StandardCharsets.UTF_8;
     final String contentTypeHeader =
         request.getHeaders() != null ? request.getHeaders().get(HTTPConstants.HEADER_CONTENT_TYPE)
@@ -393,37 +345,33 @@ public class HTTP2JettyClient {
     return METHODS_WITH_BODY.contains(method);
   }
 
-  private void setHeaders(HttpRequest request, final HeaderManager headerManager, final URL url,
-      CacheManager cacheManager, final boolean areFollowingRedirect, final HTTP2Sampler sampler)
+  private void setHeaders(HttpRequest request, HeaderManager headerManager, URL url,
+      CacheManager cacheManager, boolean areFollowingRedirect, HTTP2Sampler sampler)
       throws URISyntaxException {
     StreamSupport.stream(headerManager.getHeaders().spliterator(), false)
         .map(prop -> (Header) prop.getObjectValue())
-        .filter(header -> !HTTPConstants.HEADER_CONTENT_LENGTH.equalsIgnoreCase(header.getName()))
+        .filter(header -> (!header.getName().isEmpty()) && (!HTTPConstants.HEADER_CONTENT_LENGTH
+            .equalsIgnoreCase(header.getName())))
         .forEach(header -> {
-          if (!header.getName().isEmpty()) {
-            request.addHeader(createJettyHeader(header, url));
-          }
+          request.addHeader(createJettyHeader(header, url));
         });
 
     if (cacheManager != null) {
-      // Convert URL to URI
-      final URI uri = new URI(url.toString());
-      final HttpRequestBase reqBase = createHttpRequest(uri, request.getMethod(),
+      URI uri = new URI(url.toString());
+      HttpRequestBase reqBase = CacheManagerHelper.createHttpRequest(uri, request.getMethod(),
           areFollowingRedirect, sampler);
-      // Set header to Cache manager
       cacheManager.setHeaders(url, reqBase);
-      // Set header for jetty request if Cache has them set
       if (reqBase.getFirstHeader(HTTPConstants.VARY) != null) {
-        request.addHeader(createJettyHeader(new Header(HTTPConstants.VARY,
-            reqBase.getFirstHeader(HTTPConstants.VARY).getValue()), url));
+        request.addHeader(new HttpField(HTTPConstants.VARY,
+            reqBase.getFirstHeader(HTTPConstants.VARY).getValue()));
       }
       if (reqBase.getFirstHeader(HTTPConstants.IF_MODIFIED_SINCE) != null) {
-        request.addHeader(createJettyHeader(new Header(HTTPConstants.IF_MODIFIED_SINCE,
-            reqBase.getFirstHeader(HTTPConstants.LAST_MODIFIED).getValue()), url));
+        request.addHeader(new HttpField(HTTPConstants.IF_MODIFIED_SINCE,
+            reqBase.getFirstHeader(HTTPConstants.LAST_MODIFIED).getValue()));
       }
       if (reqBase.getFirstHeader(HTTPConstants.IF_NONE_MATCH) != null) {
-        request.addHeader(createJettyHeader(new Header(HTTPConstants.IF_NONE_MATCH,
-            reqBase.getFirstHeader(HTTPConstants.ETAG).getValue()), url));
+        request.addHeader(new HttpField(HTTPConstants.IF_NONE_MATCH,
+            reqBase.getFirstHeader(HTTPConstants.ETAG).getValue()));
       }
     }
   }
@@ -471,49 +419,19 @@ public class HTTP2JettyClient {
   }
 
   /**
-   * Update HTTPSampleResult for a resource in Cache.
-   *
-   * @param res {@link HTTPSampleResult}
-   * @return HTTPSampleResult
-   */
-  private HTTPSampleResult updateSampleResultForResourceInCache(HTTPSampleResult res) {
-    switch (CACHED_RESOURCE_MODE) {
-      case RETURN_NO_SAMPLE:
-        return null;
-      case RETURN_200_CACHE:
-        res.sampleEnd();
-        res.setResponseCodeOK();
-        res.setResponseMessage(RETURN_200_CACHE_MESSAGE);
-        res.setSuccessful(true);
-        return res;
-      case RETURN_CUSTOM_STATUS:
-        res.sampleEnd();
-        res.setResponseCode(RETURN_CUSTOM_STATUS_CODE);
-        res.setResponseMessage(RETURN_CUSTOM_STATUS_MESSAGE);
-        res.setSuccessful(true);
-        return res;
-      default:
-        // Cannot happen
-        throw new IllegalStateException("Unknown CACHED_RESOURCE_MODE");
-    }
-  }
-
-  /**
    * Create an HttpResponse from a ContentResponse of Jetty.
    */
-  private HttpResponse createHttpResponse(final ContentResponse contentResponse) {
-    // Set atts in http response thath Cache needs
-    final HttpResponse httpResponse = new BasicHttpResponse(new ProtocolVersion("HTTP/2", 2, 2),
+  private HttpResponse createHttpResponse(ContentResponse contentResponse) {
+    HttpResponse httpResponse = new BasicHttpResponse(new ProtocolVersion("HTTP/2", 2, 2),
         contentResponse.getStatus(),
         contentResponse.getReason());
     httpResponse
         .addHeader(HTTPConstants.VARY, contentResponse.getHeaders().get(HTTPConstants.VARY));
     httpResponse.addHeader(HTTPConstants.LAST_MODIFIED,
         contentResponse.getHeaders().get(HTTPConstants.LAST_MODIFIED));
-    // TODO dfilgueiras: Discuss about this approach. It need a default expiration date to save
-    //  entries in Cache.
     httpResponse
-        .addHeader(HTTPConstants.EXPIRES, DEFAULT_EXPIRE_DATE);
+        .addHeader(HTTPConstants.EXPIRES,
+            contentResponse.getHeaders().get(HTTPConstants.EXPIRES));
     httpResponse
         .addHeader(HTTPConstants.ETAG, contentResponse.getHeaders().get(HTTPConstants.ETAG));
     httpResponse.addHeader(HTTPConstants.CACHE_CONTROL,
@@ -522,55 +440,6 @@ public class HTTP2JettyClient {
         .addHeader(HTTPConstants.DATE, contentResponse.getHeaders().get(HTTPConstants.DATE));
 
     return httpResponse;
-  }
-
-  /**
-   * @param uri {@link URI}
-   * @param method HTTP Method
-   * @param areFollowingRedirect Are we following redirects
-   * @return {@link HttpRequestBase}
-   */
-  private HttpRequestBase createHttpRequest(final URI uri, final String method,
-      final boolean areFollowingRedirect,
-      final HTTP2Sampler sampler) {
-    HttpRequestBase result;
-    if (method.equals(HTTPConstants.POST)) {
-      result = new HttpPost(uri);
-    } else if (method.equals(HTTPConstants.GET)) {
-      // Some servers fail if Content-Length is equal to 0
-      // so to avoid this we use HttpGet when there is no body (Content-Length will not be set)
-      // otherwise we use HttpGetWithEntity
-      if (!areFollowingRedirect
-          && ((!sampler.hasArguments() && sampler.getSendFileAsPostBody())
-          || sampler.getSendParameterValuesAsPostBody())) {
-        result = new HttpGetWithEntity(uri);
-      } else {
-        result = new HttpGet(uri);
-      }
-    } else if (method.equals(HTTPConstants.PUT)) {
-      result = new HttpPut(uri);
-    } else if (method.equals(HTTPConstants.HEAD)) {
-      result = new HttpHead(uri);
-    } else if (method.equals(HTTPConstants.TRACE)) {
-      result = new HttpTrace(uri);
-    } else if (method.equals(HTTPConstants.OPTIONS)) {
-      result = new HttpOptions(uri);
-    } else if (method.equals(HTTPConstants.DELETE)) {
-      result = new HttpDelete(uri);
-    } else if (method.equals(HTTPConstants.PATCH)) {
-      result = new HttpPatch(uri);
-    } else if (HttpWebdav.isWebdavMethod(method)) {
-      result = new HttpWebdav(method, uri);
-    } else {
-      throw new IllegalArgumentException(String.format("Unexpected method: '%s'", method));
-    }
-    return result;
-  }
-
-  private enum CachedResourceMode {
-    RETURN_200_CACHE(),
-    RETURN_NO_SAMPLE(),
-    RETURN_CUSTOM_STATUS()
   }
 
 }
