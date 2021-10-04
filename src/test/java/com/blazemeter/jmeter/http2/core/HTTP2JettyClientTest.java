@@ -16,19 +16,17 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import jodd.net.MimeTypes;
 import org.apache.commons.lang3.StringUtils;
-import org.apache.jmeter.config.Argument;
 import org.apache.jmeter.config.Arguments;
 import org.apache.jmeter.protocol.http.control.CacheManager;
 import org.apache.jmeter.protocol.http.control.Header;
 import org.apache.jmeter.protocol.http.control.HeaderManager;
 import org.apache.jmeter.protocol.http.sampler.HTTPSampleResult;
+import org.apache.jmeter.protocol.http.util.HTTPArgument;
 import org.apache.jmeter.protocol.http.util.HTTPConstants;
 import org.apache.jmeter.protocol.http.util.HTTPFileArg;
 import org.apache.jmeter.samplers.SampleResult;
@@ -410,8 +408,10 @@ public class HTTP2JettyClientTest {
 
     // Create two Parameters (args)
     Arguments args = new Arguments();
-    args.addArgument("Param1", "Valor1");
-    args.addArgument("Param2", "Valor2");
+    HTTPArgument arg1 = new HTTPArgument("Param1", "Valor1");
+    HTTPArgument arg2 = new HTTPArgument("Param2", "Valor2");
+    args.addArgument(arg1);
+    args.addArgument(arg2);
     sampler.setArguments(args);
 
     startServer(createGetServerResponse());
@@ -422,9 +422,10 @@ public class HTTP2JettyClientTest {
 
   @Ignore
   @Test
-  public void shouldGetOneFileAndOneParam() {
+  public void shouldGetOneFileAndOneParam() throws Exception {
     // envia y recibe 1 arhivo y 1 param
     HTTPSampleResult expected = createExpectedResultsAndServerResponse();
+    sampler.setDoMultipart(true);
 
     // Create one File
     String filePath = getClass().getResource("blazemeter-labs-logo.png").getPath();
@@ -440,8 +441,9 @@ public class HTTP2JettyClientTest {
     sampler.setHTTPFiles(new HTTPFileArg[]{fileArg});
 
     // Create one Parameter (arg)
+    HTTPArgument arg1 = new HTTPArgument("Param1", "Valor1");
     Arguments args = new Arguments();
-    args.addArgument("Param1", "Valor1");
+    args.addArgument(arg1);
     sampler.setArguments(args);
     startServer(createGetServerResponse());
     HTTPSampleResult result = client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS,
@@ -451,9 +453,10 @@ public class HTTP2JettyClientTest {
 
   @Ignore
   @Test
-  public void shouldGetOnlyTwoFiles() {
+  public void shouldGetOnlyTwoFiles() throws Exception {
     // envia solo 2 archivos
     HTTPSampleResult expected = createExpectedResultsAndServerResponse();
+    sampler.setDoMultipart(true);
 
     // Create two Files
     String filePath1 = getClass().getResource("blazemeter-labs-logo.png").getPath();
@@ -480,8 +483,9 @@ public class HTTP2JettyClientTest {
     validateMultipartResponse(result, expected);
   }
 
+  @Ignore
   @Test
-  public void shouldGetOnlyTwoParams() {
+  public void shouldGetOnlyTwoParams() throws Exception {
     // envia solo 2 param
     HTTPSampleResult expected = createExpectedResultsAndServerResponse();
     sampler.setDoMultipart(true);
@@ -496,9 +500,11 @@ public class HTTP2JettyClientTest {
     configureSampler(HTTPConstants.POST);
 
     // Create two Parameters (args)
+    HTTPArgument arg1 = new HTTPArgument("Param1", "Valor1");
+    HTTPArgument arg2 = new HTTPArgument("Param2", "Valor2");
     Arguments args = new Arguments();
-    args.addArgument("Param1", "Valor1");
-    args.addArgument("Param2", "Valor2");
+    args.addArgument(arg1);
+    args.addArgument(arg2);
     sampler.setArguments(args);
 
     startServer(createGetServerResponse());
@@ -507,11 +513,11 @@ public class HTTP2JettyClientTest {
     validateMultipartResponse(result, expected);
   }
 
-  @Ignore
   @Test
-  public void shouldReturnErrorInBlankFileName() {
+  public void shouldReturnErrorInBlankFileName() throws Exception {
     // error por archivo sin nombre y 1 param
     HTTPSampleResult expected = createExpectedResultsAndServerResponse();
+    sampler.setDoMultipart(true);
 
     // Create one File without name
     String filePath = getClass().getResource("blazemeter-labs-logo.png").getPath();
@@ -527,19 +533,17 @@ public class HTTP2JettyClientTest {
     sampler.setHTTPFiles(new HTTPFileArg[]{fileArg});
 
     // Create one Parameter (arg)
+    HTTPArgument arg1 = new HTTPArgument("Param1", "Valor1");
     Arguments args = new Arguments();
-    args.addArgument("Param1", "Valor1");
-    args.addArgument("Param2", "Valor2");
+    args.addArgument(arg1);
     sampler.setArguments(args);
 
-    startServer(createGetServerResponse());
-    Exception exception = assertThrows(Exception.class, () -> {
+    IllegalStateException exception = assertThrows(IllegalStateException.class, () -> {
       client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS,
           HOST_NAME, SERVER_PORT, SERVER_PATH_200_FILE_SENT), HTTPConstants.POST, false, 0);
     });
-    String actual = exception.getMessage();
-    String expected = "java.net.IllegalStateException: Empty blank name";
-    softly.assertThat(actual).contains(expected);
+    String expectedException = "java.lang.IllegalStateException: Name is blank";
+    softly.assertThat(exception.toString()).contains(expectedException);
 
   }
 
