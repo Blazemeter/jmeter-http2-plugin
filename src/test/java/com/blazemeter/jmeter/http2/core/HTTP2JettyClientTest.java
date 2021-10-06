@@ -387,6 +387,7 @@ public class HTTP2JettyClientTest {
     // envia y recibe 2 archivo y 2 params
     HTTPSampleResult expected = createExpectedResultsAndServerResponse();
     sampler.setDoMultipart(true);
+    configureSampler(HTTPConstants.POST);
 
     // Create two Files
     String filePath1 = getClass().getResource("blazemeter-labs-logo.png").getPath();
@@ -395,66 +396,83 @@ public class HTTP2JettyClientTest {
     String filePath2 = getClass().getResource("blazemeter-labs-logo.png").getPath();
     InputStream inputStream2 = Files.newInputStream(Paths.get(filePath2));
     byte[] data2 = sampler.readResponse(expected, inputStream2, 0);
-    // TODO dfilgueiras: set response
-    /*expected.setResponseData();
-    expected.setRequestHeaders("Accept-Encoding: gzip\r\n"
-        + "User-Agent: Jetty/11.0.6\r\n"
-        + "Content-Type: image/png\r\n"
-        + "Content-Length: 9018\r\n"
-        + "\r\n");*/
-    configureSampler(HTTPConstants.POST);
+
+    String headerFile1 = "Content-Disposition: form-data; name=\"blazemeter-labs-logo1\"; "
+        + "filename=\"blazemeter-labs-logo.png\"\r\n"
+        + "Content-Type: image/png\r\n";
+    String headerFile2 = "Content-Disposition: form-data; name=\"blazemeter-labs-logo2\"; "
+        + "filename=\"blazemeter-labs-logo.png\"\r\n"
+        + "Content-Type: image/png\r\n";
+
     HTTPFileArg fileArg1 = new HTTPFileArg(filePath1, "blazemeter-labs-logo1", "image/png");
     HTTPFileArg fileArg2 = new HTTPFileArg(filePath2, "blazemeter-labs-logo2", "image/png");
     sampler.setHTTPFiles(new HTTPFileArg[]{fileArg1, fileArg2});
 
     // Create two Parameters (args)
-    Arguments args = new Arguments();
     HTTPArgument arg1 = new HTTPArgument("Param1", "Valor1");
     HTTPArgument arg2 = new HTTPArgument("Param2", "Valor2");
+    Arguments args = new Arguments();
     args.addArgument(arg1);
     args.addArgument(arg2);
     sampler.setArguments(args);
 
-    startServer(createGetServerResponse());
     HTTPSampleResult result = client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS,
         HOST_NAME, SERVER_PORT, SERVER_PATH_200_FILE_SENT), HTTPConstants.POST, false, 0);
+
+    // Get JettyHttpClientBoundary from result
+    String boundary = result.getResponseDataAsString().split("\\r?\\n")[0];
+    expected.setRequestHeaders(expected.getRequestHeaders().concat("Content-Type: "
+        + "multipart/form-data; boundary="
+        + boundary.substring(2)));
+    expected.setResponseData(getByteArrayOnlyFiles(data1, data2, headerFile1,
+        headerFile2, boundary));
+
     validateMultipartResponse(result, expected);
   }
 
-  @Ignore
   @Test
   public void shouldGetOneFileAndOneParam() throws Exception {
-    // envia y recibe 1 arhivo y 1 param
     HTTPSampleResult expected = createExpectedResultsAndServerResponse();
     sampler.setDoMultipart(true);
+    configureSampler(HTTPConstants.POST);
 
     // Create one File
     String filePath = getClass().getResource("blazemeter-labs-logo.png").getPath();
     InputStream inputStream = Files.newInputStream(Paths.get(filePath));
-    expected.setResponseData(sampler.readResponse(expected, inputStream, 0));
-    expected.setRequestHeaders("Accept-Encoding: gzip\r\n"
-        + "User-Agent: Jetty/11.0.6\r\n"
-        + "Content-Type: image/png\r\n"
-        + "Content-Length: 9018\r\n"
-        + "\r\n");
-    configureSampler(HTTPConstants.POST);
+    byte[] data = sampler.readResponse(expected, inputStream, 0);
+    String headerFile = "Content-Disposition: form-data; name=\"blazemeter-labs-logo\"; "
+        + "filename=\"blazemeter-labs-logo.png\"\r\n"
+        + "Content-Type: image/png\r\n";
+
     HTTPFileArg fileArg = new HTTPFileArg(filePath, "blazemeter-labs-logo", "image/png");
     sampler.setHTTPFiles(new HTTPFileArg[]{fileArg});
 
     // Create one Parameter (arg)
     HTTPArgument arg1 = new HTTPArgument("Param1", "Valor1");
+    arg1.setContentType("text/xml");
     Arguments args = new Arguments();
     args.addArgument(arg1);
     sampler.setArguments(args);
-    startServer(createGetServerResponse());
+    String headerParam = "Content-Disposition: form-data; name=\"Param1\"\r\n"
+        + "Content-Type: null\r\n"
+        + "Valor1\r\n";
+
     HTTPSampleResult result = client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS,
         HOST_NAME, SERVER_PORT, SERVER_PATH_200_FILE_SENT), HTTPConstants.POST, false, 0);
+
+    // Get JettyHttpClientBoundary from result
+    String boundary = result.getResponseDataAsString().split("\\r?\\n")[0];
+    expected.setRequestHeaders(expected.getRequestHeaders().concat("Content-Type: "
+        + "multipart/form-data; boundary="
+        + boundary.substring(2)));
+    expected.setResponseData(getByteArrayFromFilesAndParams(data, headerFile, headerParam,
+        boundary));
+
     validateMultipartResponse(result, expected);
   }
 
   @Test
   public void shouldGetOnlyTwoFiles() throws Exception {
-    // envia solo 2 archivos
     HTTPSampleResult expected = createExpectedResultsAndServerResponse();
     sampler.setDoMultipart(true);
 
@@ -486,7 +504,7 @@ public class HTTP2JettyClientTest {
     expected.setRequestHeaders(expected.getRequestHeaders().concat("Content-Type: "
         + "multipart/form-data; boundary="
         + boundary.substring(2)));
-    expected.setResponseData(getByteArrayFromResponse(data1, data2, headerFile1,
+    expected.setResponseData(getByteArrayOnlyFiles(data1, data2, headerFile1,
         headerFile2, boundary));
 
     validateMultipartResponse(result, expected);
@@ -495,7 +513,6 @@ public class HTTP2JettyClientTest {
   @Ignore
   @Test
   public void shouldGetOnlyTwoParams() throws Exception {
-    // envia solo 2 param
     HTTPSampleResult expected = createExpectedResultsAndServerResponse();
     sampler.setDoMultipart(true);
 
@@ -524,11 +541,10 @@ public class HTTP2JettyClientTest {
 
   @Test
   public void shouldReturnErrorInBlankFileName() throws Exception {
-    // error por archivo sin nombre y 1 param
     HTTPSampleResult expected = createExpectedResultsAndServerResponse();
     sampler.setDoMultipart(true);
 
-    // Create one File without name
+    // Create one File with empty name
     String filePath = getClass().getResource("blazemeter-labs-logo.png").getPath();
     InputStream inputStream = Files.newInputStream(Paths.get(filePath));
     expected.setResponseData(sampler.readResponse(expected, inputStream, 0));
@@ -543,6 +559,7 @@ public class HTTP2JettyClientTest {
 
     // Create one Parameter (arg)
     HTTPArgument arg1 = new HTTPArgument("Param1", "Valor1");
+    arg1.setContentType("text");
     Arguments args = new Arguments();
     args.addArgument(arg1);
     sampler.setArguments(args);
@@ -632,7 +649,20 @@ public class HTTP2JettyClientTest {
     softly.assertThat(result.getResponseData().length).isEqualTo(0);
   }
 
-  private byte[] getByteArrayFromResponse(byte[] fileData1, byte[] fileData2,
+  private byte[] getByteArrayOnlyParams(byte[] fileData,
+      String headerFile, String boundary) throws IOException {
+    byte[] finalResponse = "--".getBytes();
+    ByteArrayOutputStream output = new ByteArrayOutputStream();
+    output.write(boundary.getBytes());
+    output.write(headerFile.getBytes());
+    output.write(fileData);
+    output.write(boundary.getBytes());
+    output.write(finalResponse);
+
+    return output.toByteArray();
+  }
+
+  private byte[] getByteArrayOnlyFiles(byte[] fileData1, byte[] fileData2,
       String headerFile1, String headerFile2, String boundary) throws IOException {
     byte[] finalResponse = "--".getBytes();
     ByteArrayOutputStream output = new ByteArrayOutputStream();
@@ -647,6 +677,29 @@ public class HTTP2JettyClientTest {
 
     return output.toByteArray();
   }
+
+  private byte[] getByteArrayFromFilesAndParams(byte[] data, String headerFile,
+      String headerParam, String boundary) throws IOException {
+    byte[] finalResponse = "--".getBytes();
+    byte[] enterLine = "\r\n".getBytes();
+    ByteArrayOutputStream output = new ByteArrayOutputStream();
+    output.write(boundary.getBytes());
+    output.write(enterLine);
+    output.write(headerParam.getBytes());
+    output.write(enterLine);
+
+    output.write(boundary.getBytes());
+    output.write(enterLine);
+    output.write(headerFile.getBytes());
+    output.write(data);
+    output.write(enterLine);
+    output.write(boundary.getBytes());
+    output.write(finalResponse);
+
+    return output.toByteArray();
+
+  }
+
 
   private void validateMultipartResponse(HTTPSampleResult result, HTTPSampleResult expected) {
     softly.assertThat(result.isSuccessful()).isEqualTo(expected.isSuccessful());
