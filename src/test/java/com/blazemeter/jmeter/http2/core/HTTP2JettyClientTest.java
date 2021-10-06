@@ -638,20 +638,13 @@ public class HTTP2JettyClientTest {
     byte[] finalResponse = "--".getBytes();
     ByteArrayOutputStream output = new ByteArrayOutputStream();
     output.write(boundary.getBytes());
-    output.write(enterLine);
     output.write(headerFile1.getBytes());
-    output.write(enterLine);
     output.write(fileData1);
-    output.write(enterLine);
     output.write(boundary.getBytes());
-    output.write(enterLine);
     output.write(headerFile2.getBytes());
-    output.write(enterLine);
     output.write(fileData2);
-    output.write(enterLine);
     output.write(boundary.getBytes());
     output.write(finalResponse);
-    output.write(enterLine);
 
     return output.toByteArray();
   }
@@ -660,7 +653,7 @@ public class HTTP2JettyClientTest {
     softly.assertThat(result.isSuccessful()).isEqualTo(expected.isSuccessful());
     softly.assertThat(result.getResponseCode()).isEqualTo(expected.getResponseCode());
     softly.assertThat(result.getResponseDataAsString())
-        .isEqualTo(expected.getResponseDataAsString());
+        .isEqualToIgnoringNewLines(expected.getResponseDataAsString());
     softly.assertThat(result.getRequestHeaders())
         .isEqualToIgnoringNewLines(expected.getRequestHeaders());
   }
