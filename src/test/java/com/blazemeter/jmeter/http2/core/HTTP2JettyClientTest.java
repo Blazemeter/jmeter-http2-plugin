@@ -9,6 +9,7 @@ import com.google.common.base.Stopwatch;
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URISyntaxException;
@@ -451,7 +452,6 @@ public class HTTP2JettyClientTest {
     validateMultipartResponse(result, expected);
   }
 
-  @Ignore
   @Test
   public void shouldGetOnlyTwoFiles() throws Exception {
     // envia solo 2 archivos
@@ -465,21 +465,30 @@ public class HTTP2JettyClientTest {
     String filePath2 = getClass().getResource("blazemeter-labs-logo.png").getPath();
     InputStream inputStream2 = Files.newInputStream(Paths.get(filePath2));
     byte[] data2 = sampler.readResponse(expected, inputStream2, 0);
-    // TODO dfilgueiras: set response
-    /*expected.setResponseData();
-    expected.setRequestHeaders("Accept-Encoding: gzip\r\n"
-        + "User-Agent: Jetty/11.0.6\r\n"
-        + "Content-Type: image/png\r\n"
-        + "Content-Length: 9018\r\n"
-        + "\r\n");*/
+
+    String headerFile1 = "Content-Disposition: form-data; name=\"blazemeter-labs-logo1\"; "
+        + "filename=\"blazemeter-labs-logo.png\"\r\n"
+        + "Content-Type: image/png\r\n";
+    String headerFile2 = "Content-Disposition: form-data; name=\"blazemeter-labs-logo2\"; "
+        + "filename=\"blazemeter-labs-logo.png\"\r\n"
+        + "Content-Type: image/png\r\n";
+
     configureSampler(HTTPConstants.POST);
     HTTPFileArg fileArg1 = new HTTPFileArg(filePath1, "blazemeter-labs-logo1", "image/png");
     HTTPFileArg fileArg2 = new HTTPFileArg(filePath2, "blazemeter-labs-logo2", "image/png");
     sampler.setHTTPFiles(new HTTPFileArg[]{fileArg1, fileArg2});
 
-    startServer(createGetServerResponse());
     HTTPSampleResult result = client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS,
         HOST_NAME, SERVER_PORT, SERVER_PATH_200_FILE_SENT), HTTPConstants.POST, false, 0);
+
+    // Get JettyHttpClientBoundary from result
+    String boundary = result.getResponseDataAsString().split("\\r?\\n")[0];
+    expected.setRequestHeaders(expected.getRequestHeaders().concat("Content-Type: "
+        + "multipart/form-data; boundary="
+        + boundary.substring(2)));
+    expected.setResponseData(getByteArrayFromResponse(data1, data2, headerFile1,
+        headerFile2, boundary));
+
     validateMultipartResponse(result, expected);
   }
 
@@ -623,6 +632,37 @@ public class HTTP2JettyClientTest {
     softly.assertThat(result.getResponseData().length).isEqualTo(0);
   }
 
-  private void validateMultipartResponse(HTTPSampleResult result, HTTPSampleResult expected) {
+  private byte[] getByteArrayFromResponse(byte[] fileData1, byte[] fileData2,
+      String headerFile1, String headerFile2, String boundary) throws IOException {
+    byte[] enterLine = "\r\n".getBytes();
+    byte[] finalResponse = "--".getBytes();
+    ByteArrayOutputStream output = new ByteArrayOutputStream();
+    output.write(boundary.getBytes());
+    output.write(enterLine);
+    output.write(headerFile1.getBytes());
+    output.write(enterLine);
+    output.write(fileData1);
+    output.write(enterLine);
+    output.write(boundary.getBytes());
+    output.write(enterLine);
+    output.write(headerFile2.getBytes());
+    output.write(enterLine);
+    output.write(fileData2);
+    output.write(enterLine);
+    output.write(boundary.getBytes());
+    output.write(finalResponse);
+    output.write(enterLine);
+
+    return output.toByteArray();
   }
+
+  private void validateMultipartResponse(HTTPSampleResult result, HTTPSampleResult expected) {
+    softly.assertThat(result.isSuccessful()).isEqualTo(expected.isSuccessful());
+    softly.assertThat(result.getResponseCode()).isEqualTo(expected.getResponseCode());
+    softly.assertThat(result.getResponseDataAsString())
+        .isEqualTo(expected.getResponseDataAsString());
+    softly.assertThat(result.getRequestHeaders())
+        .isEqualToIgnoringNewLines(expected.getRequestHeaders());
+  }
+
 }
