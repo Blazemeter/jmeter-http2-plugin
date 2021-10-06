@@ -381,10 +381,8 @@ public class HTTP2JettyClientTest {
     validateEmbeddedResources(resultNotCached, expected);
   }
 
-  @Ignore
   @Test
   public void shouldGetTwoFilesAndTwoParams() throws Exception {
-    // envia y recibe 2 archivo y 2 params
     HTTPSampleResult expected = createExpectedResultsAndServerResponse();
     sampler.setDoMultipart(true);
     configureSampler(HTTPConstants.POST);
@@ -415,6 +413,12 @@ public class HTTP2JettyClientTest {
     args.addArgument(arg1);
     args.addArgument(arg2);
     sampler.setArguments(args);
+    String headerParam1 = "Content-Disposition: form-data; name=\"Param1\"\r\n"
+        + "Content-Type: null\r\n"
+        + "Valor1\r\n";
+    String headerParam2 = "Content-Disposition: form-data; name=\"Param2\"\r\n"
+        + "Content-Type: null\r\n"
+        + "Valor2\r\n";
 
     HTTPSampleResult result = client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS,
         HOST_NAME, SERVER_PORT, SERVER_PATH_200_FILE_SENT), HTTPConstants.POST, false, 0);
@@ -424,8 +428,8 @@ public class HTTP2JettyClientTest {
     expected.setRequestHeaders(expected.getRequestHeaders().concat("Content-Type: "
         + "multipart/form-data; boundary="
         + boundary.substring(2)));
-    expected.setResponseData(getByteArrayOnlyFiles(data1, data2, headerFile1,
-        headerFile2, boundary));
+    expected.setResponseData(getByteArrayFromFilesAndParams(data1, data2, headerFile1,
+        headerFile2, headerParam1, headerParam2, boundary));
 
     validateMultipartResponse(result, expected);
   }
@@ -474,6 +478,7 @@ public class HTTP2JettyClientTest {
   public void shouldGetOnlyTwoFiles() throws Exception {
     HTTPSampleResult expected = createExpectedResultsAndServerResponse();
     sampler.setDoMultipart(true);
+    configureSampler(HTTPConstants.POST);
 
     // Create two Files
     String filePath1 = getClass().getResource("blazemeter-labs-logo.png").getPath();
@@ -490,7 +495,6 @@ public class HTTP2JettyClientTest {
         + "filename=\"blazemeter-labs-logo.png\"\r\n"
         + "Content-Type: image/png\r\n";
 
-    configureSampler(HTTPConstants.POST);
     HTTPFileArg fileArg1 = new HTTPFileArg(filePath1, "blazemeter-labs-logo1", "image/png");
     HTTPFileArg fileArg2 = new HTTPFileArg(filePath2, "blazemeter-labs-logo2", "image/png");
     sampler.setHTTPFiles(new HTTPFileArg[]{fileArg1, fileArg2});
@@ -700,6 +704,39 @@ public class HTTP2JettyClientTest {
     output.write(enterLine);
     output.write(headerFile.getBytes());
     output.write(data);
+    output.write(enterLine);
+    output.write(boundary.getBytes());
+    output.write(finalResponse);
+
+    return output.toByteArray();
+
+  }
+
+  private byte[] getByteArrayFromFilesAndParams(byte[] data1, byte[] data2, String headerFile1,
+      String headerFile2, String headerParam1, String headerParam2, String boundary)
+      throws IOException {
+    byte[] finalResponse = "--".getBytes();
+    byte[] enterLine = "\r\n".getBytes();
+    ByteArrayOutputStream output = new ByteArrayOutputStream();
+    output.write(boundary.getBytes());
+    output.write(enterLine);
+    output.write(headerParam1.getBytes());
+    output.write(enterLine);
+
+    output.write(boundary.getBytes());
+    output.write(enterLine);
+    output.write(headerParam2.getBytes());
+    output.write(enterLine);
+
+    output.write(boundary.getBytes());
+    output.write(enterLine);
+    output.write(headerFile1.getBytes());
+    output.write(data1);
+    output.write(enterLine);
+    output.write(boundary.getBytes());
+    output.write(enterLine);
+    output.write(headerFile2.getBytes());
+    output.write(data2);
     output.write(enterLine);
     output.write(boundary.getBytes());
     output.write(finalResponse);
