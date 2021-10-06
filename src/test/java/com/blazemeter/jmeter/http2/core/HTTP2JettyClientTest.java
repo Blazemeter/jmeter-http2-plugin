@@ -449,7 +449,6 @@ public class HTTP2JettyClientTest {
 
     // Create one Parameter (arg)
     HTTPArgument arg1 = new HTTPArgument("Param1", "Valor1");
-    arg1.setContentType("text/xml");
     Arguments args = new Arguments();
     args.addArgument(arg1);
     sampler.setArguments(args);
@@ -510,19 +509,10 @@ public class HTTP2JettyClientTest {
     validateMultipartResponse(result, expected);
   }
 
-  @Ignore
   @Test
   public void shouldGetOnlyTwoParams() throws Exception {
     HTTPSampleResult expected = createExpectedResultsAndServerResponse();
     sampler.setDoMultipart(true);
-
-    // TODO dfilgueiras: set response
-    /*expected.setResponseData();
-    expected.setRequestHeaders("Accept-Encoding: gzip\r\n"
-        + "User-Agent: Jetty/11.0.6\r\n"
-        + "Content-Type: image/png\r\n"
-        + "Content-Length: 9018\r\n"
-        + "\r\n");*/
     configureSampler(HTTPConstants.POST);
 
     // Create two Parameters (args)
@@ -532,10 +522,23 @@ public class HTTP2JettyClientTest {
     args.addArgument(arg1);
     args.addArgument(arg2);
     sampler.setArguments(args);
+    String headerParam1 = "Content-Disposition: form-data; name=\"Param1\"\r\n"
+        + "Content-Type: null\r\n"
+        + "Valor1\r\n";
+    String headerParam2 = "Content-Disposition: form-data; name=\"Param2\"\r\n"
+        + "Content-Type: null\r\n"
+        + "Valor2\r\n";
 
-    startServer(createGetServerResponse());
     HTTPSampleResult result = client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS,
         HOST_NAME, SERVER_PORT, SERVER_PATH_200_FILE_SENT), HTTPConstants.POST, false, 0);
+
+    // Get JettyHttpClientBoundary from result
+    String boundary = result.getResponseDataAsString().split("\\r?\\n")[0];
+    expected.setRequestHeaders(expected.getRequestHeaders().concat("Content-Type: "
+        + "multipart/form-data; boundary="
+        + boundary.substring(2)));
+    expected.setResponseData(getByteArrayOnlyParams(headerParam1, headerParam2, boundary));
+
     validateMultipartResponse(result, expected);
   }
 
@@ -559,7 +562,6 @@ public class HTTP2JettyClientTest {
 
     // Create one Parameter (arg)
     HTTPArgument arg1 = new HTTPArgument("Param1", "Valor1");
-    arg1.setContentType("text");
     Arguments args = new Arguments();
     args.addArgument(arg1);
     sampler.setArguments(args);
@@ -649,13 +651,19 @@ public class HTTP2JettyClientTest {
     softly.assertThat(result.getResponseData().length).isEqualTo(0);
   }
 
-  private byte[] getByteArrayOnlyParams(byte[] fileData,
-      String headerFile, String boundary) throws IOException {
+  private byte[] getByteArrayOnlyParams(String headerParam1, String headerParam2,
+      String boundary) throws IOException {
     byte[] finalResponse = "--".getBytes();
+    byte[] enterLine = "\r\n".getBytes();
     ByteArrayOutputStream output = new ByteArrayOutputStream();
     output.write(boundary.getBytes());
-    output.write(headerFile.getBytes());
-    output.write(fileData);
+    output.write(enterLine);
+    output.write(headerParam1.getBytes());
+    output.write(enterLine);
+    output.write(boundary.getBytes());
+    output.write(enterLine);
+    output.write(headerParam2.getBytes());
+    output.write(enterLine);
     output.write(boundary.getBytes());
     output.write(finalResponse);
 
