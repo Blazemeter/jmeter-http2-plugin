@@ -634,7 +634,6 @@ public class HTTP2JettyClientTest {
 
   private byte[] getByteArrayFromResponse(byte[] fileData1, byte[] fileData2,
       String headerFile1, String headerFile2, String boundary) throws IOException {
-    byte[] enterLine = "\r\n".getBytes();
     byte[] finalResponse = "--".getBytes();
     ByteArrayOutputStream output = new ByteArrayOutputStream();
     output.write(boundary.getBytes());
