@@ -457,14 +457,11 @@ public class HTTP2JettyClientTest {
         "https://localhost:" + SERVER_PORT + SERVER_PATH_200);
   }
 
-  public static class HeadersBuilder {
+  private static class HeadersBuilder {
     private String encoding = "";
     private String agent = "";
     private String type = "";
     private String length = "";
-
-    public HeadersBuilder() {
-    }
 
     public HeadersBuilder withAcceptEncoding(String acceptEncoding) {
       this.encoding = acceptEncoding;
