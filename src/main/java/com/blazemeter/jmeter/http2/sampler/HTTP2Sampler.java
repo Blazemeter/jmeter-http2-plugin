@@ -102,6 +102,7 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
     JMeterVariables jMeterVariables = JMeterContextService.getContext().getVariables();
     if (!jMeterVariables.isSameUserOnNextIteration()) {
       closeConnections();
+    } else {
       clearClientAuthenticationResultsIfClearEachIterationChecked();
     }
   }

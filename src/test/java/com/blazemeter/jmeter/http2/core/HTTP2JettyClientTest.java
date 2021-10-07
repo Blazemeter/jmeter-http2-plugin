@@ -295,7 +295,7 @@ public class HTTP2JettyClientTest {
   }
 
   @Test
-  public void shouldReturnSuccessDigestAuthSampleResultWhenPreemptiveIsFalse() throws Exception {
+  public void shouldReturnSuccessDigestAuthSampleResultWhenAuthDigestIsSet() throws Exception {
     HTTPSampleResult expected = new HTTPSampleResult();
     expected.setResponseData(SERVER_RESPONSE, StandardCharsets.UTF_8.name());
     expected.setResponseCode(String.valueOf(HttpStatus.OK_200));
@@ -328,7 +328,7 @@ public class HTTP2JettyClientTest {
 
   @Test
   public void shouldReturnSuccessBasicAuthSampleResultWhenHeaderIsSet() throws Exception {
-    JMeterUtils.setProperty("httpclient4.auth.preemptive", "true");
+    JMeterUtils.setProperty("httpJettyClient.auth.preemptive", "true");
     HTTPSampleResult expected = new HTTPSampleResult();
     expected.setResponseData(SERVER_RESPONSE, StandardCharsets.UTF_8.name());
     expected.setResponseCode(String.valueOf(HttpStatus.OK_200));

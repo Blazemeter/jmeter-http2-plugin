@@ -192,7 +192,7 @@ public class HTTP2JettyClient {
     if (authManager != null) {
 
       if (JMeterUtils.getPropDefault(
-          "httpclient4.auth.preemptive", false)) {
+          "httpJettyClient.auth.preemptive", false)) {
         StreamSupport.stream(authManagerToSpliterator(authManager), false)
             .map(this::getAuthorizationObjectFromProperty)
             .filter(auth -> isMechanismBasic(auth) && isURL(auth))
@@ -206,13 +206,13 @@ public class HTTP2JettyClient {
             .forEach(auth -> httpClient.getAuthenticationStore().addAuthentication(
                 new BasicAuthentication(URI.create(auth.getURL()), auth.getRealm(), auth.getUser(),
                     auth.getPass())));
-        StreamSupport.stream(authManagerToSpliterator(authManager), false)
-            .map(this::getAuthorizationObjectFromProperty)
-            .filter(auth -> isMechanismDigest(auth) && isURL(auth))
-            .forEach(auth -> httpClient.getAuthenticationStore()
-                .addAuthentication(new DigestAuthentication(URI.create(auth.getURL()),
-                    auth.getRealm(), auth.getUser(), auth.getPass())));
       }
+      StreamSupport.stream(authManagerToSpliterator(authManager), false)
+          .map(this::getAuthorizationObjectFromProperty)
+          .filter(auth -> isMechanismDigest(auth) && isURL(auth))
+          .forEach(auth -> httpClient.getAuthenticationStore()
+              .addAuthentication(new DigestAuthentication(URI.create(auth.getURL()),
+                  auth.getRealm(), auth.getUser(), auth.getPass())));
     }
 
   }
