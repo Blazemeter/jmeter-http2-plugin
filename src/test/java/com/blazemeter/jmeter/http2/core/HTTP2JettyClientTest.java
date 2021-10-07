@@ -57,8 +57,6 @@ public class HTTP2JettyClientTest {
 
   private static final String HOST_NAME = "localhost";
   private static final String SERVER_RESPONSE = "Hello World!";
-  private static final String REQUEST_HEADERS = "Accept-Encoding: gzip\r\nUser-Agent: Jetty/11.0"
-      + ".6\r\n\r\n";
   private static final String SERVER_PATH = "/test";
   private static final String SERVER_PATH_SET_COOKIES = "/test/set-cookies";
   private static final String SERVER_PATH_USE_COOKIES = "/test/use-cookies";
@@ -71,8 +69,9 @@ public class HTTP2JettyClientTest {
   private static final String SERVER_PATH_400 = "/test/400";
   private static final String SERVER_PATH_302 = "/test/302";
   private static final String SERVER_PATH_200_WITH_BODY = "/test/body";
-  private static final String RESPONSE_DATA_BODY_1 = "valueTest1";
-  private static final String RESPONSE_DATA_BODY_2 = "valueTest2";
+  private static final String TEST_ARGUMENT_1 = "valueTest1";
+  private static final String TEST_ARGUMENT_2 = "valueTest2";
+  private static final String STANDARD_CHARSETS = StandardCharsets.UTF_8.name();
   private static final int SERVER_PORT = 6666;
   private static final String BASIC_HTML_TEMPLATE = "<!DOCTYPE html><html><head><title>Page "
       + "Title</title></head><body><div><img src=%s></div></body></html>";
@@ -213,45 +212,45 @@ public class HTTP2JettyClientTest {
   }
 
   @Test
-  public void shouldSendBodyInformationWhenARequestWithBodyIsDoneWithBodyRaw () throws Exception {
-    HTTPSampleResult expected = new HTTPSampleResult();
-    expected.setSuccessful(true);
-    expected.setResponseCode(String.valueOf(HttpStatus.OK_200));
-    expected.setRequestHeaders(REQUEST_HEADERS.substring(0,45)
-        .concat(".6\r\nContent-Type: application/octet-stream\r\nContent-Length: 20\r\n\r\n"));
-    expected.setResponseData(RESPONSE_DATA_BODY_1 + RESPONSE_DATA_BODY_2,
-        StandardCharsets.UTF_8.name());
+  public void shouldSendBodyInformationWhenRequestWithBodyRaw () throws Exception {
+    String headers =  getCommonHeaders()
+        .withContentLength(20)
+        .withContentType("application/octet-stream")
+        .build();
+    HTTPSampleResult expected = createExpectedResult(true, HttpStatus.OK_200, headers);
+    expected.setResponseData(TEST_ARGUMENT_1 + TEST_ARGUMENT_2, STANDARD_CHARSETS);
     startServer(createGetServerResponse());
     sampler.setMethod(HTTPConstants.POST);
-    sampler.addArgument("", "valueTest1");
-    sampler.addArgument("", "valueTest2");
-    HTTPSampleResult result = client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS,
-        HOST_NAME, SERVER_PORT, SERVER_PATH_200_WITH_BODY), HTTPConstants.POST, false, 0);
+    sampler.addArgument("", TEST_ARGUMENT_1);
+    sampler.addArgument("", TEST_ARGUMENT_2);
+    HTTPSampleResult result = client.sample(sampler, createURL(SERVER_PATH_200_WITH_BODY),
+        HTTPConstants.POST, false, 0);
     validateResponse(result, expected);
   }
 
   @Test
-  public void shouldSendBodyInformationWhenARequestWithBodyIsDoneWithArguments () throws Exception {
-    HTTPSampleResult expected = new HTTPSampleResult();
-    expected.setSuccessful(true);
-    expected.setResponseCode(String.valueOf(HttpStatus.OK_200));
-    expected.setRequestHeaders(REQUEST_HEADERS.substring(0,45)
-        .concat(".6\r\nContent-Type: application/x-www-form-urlencoded\r\nContent-Length: 31\r\n\r\n"));
-    expected.setResponseData("test=" + RESPONSE_DATA_BODY_1 + "&"
-        + "test=" + RESPONSE_DATA_BODY_2, StandardCharsets.UTF_8.name());
+  public void shouldSendBodyInformationWhenRequestWithArguments () throws Exception {
+    String headers =  getCommonHeaders()
+        .withContentLength(33)
+        .withContentType("application/x-www-form-urlencoded")
+        .build();
+    HTTPSampleResult expected = createExpectedResult(true, HttpStatus.OK_200, headers);
+    expected.setResponseData("test1=" + TEST_ARGUMENT_1 + "&" + "test2="
+        + TEST_ARGUMENT_2, STANDARD_CHARSETS);
     startServer(createGetServerResponse());
     sampler.setMethod(HTTPConstants.POST);
-    sampler.addArgument("test", "valueTest1");
-    sampler.addArgument("test", "valueTest2");
-    HTTPSampleResult result = client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS,
-        HOST_NAME, SERVER_PORT, SERVER_PATH_200_WITH_BODY), HTTPConstants.POST, false, 0);
+    sampler.addArgument("test1", TEST_ARGUMENT_1);
+    sampler.addArgument("test2", TEST_ARGUMENT_2);
+    HTTPSampleResult result = client.sample(sampler, createURL(SERVER_PATH_200_WITH_BODY),
+    HTTPConstants.POST, false, 0);
     validateResponse(result, expected);
   }
 
   @Test
   public void shouldReturnFailureSampleResultWhenResponse400() throws Exception {
+    String headers =  getCommonHeaders().build();
     HTTPSampleResult expected = createExpectedResult(false, HttpStatus.BAD_REQUEST_400,
-        REQUEST_HEADERS);
+        headers);
     startServer(createGetServerResponse());
     configureSampler(HTTPConstants.GET);
     HTTPSampleResult result = client
@@ -278,9 +277,9 @@ public class HTTP2JettyClientTest {
 
   @Test
   public void shouldGetEmbeddedResourcesWithSubSampleWhenImageParserIsEnabled() throws Exception {
-    HTTPSampleResult expected = createExpectedResult(true, HttpStatus.OK_200, REQUEST_HEADERS);
-    expected.setResponseData(HTTP2JettyClientTest.getBasicHtmlTemplate(),
-        StandardCharsets.UTF_8.name());
+    String headers =  getCommonHeaders().build();
+    HTTPSampleResult expected = createExpectedResult(true, HttpStatus.OK_200, headers);
+    expected.setResponseData(HTTP2JettyClientTest.getBasicHtmlTemplate(), STANDARD_CHARSETS);
     startServer(createGetServerResponse());
     sampler.setImageParser(true);
     HTTPSampleResult result = client
@@ -291,10 +290,10 @@ public class HTTP2JettyClientTest {
   @Test
   public void shouldUseCookiesFromFirstRequestOnSecondRequestWhenSecondRequestIsSent()
       throws Exception {
-    HTTPSampleResult expected = createExpectedResult(true, HttpStatus.OK_200, REQUEST_HEADERS);
+    String headers = getCommonHeaders().build();
+    HTTPSampleResult expected = createExpectedResult(true, HttpStatus.OK_200, headers);
     expected.setCookies(RESPONSE_DATA_COOKIES);
-    expected.setResponseData(RESPONSE_DATA_COOKIES,
-        StandardCharsets.UTF_8.name());
+    expected.setResponseData(RESPONSE_DATA_COOKIES, STANDARD_CHARSETS);
     startServer(createGetServerResponse());
     CookieManager cookieManager = new CookieManager();
     cookieManager.testStarted(HOST_NAME);
@@ -308,10 +307,10 @@ public class HTTP2JettyClientTest {
 
   @Test
   public void shouldReturnSuccessSampleResultWhenSuccessRequestWithHeaders() throws Exception {
+    String headers = getCommonHeaders().build();
     HTTPSampleResult expected = createExpectedResult(true, HttpStatus.OK_200,
-        "Accept-Encoding: gzip\r\nUser-Agent: Jetty/11.0.6\r\nHeader1: "
-            + "value1\r\nHeader2: value2\r\n\r\n");
-    expected.setResponseData(SERVER_RESPONSE, StandardCharsets.UTF_8.name());
+        headers + "Header1: " + "value1\r\nHeader2: value2\r\n\r\n");
+    expected.setResponseData(SERVER_RESPONSE, STANDARD_CHARSETS);
     startServer(createGetServerResponse());
     configureHeaderManagerToSampler();
     HTTPSampleResult result = client
@@ -322,8 +321,10 @@ public class HTTP2JettyClientTest {
   @Test
   public void shouldGetRedirectedResultWithSubSampleWhenFollowRedirectEnabledAndRedirected()
       throws Exception {
-    HTTPSampleResult expected = createExpectedResult(true, HttpStatus.OK_200, REQUEST_HEADERS);
-    expected.setResponseData(SERVER_RESPONSE, StandardCharsets.UTF_8.name());
+    String headers = getCommonHeaders().build();
+
+    HTTPSampleResult expected = createExpectedResult(true, HttpStatus.OK_200, headers);
+    expected.setResponseData(SERVER_RESPONSE, STANDARD_CHARSETS);
     expected.setRedirectLocation("https://localhost:6666/test/200");
     startServer(createGetServerResponse());
     configureSampler(HTTPConstants.GET);
@@ -346,12 +347,12 @@ public class HTTP2JettyClientTest {
 
   @Test
   public void shouldGetFileDataWithFileIsSentAsBodyPart() throws Exception {
+    String headers = getCommonHeaders()
+        .withContentType("image/png")
+        .withContentLength(9018)
+        .build();
     HTTPSampleResult expected = createExpectedResult(true, HttpStatus.OK_200,
-        "Accept-Encoding: gzip\r\n"
-            + "User-Agent: Jetty/11.0.6\r\n"
-            + "Content-Type: image/png\r\n"
-            + "Content-Length: 9018\r\n"
-            + "\r\n");
+        headers + "\r\n");
     String filePath = getClass().getResource("blazemeter-labs-logo.png").getPath();
     InputStream inputStream = Files.newInputStream(Paths.get(filePath));
     expected.setResponseData(sampler.readResponse(expected, inputStream, 0));
@@ -398,7 +399,8 @@ public class HTTP2JettyClientTest {
     softly.assertThat(result.getResponseCode()).isEqualTo(expected.getResponseCode());
     softly.assertThat(result.getResponseDataAsString())
         .isEqualTo(expected.getResponseDataAsString());
-    softly.assertThat(result.getRequestHeaders()).isEqualTo(expected.getRequestHeaders());
+    softly.assertThat(result.getRequestHeaders().replace("\r\n", ""))
+        .isEqualTo(expected.getRequestHeaders().replace("\r\n", ""));
   }
 
   private void validateRedirects(HTTPSampleResult result, HTTPSampleResult expected) {
@@ -421,5 +423,71 @@ public class HTTP2JettyClientTest {
   private static String getBasicHtmlTemplate() {
     return String.format(BASIC_HTML_TEMPLATE,
         "https://localhost:" + SERVER_PORT + SERVER_PATH_200);
+  }
+
+  public static class HeadersBuilder {
+    private String encoding = "";
+    private String agent = "";
+    private String type = "";
+    private String length = "";
+
+    public HeadersBuilder() {
+    }
+
+    public HeadersBuilder withAcceptEncoding(String acceptEncoding) {
+      this.encoding = acceptEncoding;
+      return this;
+    }
+
+    public HeadersBuilder withUserAgent(String userAgent) {
+      this.agent = userAgent;
+      return this;
+    }
+
+    public HeadersBuilder withContentType(String type) {
+      this.type = type;
+      return this;
+    }
+
+    public HeadersBuilder withContentLength(int length) {
+      this.length = String.valueOf(length);
+      return this;
+    }
+
+    public String build() {
+      StringBuilder headers = new StringBuilder();
+
+      if (!this.encoding.isEmpty()) {
+        headers = headers.append("Accept-Encoding: ")
+            .append(this.encoding)
+            .append("\r\n");
+      }
+
+      if (!this.agent.isEmpty()) {
+        headers = headers.append("User-Agent: ")
+            .append(this.agent)
+            .append("\r\n");
+      }
+
+      if (!this.type.isEmpty()) {
+        headers = headers.append("Content-Type: ")
+            .append(this.type)
+            .append("\r\n");
+      }
+
+      if (!this.length.isEmpty()) {
+        headers = headers.append("Content-Length: ")
+            .append(this.length)
+            .append("\r\n");
+      }
+
+      return headers.toString();
+    }
+  }
+
+  private HeadersBuilder getCommonHeaders() {
+    return new HeadersBuilder()
+        .withAcceptEncoding("gzip")
+        .withUserAgent("Jetty/11.0.6");
   }
 }
