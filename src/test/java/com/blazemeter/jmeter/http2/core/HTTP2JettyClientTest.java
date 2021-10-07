@@ -69,6 +69,7 @@ public class HTTP2JettyClientTest {
   private static final String SERVER_PATH_400 = "/test/400";
   private static final String SERVER_PATH_302 = "/test/302";
   private static final String SERVER_PATH_200_WITH_BODY = "/test/body";
+  private static final String SERVER_PATH_DELETE_DATA = "/test/delete";
   private static final String TEST_ARGUMENT_1 = "valueTest1";
   private static final String TEST_ARGUMENT_2 = "valueTest2";
   private static final String STANDARD_CHARSETS = StandardCharsets.UTF_8.name();
@@ -186,6 +187,9 @@ public class HTTP2JettyClientTest {
             gzipOutputStream.write(HTTP2JettyClientTest.BINARY_RESPONSE_BODY);
             gzipOutputStream.close();
             break;
+          case SERVER_PATH_DELETE_DATA:
+            resp.setStatus(HttpStatus.OK_200);
+            return;
         }
       }
     };
@@ -243,6 +247,34 @@ public class HTTP2JettyClientTest {
     sampler.addArgument("test2", TEST_ARGUMENT_2);
     HTTPSampleResult result = client.sample(sampler, createURL(SERVER_PATH_200_WITH_BODY),
     HTTPConstants.POST, false, 0);
+    validateResponse(result, expected);
+  }
+
+  @Test
+  public void shouldSendArgumentsInUrlWhenDeleteMethodWithArguments() throws Exception {
+    sampler.setMethod(HTTPConstants.DELETE);
+    String argumentName1 = "test_1";
+    String argumentName2 = "test_2";
+    sampler.addArgument(argumentName1, TEST_ARGUMENT_1);
+    sampler.addArgument(argumentName2, TEST_ARGUMENT_2);
+    assertThat(sampler.getUrl().toString()).isEqualTo("https://server:" + SERVER_PORT +
+        "/?" + argumentName1 + "=" + TEST_ARGUMENT_1 + "&" + argumentName2 + "=" + TEST_ARGUMENT_2);
+  }
+
+  @Test
+  public void shouldSendBodyWhenDeleteMethodWithRawData() throws Exception {
+    String headers =  getCommonHeaders()
+        .withContentType("application/octet-stream")
+        .withContentLength(20)
+        .build();
+    HTTPSampleResult expected = createExpectedResult(true, HttpStatus.OK_200, headers);
+    expected.setResponseData(TEST_ARGUMENT_1 + TEST_ARGUMENT_2, STANDARD_CHARSETS);
+    startServer(createGetServerResponse());
+    sampler.setMethod(HTTPConstants.DELETE);
+    sampler.addArgument("", TEST_ARGUMENT_1);
+    sampler.addArgument("", TEST_ARGUMENT_2);
+    HTTPSampleResult result = client.sample(sampler,createURL(SERVER_PATH_200_WITH_BODY),
+        HTTPConstants.DELETE, false, 0);
     validateResponse(result, expected);
   }
 
