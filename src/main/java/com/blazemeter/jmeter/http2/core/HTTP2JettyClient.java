@@ -4,6 +4,7 @@ import com.blazemeter.jmeter.http2.sampler.HTTP2Sampler;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
 import java.net.URLDecoder;
@@ -13,12 +14,16 @@ import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.Spliterator;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
+import org.apache.jmeter.protocol.http.control.AuthManager;
+import org.apache.jmeter.protocol.http.control.AuthManager.Mechanism;
+import org.apache.jmeter.protocol.http.control.Authorization;
 import org.apache.jmeter.protocol.http.control.CookieManager;
 import org.apache.jmeter.protocol.http.control.Header;
 import org.apache.jmeter.protocol.http.control.HeaderManager;
@@ -34,11 +39,15 @@ import org.eclipse.jetty.client.HttpClientTransport;
 import org.eclipse.jetty.client.HttpProxy;
 import org.eclipse.jetty.client.HttpRequest;
 import org.eclipse.jetty.client.Origin.Address;
+import org.eclipse.jetty.client.api.AuthenticationStore;
 import org.eclipse.jetty.client.api.ContentResponse;
 import org.eclipse.jetty.client.api.Request;
 import org.eclipse.jetty.client.api.Request.Content;
 import org.eclipse.jetty.client.dynamic.HttpClientTransportDynamic;
 import org.eclipse.jetty.client.http.HttpClientConnectionFactory;
+import org.eclipse.jetty.client.util.AbstractAuthentication;
+import org.eclipse.jetty.client.util.BasicAuthentication;
+import org.eclipse.jetty.client.util.DigestAuthentication;
 import org.eclipse.jetty.client.util.FormRequestContent;
 import org.eclipse.jetty.client.util.PathRequestContent;
 import org.eclipse.jetty.client.util.StringRequestContent;
@@ -89,8 +98,11 @@ public class HTTP2JettyClient {
     if (!sampler.getProxyHost().isEmpty()) {
       setProxy(sampler.getProxyHost(), sampler.getProxyPortInt(), sampler.getProxyScheme());
     }
+
+    setAuthManager(sampler);
     result.sampleStart();
     HttpRequest request = createRequest(url, result);
+
     setTimeouts(sampler, request);
     request.followRedirects(false);
     request.method(method);
@@ -174,6 +186,52 @@ public class HTTP2JettyClient {
     } else {
       throw new IllegalArgumentException("HttpRequest is expected");
     }
+  }
+
+  private void setAuthManager(HTTP2Sampler sampler) {
+
+    AuthManager authManager = sampler.getAuthManager();
+    if (authManager != null) {
+      StreamSupport.stream(authManagerToSpliterator(authManager), false)
+          .map(this::getAuthorizationObjectFromProperty)
+          .filter(auth -> isSupportedMechanism(auth) && isNotEmptyURL(auth))
+          .forEach(this::addAuthenticationToJettyClient);
+    }
+  }
+
+  private void addAuthenticationToJettyClient(Authorization auth) {
+    AuthenticationStore authenticationStore = httpClient.getAuthenticationStore();
+    String authName = auth.getMechanism().name();
+    if (authName.equals(Mechanism.BASIC.name()) && JMeterUtils.getPropDefault(
+        "httpJettyClient.auth.preemptive", false)) {
+      authenticationStore.addAuthenticationResult(
+          new BasicAuthentication.BasicResult(URI.create(auth.getURL()), auth.getUser(),
+              auth.getPass()));
+    } else {
+      AbstractAuthentication authentication =
+          authName.equals(Mechanism.BASIC.name()) ? new BasicAuthentication(
+              URI.create(auth.getURL()), auth.getRealm(), auth.getUser(), auth.getPass())
+              : new DigestAuthentication(URI.create(auth.getURL()), auth.getRealm(), auth.getUser(),
+                  auth.getPass());
+      authenticationStore.addAuthentication(authentication);
+    }
+  }
+
+  private boolean isSupportedMechanism(Authorization auth) {
+    String authName = auth.getMechanism().name();
+    return authName.equals(Mechanism.BASIC.name()) || authName.equals(Mechanism.DIGEST.name());
+  }
+
+  private Spliterator<JMeterProperty> authManagerToSpliterator(AuthManager authManager) {
+    return authManager.getAuthObjects().spliterator();
+  }
+
+  private Authorization getAuthorizationObjectFromProperty(JMeterProperty jMeterProperty) {
+    return (Authorization) jMeterProperty.getObjectValue();
+  }
+
+  private boolean isNotEmptyURL(Authorization authorization) {
+    return authorization.getURL() != null && !authorization.getURL().isEmpty();
   }
 
   public void start() throws Exception {
