@@ -6,7 +6,6 @@ import org.apache.jmeter.util.JMeterUtils;
 public class JMeterTestUtils {
 
   private static boolean jeerEnvironmentInitialized = false;
-  private static String filePrefix;
 
   public JMeterTestUtils() {
   }
