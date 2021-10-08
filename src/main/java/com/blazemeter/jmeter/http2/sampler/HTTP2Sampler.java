@@ -10,7 +10,6 @@ import java.util.Objects;
 import java.util.concurrent.Callable;
 import org.apache.jmeter.engine.event.LoopIterationEvent;
 import org.apache.jmeter.engine.event.LoopIterationListener;
-import org.apache.jmeter.protocol.http.control.AuthManager;
 import org.apache.jmeter.protocol.http.sampler.HTTPSampleResult;
 import org.apache.jmeter.protocol.http.sampler.HTTPSamplerBase;
 import org.apache.jmeter.protocol.http.util.HTTPConstants;
@@ -102,8 +101,6 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
     JMeterVariables jMeterVariables = JMeterContextService.getContext().getVariables();
     if (!jMeterVariables.isSameUserOnNextIteration()) {
       closeConnections();
-    } else {
-      clearClientAuthenticationResultsIfClearEachIterationChecked();
     }
   }
 
@@ -117,16 +114,6 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
       }
     }
     clients.clear();
-  }
-
-  private void clearClientAuthenticationResultsIfClearEachIterationChecked() {
-    AuthManager authManager = getAuthManager();
-    if (authManager.getClearEachIteration()) {
-      Map<HTTP2ClientKey, HTTP2JettyClient> clients = CONNECTIONS.get();
-      for (HTTP2JettyClient client : clients.values()) {
-        client.clearClientAuthenticationResults();
-      }
-    }
   }
 
   @Override

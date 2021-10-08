@@ -237,10 +237,6 @@ public class HTTP2JettyClient {
     return authorization.getMechanism().name().equals(Mechanism.DIGEST.name());
   }
 
-  public void clearClientAuthenticationResults() {
-    httpClient.getAuthenticationStore().clearAuthenticationResults();
-  }
-
   public void start() throws Exception {
     if (!httpClient.isStarted()) {
       httpClient.start();
