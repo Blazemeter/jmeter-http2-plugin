@@ -13,6 +13,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.HashSet;
+import java.util.Locale;
 import java.util.Set;
 import java.util.Spliterator;
 import java.util.concurrent.ExecutionException;
@@ -21,6 +22,7 @@ import java.util.concurrent.TimeoutException;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
+import org.apache.http.impl.EnglishReasonPhraseCatalog;
 import org.apache.jmeter.protocol.http.control.AuthManager;
 import org.apache.jmeter.protocol.http.control.AuthManager.Mechanism;
 import org.apache.jmeter.protocol.http.control.Authorization;
@@ -248,8 +250,11 @@ public class HTTP2JettyClient {
       HTTP2Sampler sampler) throws IOException {
     result.setSuccessful(contentResponse.getStatus() >= 200 && contentResponse.getStatus() <= 399);
     result.setResponseCode(String.valueOf(contentResponse.getStatus()));
-    result
-        .setResponseMessage(contentResponse.getReason() != null ? contentResponse.getReason() : "");
+    // Get response message if it's not an exception result from content
+    String responseMessage = contentResponse.getReason() != null ? contentResponse.getReason()
+        : EnglishReasonPhraseCatalog.INSTANCE
+            .getReason(contentResponse.getStatus(), Locale.ENGLISH);
+    result.setResponseMessage(responseMessage);
     result.setResponseHeaders(contentResponse.getHeaders().asString());
 
     InputStream inputStream = new ByteArrayInputStream(contentResponse.getContent());
