@@ -5,6 +5,7 @@ import com.blazemeter.jmeter.http2.utils.CacheManagerHelper;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.UnsupportedEncodingException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
@@ -23,9 +24,7 @@ import java.util.regex.Pattern;
 import java.util.stream.StreamSupport;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.http.HttpResponse;
-import org.apache.http.ProtocolVersion;
 import org.apache.http.client.methods.HttpRequestBase;
-import org.apache.http.message.BasicHttpResponse;
 import org.apache.jmeter.protocol.http.control.CacheManager;
 import org.apache.jmeter.protocol.http.control.Header;
 import org.apache.jmeter.protocol.http.control.HeaderManager;
@@ -71,6 +70,8 @@ public class HTTP2JettyClient {
   private static final boolean ADD_CONTENT_TYPE_TO_POST_IF_MISSING = JMeterUtils.getPropDefault(
       "http.post_add_content_type_if_missing", false);
   private static final Pattern PORT_PATTERN = Pattern.compile("\\d+");
+  private static final String DASH_DASH = "--";
+  private static final String NEW_LINE = "\n";
   private final HttpClient httpClient;
 
   public HTTP2JettyClient() {
@@ -233,17 +234,8 @@ public class HTTP2JettyClient {
           continue;
         }
 
-        String disposition = multipartEntityBuilder.getContentType().split(" ")[0].split("/")[1];
-
-        postBody.append("--" + boundary + "\n");
-        postBody.append("Content-Disposition: " + disposition + " name=\"" + arg
-            .getEncodedName() + "\"\n");
-        // TODO dfilgueiras: UTF-8 en vez de ASCII
-        postBody.append(
-            "Content-Type: " + arg.getContentType() + "; charset=" + contentCharset.name() + "\n");
-        postBody.append("Content-Transfer-Encoding: " + ((contentEncoding != null)
-            ? contentEncoding : "") + "\n\n");
-        postBody.append(arg.getEncodedValue(contentCharset.name()) + "\n");
+        postBody = writeArgumentsRequestBody(multipartEntityBuilder, arg, contentCharset,
+            contentEncoding, boundary, postBody);
 
         multipartEntityBuilder.addFieldPart(parameterName,
             new StringRequestContent(contentTypeHeader, arg.getEncodedValue(contentCharset.name()),
@@ -274,29 +266,16 @@ public class HTTP2JettyClient {
           fileBodies[i] = new PathRequestContent(Path.of(file.getPath()));
         }
 
-        // TODO dfilgueiras: add files request body
-        postBody.append("<FILE CONTENT>");
-        /*--_PwLnhMet8fsuil8C96yWr6W8wW0zxgr3yQo
-        Content-Disposition: form-data; name="Imagen1"; filename="Captura de pantalla de
-        2021-06-17 12-09-44.png"
-        Content-Type: image/png
-        Content-Transfer-Encoding: binary
-
-            <actual file content, not shown here>
-        --_PwLnhMet8fsuil8C96yWr6W8wW0zxgr3yQo
-        Content-Disposition: form-data; name="Imagen2"; filename="Captura de pantalla de
-        2021-10-08 12-44-33.png"
-        Content-Type: image/png
-        Content-Transfer-Encoding: binary
-
-            <actual file content, not shown here>
-        --_PwLnhMet8fsuil8C96yWr6W8wW0zxgr3yQo--*/
-
         String fileName = Paths.get((file.getPath())).getFileName().toString();
+        postBody = writeFilesRequestBody(multipartEntityBuilder, file, fileName, contentCharset,
+            contentEncoding, boundary, postBody);
+
         multipartEntityBuilder.addFilePart(file.getParamName(), fileName, fileBodies[i],
             null);
       }
-      postBody.append("--" + boundary + "--\n");
+      StringBuilder lastBoundary =
+          new StringBuilder(DASH_DASH).append(boundary).append(DASH_DASH).append(NEW_LINE);
+      postBody.append(lastBoundary);
       multipartEntityBuilder.close();
 
       request.body(multipartEntityBuilder);
@@ -446,28 +425,51 @@ public class HTTP2JettyClient {
     }
   }
 
-  /**
-   * Create an HttpResponse from a ContentResponse of Jetty.
-   */
-  private HttpResponse createHttpResponse(ContentResponse contentResponse) {
-    HttpResponse httpResponse = new BasicHttpResponse(new ProtocolVersion("HTTP/2", 2, 2),
-        contentResponse.getStatus(),
-        contentResponse.getReason());
-    httpResponse
-        .addHeader(HTTPConstants.VARY, contentResponse.getHeaders().get(HTTPConstants.VARY));
-    httpResponse.addHeader(HTTPConstants.LAST_MODIFIED,
-        contentResponse.getHeaders().get(HTTPConstants.LAST_MODIFIED));
-    httpResponse
-        .addHeader(HTTPConstants.EXPIRES,
-            contentResponse.getHeaders().get(HTTPConstants.EXPIRES));
-    httpResponse
-        .addHeader(HTTPConstants.ETAG, contentResponse.getHeaders().get(HTTPConstants.ETAG));
-    httpResponse.addHeader(HTTPConstants.CACHE_CONTROL,
-        contentResponse.getHeaders().get(HTTPConstants.CACHE_CONTROL));
-    httpResponse
-        .addHeader(HTTPConstants.DATE, contentResponse.getHeaders().get(HTTPConstants.DATE));
+  private StringBuilder writeArgumentsRequestBody(
+      MultiPartRequestContent multipartEntityBuilder, HTTPArgument arg, Charset contentCharset,
+      String contentEncoding, String boundary, StringBuilder postBody)
+      throws UnsupportedEncodingException {
+    String disposition = multipartEntityBuilder.getContentType().split(" ")[0].split("/")[1];
 
-    return httpResponse;
+    StringBuilder firstBoundary =
+        new StringBuilder(DASH_DASH).append(boundary).append(NEW_LINE);
+    StringBuilder contentDisposition = new StringBuilder("Content-Disposition: ")
+        .append(disposition).append(" name=\"").append(arg.getEncodedName())
+        .append("\"").append(NEW_LINE);
+    StringBuilder contentType = new StringBuilder("Content-Type: ").append(arg.getContentType())
+        .append("; charset=").append(contentCharset.name())
+        .append(NEW_LINE);
+    StringBuilder contentTEncoding =
+        new StringBuilder("Content-Transfer-Encoding: ")
+            .append(((StringUtils.isNotBlank(contentEncoding))
+                ? contentEncoding : "8bit")).append(NEW_LINE).append(NEW_LINE);
+    StringBuilder value = new StringBuilder(arg.getEncodedValue(contentCharset.name()))
+        .append(NEW_LINE);
+
+    // TODO dfilgueiras: UTF-8 en vez de ASCII
+    return postBody.append(firstBoundary).append(contentDisposition).append(contentType)
+        .append(contentTEncoding).append(value);
+  }
+
+  private StringBuilder writeFilesRequestBody(MultiPartRequestContent multipartEntityBuilder,
+      HTTPFileArg file, String fileName, Charset contentCharset, String contentEncoding,
+      String boundary, StringBuilder postBody) {
+    String disposition = multipartEntityBuilder.getContentType().split(" ")[0].split("/")[1];
+
+    StringBuilder firstBoundary =
+        new StringBuilder(DASH_DASH).append(boundary).append(NEW_LINE);
+    StringBuilder contentDisposition = new StringBuilder("Content-Disposition: ")
+        .append(disposition).append(" name=\"").append(file.getParamName()).append("\"; ").append(
+            "filename=\"").append(fileName).append("\"").append(NEW_LINE);
+    StringBuilder contentType = new StringBuilder("Content-Type: ").append(file.getMimeType())
+        .append(NEW_LINE);
+    StringBuilder contentTEncoding =
+        new StringBuilder("Content-Transfer-Encoding: binary").append(NEW_LINE).append(NEW_LINE);
+    StringBuilder notShowContent =
+        new StringBuilder("<actual file content, not shown here>").append(NEW_LINE);
+
+    return postBody.append(firstBoundary).append(contentDisposition).append(contentType)
+        .append(contentTEncoding).append(notShowContent);
   }
 
 }
