@@ -223,6 +223,7 @@ public class HTTP2JettyClient {
 
       // Create and add Fields and Files Parts
       final MultiPartRequestContent multipartEntityBuilder = new MultiPartRequestContent();
+      String boundary = multipartEntityBuilder.getContentType().split(" ")[1].split("=")[1];
 
       // Add all parameters
       for (final JMeterProperty jMeterProperty : sampler.getArguments()) {
@@ -231,6 +232,18 @@ public class HTTP2JettyClient {
         if (arg.isSkippable(parameterName)) {
           continue;
         }
+
+        String disposition = multipartEntityBuilder.getContentType().split(" ")[0].split("/")[1];
+
+        postBody.append("--" + boundary + "\n");
+        postBody.append("Content-Disposition: " + disposition + " name=\"" + arg
+            .getEncodedName() + "\"\n");
+        // TODO dfilgueiras: UTF-8 en vez de ASCII
+        postBody.append(
+            "Content-Type: " + arg.getContentType() + "; charset=" + contentCharset.name() + "\n");
+        postBody.append("Content-Transfer-Encoding: " + ((contentEncoding != null)
+            ? contentEncoding : "") + "\n\n");
+        postBody.append(arg.getEncodedValue(contentCharset.name()) + "\n");
 
         multipartEntityBuilder.addFieldPart(parameterName,
             new StringRequestContent(contentTypeHeader, arg.getEncodedValue(contentCharset.name()),
@@ -261,16 +274,32 @@ public class HTTP2JettyClient {
           fileBodies[i] = new PathRequestContent(Path.of(file.getPath()));
         }
 
+        // TODO dfilgueiras: add files request body
+        postBody.append("<FILE CONTENT>");
+        /*--_PwLnhMet8fsuil8C96yWr6W8wW0zxgr3yQo
+        Content-Disposition: form-data; name="Imagen1"; filename="Captura de pantalla de
+        2021-06-17 12-09-44.png"
+        Content-Type: image/png
+        Content-Transfer-Encoding: binary
+
+            <actual file content, not shown here>
+        --_PwLnhMet8fsuil8C96yWr6W8wW0zxgr3yQo
+        Content-Disposition: form-data; name="Imagen2"; filename="Captura de pantalla de
+        2021-10-08 12-44-33.png"
+        Content-Type: image/png
+        Content-Transfer-Encoding: binary
+
+            <actual file content, not shown here>
+        --_PwLnhMet8fsuil8C96yWr6W8wW0zxgr3yQo--*/
+
         String fileName = Paths.get((file.getPath())).getFileName().toString();
         multipartEntityBuilder.addFilePart(file.getParamName(), fileName, fileBodies[i],
             null);
       }
+      postBody.append("--" + boundary + "--\n");
       multipartEntityBuilder.close();
 
       request.body(multipartEntityBuilder);
-      // TODO dfilgueiras: What put here? Same as File? And Request Body (see POST data in Http1)?
-      postBody.append("<MULTIPART CONTENT>");
-      //writeEntityToSB(postBody, multipartEntityBuilder, fileBodies, contentEncoding);
 
     } else {
       if (!sampler.hasArguments() && sampler.getSendFileAsPostBody()) {
@@ -331,9 +360,9 @@ public class HTTP2JettyClient {
           postBody.append(FormRequestContent.convert(fields));
           request.body(requestContent);
         }
-        result.setQueryString(postBody.toString());
       }
     }
+    result.setQueryString(postBody.toString());
   }
 
   private boolean isSupportedMethod(String method) {
