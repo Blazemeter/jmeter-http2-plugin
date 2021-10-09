@@ -17,11 +17,15 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import jodd.net.MimeTypes;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.jmeter.config.Argument;
 import org.apache.jmeter.config.Arguments;
 import org.apache.jmeter.protocol.http.control.CacheManager;
 import org.apache.jmeter.protocol.http.control.Header;
@@ -387,25 +391,6 @@ public class HTTP2JettyClientTest {
     sampler.setDoMultipart(true);
     configureSampler(HTTPConstants.POST);
 
-    // Create two Files
-    String filePath1 = getClass().getResource("blazemeter-labs-logo.png").getPath();
-    InputStream inputStream1 = Files.newInputStream(Paths.get(filePath1));
-    byte[] data1 = sampler.readResponse(expected, inputStream1, 0);
-    String filePath2 = getClass().getResource("blazemeter-labs-logo.png").getPath();
-    InputStream inputStream2 = Files.newInputStream(Paths.get(filePath2));
-    byte[] data2 = sampler.readResponse(expected, inputStream2, 0);
-
-    String headerFile1 = "Content-Disposition: form-data; name=\"blazemeter-labs-logo1\"; "
-        + "filename=\"blazemeter-labs-logo.png\"\r\n"
-        + "Content-Type: image/png\r\n";
-    String headerFile2 = "Content-Disposition: form-data; name=\"blazemeter-labs-logo2\"; "
-        + "filename=\"blazemeter-labs-logo.png\"\r\n"
-        + "Content-Type: image/png\r\n";
-
-    HTTPFileArg fileArg1 = new HTTPFileArg(filePath1, "blazemeter-labs-logo1", "image/png");
-    HTTPFileArg fileArg2 = new HTTPFileArg(filePath2, "blazemeter-labs-logo2", "image/png");
-    sampler.setHTTPFiles(new HTTPFileArg[]{fileArg1, fileArg2});
-
     // Create two Parameters (args)
     HTTPArgument arg1 = new HTTPArgument("Param1", "Valor1");
     HTTPArgument arg2 = new HTTPArgument("Param2", "Valor2");
@@ -413,12 +398,14 @@ public class HTTP2JettyClientTest {
     args.addArgument(arg1);
     args.addArgument(arg2);
     sampler.setArguments(args);
-    String headerParam1 = "Content-Disposition: form-data; name=\"Param1\"\r\n"
-        + "Content-Type: null\r\n"
-        + "Valor1\r\n";
-    String headerParam2 = "Content-Disposition: form-data; name=\"Param2\"\r\n"
-        + "Content-Type: null\r\n"
-        + "Valor2\r\n";
+
+    // Create two Files
+    String filePath1 = getClass().getResource("blazemeter-labs-logo.png").getPath();
+    String filePath2 = getClass().getResource("blazemeter-labs-logo.png").getPath();
+
+    HTTPFileArg fileArg1 = new HTTPFileArg(filePath1, "blazemeter-labs-logo1", "image/png");
+    HTTPFileArg fileArg2 = new HTTPFileArg(filePath2, "blazemeter-labs-logo2", "image/png");
+    sampler.setHTTPFiles(new HTTPFileArg[]{fileArg1, fileArg2});
 
     HTTPSampleResult result = client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS,
         HOST_NAME, SERVER_PORT, SERVER_PATH_200_FILE_SENT), HTTPConstants.POST, false, 0);
@@ -428,8 +415,9 @@ public class HTTP2JettyClientTest {
     expected.setRequestHeaders(expected.getRequestHeaders().concat("Content-Type: "
         + "multipart/form-data; boundary="
         + boundary.substring(2)));
-    expected.setResponseData(getByteArrayFromFilesAndParams(data1, data2, headerFile1,
-        headerFile2, headerParam1, headerParam2, boundary));
+    expected.setResponseData(getByteArrayFromFilesAndParams(expected, new ArrayList<>(
+        Arrays.asList(arg1, arg2)), new ArrayList<>(
+        Arrays.asList(fileArg1, fileArg2)), boundary));
 
     validateMultipartResponse(result, expected);
   }
@@ -743,6 +731,51 @@ public class HTTP2JettyClientTest {
 
     return output.toByteArray();
 
+  }
+
+  private byte[] getByteArrayFromFilesAndParams(HTTPSampleResult expected, List<HTTPArgument> args,
+      List<HTTPFileArg> files, String boundary) throws IOException {
+
+    ByteArrayOutputStream output = new ByteArrayOutputStream();
+    String newLine = "\r\n";
+    String dashDash = "--";
+    // Set body resonse for Arguments
+    args.forEach(httpArgument -> {
+      StringBuilder headerParam = new StringBuilder(boundary).append(newLine)
+          .append("Content-Disposition: form-data; name=\"").append(httpArgument.getEncodedName())
+          .append("\"").append(newLine).append("Content-Type: null").append(newLine)
+          .append(newLine).append(httpArgument.getEncodedValue()).append(newLine);
+      try {
+        output.write(headerParam.toString().getBytes());
+      } catch (IOException e) {
+        e.printStackTrace();
+      }
+    });
+
+    // Set body resonse for Files
+    files.forEach(file -> {
+      String fileName = Paths.get((file.getPath())).getFileName().toString();
+      StringBuilder headerFile = new StringBuilder(boundary).append(newLine)
+          .append("Content-Disposition: form-data; name=\"").append(file.getParamName())
+          .append("\"; ").append("filename=\"").append(fileName).append("\"").append(newLine)
+          .append("Content-Type: ").append(file.getMimeType()).append(newLine).append(newLine);
+      try {
+        String filePath = file.getPath();
+        InputStream inputStream = Files.newInputStream(Paths.get(filePath));
+        byte[] data = sampler.readResponse(expected, inputStream, 0);
+        output.write(headerFile.toString().getBytes());
+        output.write(data);
+        output.write(newLine.getBytes());
+      } catch (IOException e) {
+        e.printStackTrace();
+      }
+    });
+
+    String finalResponse = new StringBuilder(dashDash).append(newLine).toString();
+    output.write(boundary.getBytes());
+    output.write(finalResponse.getBytes());
+
+    return output.toByteArray();
   }
 
 
