@@ -621,103 +621,13 @@ public class HTTP2JettyClientTest {
     softly.assertThat(result.getResponseData().length).isEqualTo(0);
   }
 
-  private byte[] getByteArrayOnlyParams(String headerParam1, String headerParam2,
-      String boundary) throws IOException {
-    byte[] finalResponse = "--".getBytes();
-    byte[] enterLine = "\r\n".getBytes();
-    ByteArrayOutputStream output = new ByteArrayOutputStream();
-    output.write(boundary.getBytes());
-    output.write(enterLine);
-    output.write(headerParam1.getBytes());
-    output.write(enterLine);
-    output.write(boundary.getBytes());
-    output.write(enterLine);
-    output.write(headerParam2.getBytes());
-    output.write(enterLine);
-    output.write(boundary.getBytes());
-    output.write(finalResponse);
-
-    return output.toByteArray();
-  }
-
-  private byte[] getByteArrayOnlyFiles(byte[] fileData1, byte[] fileData2,
-      String headerFile1, String headerFile2, String boundary) throws IOException {
-    byte[] finalResponse = "--".getBytes();
-    ByteArrayOutputStream output = new ByteArrayOutputStream();
-    output.write(boundary.getBytes());
-    output.write(headerFile1.getBytes());
-    output.write(fileData1);
-    output.write(boundary.getBytes());
-    output.write(headerFile2.getBytes());
-    output.write(fileData2);
-    output.write(boundary.getBytes());
-    output.write(finalResponse);
-
-    return output.toByteArray();
-  }
-
-  private byte[] getByteArrayFromFilesAndParams(byte[] data, String headerFile,
-      String headerParam, String boundary) throws IOException {
-    byte[] finalResponse = "--".getBytes();
-    byte[] enterLine = "\r\n".getBytes();
-    ByteArrayOutputStream output = new ByteArrayOutputStream();
-    output.write(boundary.getBytes());
-    output.write(enterLine);
-    output.write(headerParam.getBytes());
-    output.write(enterLine);
-
-    output.write(boundary.getBytes());
-    output.write(enterLine);
-    output.write(headerFile.getBytes());
-    output.write(data);
-    output.write(enterLine);
-    output.write(boundary.getBytes());
-    output.write(finalResponse);
-
-    return output.toByteArray();
-
-  }
-
-  private byte[] getByteArrayFromFilesAndParams(byte[] data1, byte[] data2, String headerFile1,
-      String headerFile2, String headerParam1, String headerParam2, String boundary)
-      throws IOException {
-    byte[] finalResponse = "--".getBytes();
-    byte[] enterLine = "\r\n".getBytes();
-    ByteArrayOutputStream output = new ByteArrayOutputStream();
-    output.write(boundary.getBytes());
-    output.write(enterLine);
-    output.write(headerParam1.getBytes());
-    output.write(enterLine);
-
-    output.write(boundary.getBytes());
-    output.write(enterLine);
-    output.write(headerParam2.getBytes());
-    output.write(enterLine);
-
-    output.write(boundary.getBytes());
-    output.write(enterLine);
-    output.write(headerFile1.getBytes());
-    output.write(data1);
-    output.write(enterLine);
-    output.write(boundary.getBytes());
-    output.write(enterLine);
-    output.write(headerFile2.getBytes());
-    output.write(data2);
-    output.write(enterLine);
-    output.write(boundary.getBytes());
-    output.write(finalResponse);
-
-    return output.toByteArray();
-
-  }
-
   private byte[] getByteArrayFromFilesAndParams(HTTPSampleResult expected, List<HTTPArgument> args,
       List<HTTPFileArg> files, String boundary) throws IOException {
 
     ByteArrayOutputStream output = new ByteArrayOutputStream();
     String newLine = "\r\n";
     String dashDash = "--";
-    // Set body resonse for Arguments
+    // Set body response for Arguments
     args.forEach(httpArgument -> {
       StringBuilder headerParam = new StringBuilder(boundary).append(newLine)
           .append("Content-Disposition: form-data; name=\"").append(httpArgument.getEncodedName())
@@ -730,7 +640,7 @@ public class HTTP2JettyClientTest {
       }
     });
 
-    // Set body resonse for Files
+    // Set body response for Files
     files.forEach(file -> {
       String fileName = Paths.get((file.getPath())).getFileName().toString();
       StringBuilder headerFile = new StringBuilder(boundary).append(newLine)
