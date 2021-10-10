@@ -271,6 +271,7 @@ public class HTTP2JettyClient {
             + 1L
             + 2L;
     result.setHeadersSize((int) headerBytes);
+    result.setSentBytes(contentResponse.getRequest().getBody().getLength());
 
   }
 
