@@ -1,7 +1,7 @@
 package com.blazemeter.jmeter.http2.core;
 
 import com.blazemeter.jmeter.http2.sampler.HTTP2Sampler;
-import com.blazemeter.jmeter.http2.utils.CacheManagerHelper;
+import com.blazemeter.jmeter.http2.core.utils.CacheManagerJettyHelper;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -100,40 +100,31 @@ public class HTTP2JettyClient {
     result.setSampleLabel(getSampleLabel(url, sampler));
     result.setHTTPMethod(method);
     result.setURL(url);
-
     if (!sampler.getProxyHost().isEmpty()) {
       setProxy(sampler.getProxyHost(), sampler.getProxyPortInt(), sampler.getProxyScheme());
     }
-
-    setAuthManager(sampler);
     result.sampleStart();
+    setAuthManager(sampler);
     HttpRequest request = createRequest(url, result);
-
     setTimeouts(sampler, request);
     request.followRedirects(sampler.getAutoRedirects());
     request.method(method);
-
     CacheManager cacheManager = sampler.getCacheManager();
     if (sampler.getHeaderManager() != null) {
       setHeaders(request, sampler.getHeaderManager(), url, cacheManager, areFollowingRedirect,
           sampler);
     }
-
+    // If result of request is cached, then return it
+    if (cacheManager != null && HTTPConstants.GET.equalsIgnoreCase(method) && cacheManager
+        .inCache(url, CacheManagerJettyHelper.convertJettyHeadersToApacheHeaders(request.getHeaders()))) {
+      return CacheManagerJettyHelper.updateSampleResultForResourceInCache(result);
+    }
     CookieManager cookieManager = sampler.getCookieManager();
     if (cookieManager != null) {
       result.setCookies(buildCookies(request, url, cookieManager));
     }
-    // Get headers request and convert it to pass to Cache Manager
-    org.apache.http.Header[] headersRequest = CacheManagerHelper
-        .convertFieldsToHeaders(request.getHeaders());
-    // If result of request is cached, then return it
-    if (cacheManager != null && HTTPConstants.GET.equalsIgnoreCase(method) && cacheManager
-        .inCache(url, headersRequest)) {
-      return CacheManagerHelper.updateSampleResultForResourceInCache(result);
-    }
-
     setBody(request, sampler, result);
-    HttpResponse httpResponse = null;
+    HttpResponse httpResponse;
     if (!isSupportedMethod(method)) {
       throw new UnsupportedOperationException(
           String.format("Method %s is not supported", method));
@@ -151,7 +142,7 @@ public class HTTP2JettyClient {
         }
         result.setRedirectLocation(redirectLocation);
       }
-      httpResponse = CacheManagerHelper.createHttpResponse(contentResponse);
+      httpResponse = CacheManagerJettyHelper.createApacheHttpResponseFromJettyContentResponse(contentResponse);
     }
 
     result.setRequestHeaders(getHeadersAsString(request.getHeaders()));
@@ -391,7 +382,7 @@ public class HTTP2JettyClient {
 
     if (cacheManager != null) {
       URI uri = new URI(url.toString());
-      HttpRequestBase reqBase = CacheManagerHelper.createHttpRequest(uri, request.getMethod(),
+      HttpRequestBase reqBase = CacheManagerJettyHelper.createApacheHttpRequest(uri, request.getMethod(),
           areFollowingRedirect, sampler);
       cacheManager.setHeaders(url, reqBase);
       if (reqBase.getFirstHeader(HTTPConstants.VARY) != null) {

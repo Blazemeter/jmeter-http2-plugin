@@ -1,4 +1,4 @@
-package com.blazemeter.jmeter.http2.utils;
+package com.blazemeter.jmeter.http2.core.utils;
 
 import com.blazemeter.jmeter.http2.sampler.HTTP2Sampler;
 import java.net.URI;
@@ -23,7 +23,7 @@ import org.apache.jmeter.util.JMeterUtils;
 import org.eclipse.jetty.client.api.ContentResponse;
 import org.eclipse.jetty.http.HttpFields;
 
-public class CacheManagerHelper {
+public class CacheManagerJettyHelper {
 
   private static final CachedResourceMode CACHED_RESOURCE_MODE =
       CachedResourceMode.valueOf(
@@ -37,7 +37,7 @@ public class CacheManagerHelper {
       JMeterUtils.getProperty("RETURN_CUSTOM_STATUS.message");
   private static final String DEFAULT_EXPIRE_DATE = "Sat, 25 Sep 2041 00:00:00 GMT";
 
-  public static HttpRequestBase createHttpRequest(URI uri, String method,
+  public static HttpRequestBase createApacheHttpRequest(URI uri, String method,
       boolean areFollowingRedirect,
       HTTP2Sampler sampler) {
     HttpRequestBase result;
@@ -104,16 +104,14 @@ public class CacheManagerHelper {
     }
   }
 
-  public static org.apache.http.Header[] convertFieldsToHeaders(HttpFields fields) {
+  public static org.apache.http.Header[] convertJettyHeadersToApacheHeaders(HttpFields fields) {
     return fields.stream()
         .map(h -> new BasicHeader(h.getName(), h.getValue()))
         .toArray(org.apache.http.Header[]::new);
   }
 
-  /**
-   * Create an HttpResponse from a ContentResponse of Jetty.
-   */
-  public static HttpResponse createHttpResponse(ContentResponse contentResponse) {
+  public static HttpResponse createApacheHttpResponseFromJettyContentResponse(
+      ContentResponse contentResponse) {
     HttpResponse httpResponse = new BasicHttpResponse(new ProtocolVersion("HTTP/2", 2, 2),
         contentResponse.getStatus(),
         contentResponse.getReason());
