@@ -104,7 +104,7 @@ public class HTTP2JettyClient {
     HttpRequest request = createRequest(url, result);
 
     setTimeouts(sampler, request);
-    request.followRedirects(false);
+    request.followRedirects(sampler.getAutoRedirects());
     request.method(method);
 
     if (sampler.getHeaderManager() != null) {
