@@ -441,29 +441,4 @@ public class HTTP2JettyClient {
       request.timeout(sampler.getResponseTimeout(), TimeUnit.MILLISECONDS);
     }
   }
-
-  /**
-   * Create an HttpResponse from a ContentResponse of Jetty.
-   */
-  private HttpResponse createHttpResponse(ContentResponse contentResponse) {
-    HttpResponse httpResponse = new BasicHttpResponse(new ProtocolVersion("HTTP/2", 2, 2),
-        contentResponse.getStatus(),
-        contentResponse.getReason());
-    httpResponse
-        .addHeader(HTTPConstants.VARY, contentResponse.getHeaders().get(HTTPConstants.VARY));
-    httpResponse.addHeader(HTTPConstants.LAST_MODIFIED,
-        contentResponse.getHeaders().get(HTTPConstants.LAST_MODIFIED));
-    httpResponse
-        .addHeader(HTTPConstants.EXPIRES,
-            contentResponse.getHeaders().get(HTTPConstants.EXPIRES));
-    httpResponse
-        .addHeader(HTTPConstants.ETAG, contentResponse.getHeaders().get(HTTPConstants.ETAG));
-    httpResponse.addHeader(HTTPConstants.CACHE_CONTROL,
-        contentResponse.getHeaders().get(HTTPConstants.CACHE_CONTROL));
-    httpResponse
-        .addHeader(HTTPConstants.DATE, contentResponse.getHeaders().get(HTTPConstants.DATE));
-
-    return httpResponse;
-  }
-
 }
