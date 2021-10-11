@@ -1,13 +1,11 @@
 package com.blazemeter.jmeter.http2.sampler;
 
-import java.io.File;
 import kg.apc.emulators.TestJMeterUtils;
 import org.apache.jmeter.util.JMeterUtils;
 
 public class JMeterTestUtils {
 
   private static boolean jeerEnvironmentInitialized = false;
-  private static String filePrefix;
 
   public JMeterTestUtils() {
   }
