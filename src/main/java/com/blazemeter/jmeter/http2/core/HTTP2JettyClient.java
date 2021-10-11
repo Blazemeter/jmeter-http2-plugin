@@ -220,7 +220,7 @@ public class HTTP2JettyClient {
     StringBuilder postBody = new StringBuilder();
     Content requestContent;
 
-    if (sampler.getUseMultipart()) {
+    if (sampler.getDoMultipart()) {
 
       // Create and add Fields and Files Parts
       final MultiPartRequestContent multipartEntityBuilder = new MultiPartRequestContent();
