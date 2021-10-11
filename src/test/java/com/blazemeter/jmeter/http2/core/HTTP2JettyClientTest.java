@@ -225,8 +225,8 @@ public class HTTP2JettyClientTest {
 
   @Test
   public void shouldReturnFailureSampleResultWhenResponse400() throws Exception {
-    HTTPSampleResult expected = createExpectedResult(false, HttpStatus.BAD_REQUEST_400,
-        REQUEST_HEADERS);
+    HTTPSampleResult expected = createExpectedResult(false, HttpStatus.BAD_REQUEST_400, "Bad "
+        + "Request", REQUEST_HEADERS);
     startServer(setupServer(createGetServerResponse()));
     configureSampler(HTTPConstants.GET);
     HTTPSampleResult result = client
@@ -235,10 +235,11 @@ public class HTTP2JettyClientTest {
   }
 
   private HTTPSampleResult createExpectedResult(boolean successful, int responseCode,
-      String headers) {
+      String responseMessage, String headers) {
     HTTPSampleResult expected = new HTTPSampleResult();
     expected.setSuccessful(successful);
     expected.setResponseCode(String.valueOf(responseCode));
+    expected.setResponseMessage(responseMessage);
     expected.setRequestHeaders(headers);
     return expected;
   }
@@ -253,7 +254,8 @@ public class HTTP2JettyClientTest {
 
   @Test
   public void shouldGetEmbeddedResourcesWithSubSampleWhenImageParserIsEnabled() throws Exception {
-    HTTPSampleResult expected = createExpectedResult(true, HttpStatus.OK_200, REQUEST_HEADERS);
+    HTTPSampleResult expected = createExpectedResult(true, HttpStatus.OK_200, "OK",
+        REQUEST_HEADERS);
     expected.setResponseData(HTTP2JettyClientTest.getBasicHtmlTemplate(),
         StandardCharsets.UTF_8.name());
     startServer(setupServer(createGetServerResponse()));
@@ -266,7 +268,8 @@ public class HTTP2JettyClientTest {
   @Test
   public void shouldUseCookiesFromFirstRequestOnSecondRequestWhenSecondRequestIsSent()
       throws Exception {
-    HTTPSampleResult expected = createExpectedResult(true, HttpStatus.OK_200, REQUEST_HEADERS);
+    HTTPSampleResult expected = createExpectedResult(true, HttpStatus.OK_200, "OK",
+        REQUEST_HEADERS);
     expected.setCookies(RESPONSE_DATA_COOKIES);
     expected.setResponseData(RESPONSE_DATA_COOKIES,
         StandardCharsets.UTF_8.name());
@@ -283,7 +286,7 @@ public class HTTP2JettyClientTest {
 
   @Test
   public void shouldReturnSuccessSampleResultWhenSuccessRequestWithHeaders() throws Exception {
-    HTTPSampleResult expected = createExpectedResult(true, HttpStatus.OK_200,
+    HTTPSampleResult expected = createExpectedResult(true, HttpStatus.OK_200, "OK",
         "Accept-Encoding: gzip\r\nUser-Agent: Jetty/11.0.6\r\nHeader1: "
             + "value1\r\nHeader2: value2\r\n\r\n");
     expected.setResponseData(SERVER_RESPONSE, StandardCharsets.UTF_8.name());
@@ -299,6 +302,7 @@ public class HTTP2JettyClientTest {
     HTTPSampleResult expected = new HTTPSampleResult();
     expected.setResponseData(SERVER_RESPONSE, StandardCharsets.UTF_8.name());
     expected.setResponseCode(String.valueOf(HttpStatus.OK_200));
+    expected.setResponseMessage("OK");
     expected.setSuccessful(true);
     expected.setRequestHeaders(REQUEST_HEADERS);
     Server server = setupServer(createGetServerResponse());
@@ -315,6 +319,7 @@ public class HTTP2JettyClientTest {
     HTTPSampleResult expected = new HTTPSampleResult();
     expected.setResponseData(SERVER_RESPONSE, StandardCharsets.UTF_8.name());
     expected.setResponseCode(String.valueOf(HttpStatus.OK_200));
+    expected.setResponseMessage("OK");
     expected.setSuccessful(true);
     expected.setRequestHeaders(REQUEST_HEADERS);
     Server server = setupServer(createGetServerResponse());
@@ -332,6 +337,7 @@ public class HTTP2JettyClientTest {
     HTTPSampleResult expected = new HTTPSampleResult();
     expected.setResponseData(SERVER_RESPONSE, StandardCharsets.UTF_8.name());
     expected.setResponseCode(String.valueOf(HttpStatus.OK_200));
+    expected.setResponseMessage("OK");
     expected.setSuccessful(true);
     expected.setRequestHeaders("Accept-Encoding: gzip\r\n"
         + "User-Agent: Jetty/11.0.6\r\n"
@@ -349,7 +355,8 @@ public class HTTP2JettyClientTest {
   @Test
   public void shouldGetRedirectedResultWithSubSampleWhenFollowRedirectEnabledAndRedirected()
       throws Exception {
-    HTTPSampleResult expected = createExpectedResult(true, HttpStatus.OK_200, REQUEST_HEADERS);
+    HTTPSampleResult expected = createExpectedResult(true, HttpStatus.OK_200, "OK",
+        REQUEST_HEADERS);
     expected.setResponseData(SERVER_RESPONSE, StandardCharsets.UTF_8.name());
     expected.setRedirectLocation("https://localhost:6666/test/200");
     startServer(setupServer(createGetServerResponse()));
@@ -373,7 +380,7 @@ public class HTTP2JettyClientTest {
 
   @Test
   public void shouldGetFileDataWithFileIsSentAsBodyPart() throws Exception {
-    HTTPSampleResult expected = createExpectedResult(true, HttpStatus.OK_200,
+    HTTPSampleResult expected = createExpectedResult(true, HttpStatus.OK_200, "OK",
         "Accept-Encoding: gzip\r\n"
             + "User-Agent: Jetty/11.0.6\r\n"
             + "Content-Type: image/png\r\n"
@@ -442,6 +449,7 @@ public class HTTP2JettyClientTest {
   private void validateResponse(SampleResult result, SampleResult expected) {
     softly.assertThat(result.isSuccessful()).isEqualTo(expected.isSuccessful());
     softly.assertThat(result.getResponseCode()).isEqualTo(expected.getResponseCode());
+    softly.assertThat(result.getResponseMessage()).isEqualTo(expected.getResponseMessage());
     softly.assertThat(result.getResponseDataAsString())
         .isEqualTo(expected.getResponseDataAsString());
     softly.assertThat(result.getRequestHeaders()).isEqualTo(expected.getRequestHeaders());
