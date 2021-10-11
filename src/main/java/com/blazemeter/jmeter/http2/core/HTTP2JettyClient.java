@@ -1,5 +1,6 @@
 package com.blazemeter.jmeter.http2.core;
 
+import com.blazemeter.jmeter.http2.core.utils.CacheManagerJettyHelper;
 import com.blazemeter.jmeter.http2.sampler.HTTP2Sampler;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -21,9 +22,11 @@ import java.util.concurrent.TimeoutException;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
+import org.apache.http.client.methods.HttpRequestBase;
 import org.apache.jmeter.protocol.http.control.AuthManager;
 import org.apache.jmeter.protocol.http.control.AuthManager.Mechanism;
 import org.apache.jmeter.protocol.http.control.Authorization;
+import org.apache.jmeter.protocol.http.control.CacheManager;
 import org.apache.jmeter.protocol.http.control.CookieManager;
 import org.apache.jmeter.protocol.http.control.Header;
 import org.apache.jmeter.protocol.http.control.HeaderManager;
@@ -94,28 +97,27 @@ public class HTTP2JettyClient {
     result.setSampleLabel(getSampleLabel(url, sampler));
     result.setHTTPMethod(method);
     result.setURL(url);
-
     if (!sampler.getProxyHost().isEmpty()) {
       setProxy(sampler.getProxyHost(), sampler.getProxyPortInt(), sampler.getProxyScheme());
     }
-
-    setAuthManager(sampler);
     result.sampleStart();
+    setAuthManager(sampler);
     HttpRequest request = createRequest(url, result);
-
     setTimeouts(sampler, request);
     request.followRedirects(sampler.getAutoRedirects());
     request.method(method);
-
-    if (sampler.getHeaderManager() != null) {
-      setHeaders(request, sampler.getHeaderManager(), url);
+    CacheManager cacheManager = sampler.getCacheManager();
+    setHeaders(request, sampler.getHeaderManager(), url, cacheManager);
+    // If result of request is cached, then return it
+    if (cacheManager != null && HTTPConstants.GET.equalsIgnoreCase(method) && cacheManager
+        .inCache(url,
+            CacheManagerJettyHelper.convertJettyHeadersToApacheHeaders(request.getHeaders()))) {
+      return CacheManagerJettyHelper.updateSampleResultForResourceInCache(result);
     }
-
     CookieManager cookieManager = sampler.getCookieManager();
     if (cookieManager != null) {
       result.setCookies(buildCookies(request, url, cookieManager));
     }
-
     setBody(request, sampler, result);
     if (!isSupportedMethod(method)) {
       throw new UnsupportedOperationException(
@@ -133,6 +135,10 @@ public class HTTP2JettyClient {
           throw new IllegalArgumentException("Missing location header in redirect");
         }
         result.setRedirectLocation(redirectLocation);
+      }
+      if (cacheManager != null) {
+        cacheManager.saveDetails(CacheManagerJettyHelper
+            .createApacheHttpResponseFromJettyContentResponse(contentResponse), result);
       }
     }
 
@@ -253,6 +259,7 @@ public class HTTP2JettyClient {
     result.setResponseHeaders(contentResponse.getHeaders().asString());
 
     InputStream inputStream = new ByteArrayInputStream(contentResponse.getContent());
+    // When a resource is cached, the sample result is empty
     result.setResponseData(sampler.readResponse(result, inputStream,
         contentResponse.getContent().length));
 
@@ -264,8 +271,7 @@ public class HTTP2JettyClient {
       result.setEncodingAndType(contentType);
     }
 
-    // Set size for header and body (\r\r\n)
-    final long headerBytes =
+    long headerBytes =
         (long) result.getResponseHeaders().length()
             + (long) contentResponse.getHeaders().asString().length()
             + 1L
@@ -276,7 +282,7 @@ public class HTTP2JettyClient {
 
   private void setBody(HttpRequest request, HTTP2Sampler sampler, HTTPSampleResult result)
       throws IOException {
-    final String contentEncoding = sampler.getContentEncoding();
+    String contentEncoding = sampler.getContentEncoding();
     Charset contentCharset =
         !contentEncoding.isEmpty() ? Charset.forName(contentEncoding) : StandardCharsets.UTF_8;
     String contentTypeHeader =
@@ -287,7 +293,7 @@ public class HTTP2JettyClient {
     Content requestContent;
     if (!sampler.hasArguments() && sampler.getSendFileAsPostBody()) {
       // Only one File support in not multipart scenario
-      final HTTPFileArg file = sampler.getHTTPFiles()[0];
+      HTTPFileArg file = sampler.getHTTPFiles()[0];
       if (sampler.getHTTPFiles().length > 1) {
         LOG.info("Send multiples files is not currently supported, only first file will be "
             + "sending");
@@ -355,15 +361,37 @@ public class HTTP2JettyClient {
     return METHODS_WITH_BODY.contains(method);
   }
 
-  private void setHeaders(HttpRequest request, HeaderManager headerManager, URL url) {
-    StreamSupport.stream(headerManager.getHeaders().spliterator(), false)
-        .map(prop -> (Header) prop.getObjectValue())
-        .filter(header -> !HTTPConstants.HEADER_CONTENT_LENGTH.equalsIgnoreCase(header.getName()))
-        .forEach(header -> {
-          if (!header.getName().isEmpty()) {
+  private void setHeaders(HttpRequest request, HeaderManager headerManager, URL url,
+      CacheManager cacheManager)
+      throws URISyntaxException {
+    if (headerManager != null) {
+      StreamSupport.stream(headerManager.getHeaders().spliterator(), false)
+          .map(prop -> (Header) prop.getObjectValue())
+          .filter(header -> (!header.getName().isEmpty()) && (!HTTPConstants.HEADER_CONTENT_LENGTH
+              .equalsIgnoreCase(header.getName())))
+          .forEach(header -> {
             request.addHeader(createJettyHeader(header, url));
-          }
-        });
+          });
+    }
+
+    if (cacheManager != null) {
+      URI uri = new URI(url.toString());
+      HttpRequestBase reqBase = CacheManagerJettyHelper
+          .createApacheHttpRequest(uri, request.getMethod());
+      cacheManager.setHeaders(url, reqBase);
+      if (reqBase.getFirstHeader(HTTPConstants.VARY) != null) {
+        request.addHeader(new HttpField(HTTPConstants.VARY,
+            reqBase.getFirstHeader(HTTPConstants.VARY).getValue()));
+      }
+      if (reqBase.getFirstHeader(HTTPConstants.IF_MODIFIED_SINCE) != null) {
+        request.addHeader(new HttpField(HTTPConstants.IF_MODIFIED_SINCE,
+            reqBase.getFirstHeader(HTTPConstants.IF_MODIFIED_SINCE).getValue()));
+      }
+      if (reqBase.getFirstHeader(HTTPConstants.IF_NONE_MATCH) != null) {
+        request.addHeader(new HttpField(HTTPConstants.IF_NONE_MATCH,
+            reqBase.getFirstHeader(HTTPConstants.IF_NONE_MATCH).getValue()));
+      }
+    }
   }
 
   private HttpField createJettyHeader(Header header, URL url) {
@@ -407,5 +435,4 @@ public class HTTP2JettyClient {
       request.timeout(sampler.getResponseTimeout(), TimeUnit.MILLISECONDS);
     }
   }
-
 }
