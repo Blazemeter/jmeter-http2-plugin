@@ -26,9 +26,8 @@ import jodd.net.MimeTypes;
 import org.apache.jmeter.protocol.http.control.AuthManager;
 import org.apache.jmeter.protocol.http.control.AuthManager.Mechanism;
 import org.apache.jmeter.protocol.http.control.Authorization;
-import org.apache.jmeter.protocol.http.control.CookieManager;
-import org.apache.commons.lang3.StringUtils;
 import org.apache.jmeter.protocol.http.control.CacheManager;
+import org.apache.jmeter.protocol.http.control.CookieManager;
 import org.apache.jmeter.protocol.http.control.Header;
 import org.apache.jmeter.protocol.http.control.HeaderManager;
 import org.apache.jmeter.protocol.http.sampler.HTTPSampleResult;
@@ -429,7 +428,7 @@ public class HTTP2JettyClientTest {
 
   @Test
   public void shouldNoUseCacheWhenNotUseExpire() throws Exception {
-    HTTPSampleResult expected = createExpectedResultsAndServerResponse();
+    HTTPSampleResult expected = createExpectedResultsAndServerResponse("200");
     configureCacheManagerToSampler(false, false);
     HTTPSampleResult result = client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS,
         HOST_NAME, SERVER_PORT, SERVER_PATH_200_EMBEDDED), HTTPConstants.GET, false, 0);
@@ -442,25 +441,33 @@ public class HTTP2JettyClientTest {
   }
 
   @Test
-  public void shouldNotGetSubresultWhenResourceIsCachedWithNoMsg() throws Exception {
-    HTTPSampleResult expected = createExpectedResultsAndServerResponse();
+  public void shouldNotGetSubResultWhenResourceIsCachedWithNoMsg() throws Exception {
+    String message = "message";
+    String responseCode = "300";
+    JMeterUtils.setProperty("cache_manager.cached_resource_mode", "RETURN_CUSTOM_STATUS");
+    JMeterUtils.setProperty("RETURN_CUSTOM_STATUS.message", message);
+    JMeterUtils.setProperty("RETURN_CUSTOM_STATUS.code", responseCode);
+    HTTPSampleResult expected = createExpectedResultsAndServerResponse("200");
     configureCacheManagerToSampler(true, false);
     HTTPSampleResult result = client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS,
         HOST_NAME, SERVER_PORT, SERVER_PATH_200_EMBEDDED), HTTPConstants.GET, false, 0);
     // First request must connect to the server
     validateEmbeddedResources(result, expected);
+    expected.setResponseCode(responseCode);
     HTTPSampleResult resultCached = client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS,
         HOST_NAME, SERVER_PORT, SERVER_PATH_200_EMBEDDED), HTTPConstants.GET, false, 0);
     // Same request use cached result with no message, request and data response
     expected.setRequestHeaders("");
-    expected.setResponseData("",
-        StandardCharsets.UTF_8.name());
-    validateEmbeddedResultCached(resultCached, expected, "");
+    expected.setResponseData("", StandardCharsets.UTF_8.name());
+    validateEmbeddedResultCached(resultCached, expected, message);
   }
 
   @Test
-  public void shouldNotGetSubresultWhenResourceIsCachedWithMsg() throws Exception {
-    HTTPSampleResult expected = createExpectedResultsAndServerResponse();
+  public void shouldNotGetSubResultWhenResourceIsCachedWithMsg() throws Exception {
+    String message = "message";
+    JMeterUtils.setProperty("cache_manager.cached_resource_mode", "RETURN_200_CACHE");
+    JMeterUtils.setProperty("RETURN_200_CACHE.message", message);
+    HTTPSampleResult expected = createExpectedResultsAndServerResponse("200");
     configureCacheManagerToSampler(true, false);
     HTTPSampleResult result = client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS,
         HOST_NAME, SERVER_PORT, SERVER_PATH_200_EMBEDDED), HTTPConstants.GET, false, 0);
@@ -472,12 +479,12 @@ public class HTTP2JettyClientTest {
     expected.setRequestHeaders("");
     expected.setResponseData("",
         StandardCharsets.UTF_8.name());
-    validateEmbeddedResultCached(resultCached, expected, MESSAGE_CACHED);
+    validateEmbeddedResultCached(resultCached, expected, message);
   }
 
   @Test
-  public void shouldGetSubresultWhenCacheCleanBetweenIterations() throws Exception {
-    HTTPSampleResult expected = createExpectedResultsAndServerResponse();
+  public void shouldGetSubResultWhenCacheCleanBetweenIterations() throws Exception {
+    HTTPSampleResult expected = createExpectedResultsAndServerResponse("200");
     configureCacheManagerToSampler(false, true);
     HTTPSampleResult result = client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS,
         HOST_NAME, SERVER_PORT, SERVER_PATH_200_EMBEDDED), HTTPConstants.GET, false, 0);
@@ -489,10 +496,10 @@ public class HTTP2JettyClientTest {
     validateEmbeddedResources(resultNotCached, expected);
   }
 
-  private HTTPSampleResult createExpectedResultsAndServerResponse() throws Exception {
+  private HTTPSampleResult createExpectedResultsAndServerResponse(String responseCode) throws Exception {
     HTTPSampleResult expected = new HTTPSampleResult();
     expected.setSuccessful(true);
-    expected.setResponseCode(String.valueOf(HttpStatus.OK_200));
+    expected.setResponseCode(responseCode);
     expected.setRequestHeaders(REQUEST_HEADERS);
     expected.setResponseData(BASIC_HTML_TEMPLATE,
         StandardCharsets.UTF_8.name());
@@ -578,9 +585,7 @@ public class HTTP2JettyClientTest {
   private void validateEmbeddedResultCached(HTTPSampleResult result, HTTPSampleResult expected,
       String messageResponse) {
     this.validateResponse(result, expected);
-    if (StringUtils.isNotBlank(messageResponse)) {
-      softly.assertThat(result.getResponseMessage()).isEqualTo(MESSAGE_CACHED);
-    }
+    softly.assertThat(result.getResponseMessage()).isEqualTo(messageResponse);
     softly.assertThat(result.getResponseData().length).isEqualTo(0);
   }
 

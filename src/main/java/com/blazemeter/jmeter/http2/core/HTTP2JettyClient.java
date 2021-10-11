@@ -22,7 +22,6 @@ import java.util.concurrent.TimeoutException;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
-import org.apache.http.HttpResponse;
 import org.apache.http.client.methods.HttpRequestBase;
 import org.apache.jmeter.protocol.http.control.AuthManager;
 import org.apache.jmeter.protocol.http.control.AuthManager.Mechanism;
@@ -108,10 +107,7 @@ public class HTTP2JettyClient {
     request.followRedirects(sampler.getAutoRedirects());
     request.method(method);
     CacheManager cacheManager = sampler.getCacheManager();
-    if (sampler.getHeaderManager() != null) {
-      setHeaders(request, sampler.getHeaderManager(), url, cacheManager, areFollowingRedirect,
-          sampler);
-    }
+    setHeaders(request, sampler.getHeaderManager(), url, cacheManager);
     // If result of request is cached, then return it
     if (cacheManager != null && HTTPConstants.GET.equalsIgnoreCase(method) && cacheManager
         .inCache(url,
@@ -123,7 +119,6 @@ public class HTTP2JettyClient {
       result.setCookies(buildCookies(request, url, cookieManager));
     }
     setBody(request, sampler, result);
-    HttpResponse httpResponse;
     if (!isSupportedMethod(method)) {
       throw new UnsupportedOperationException(
           String.format("Method %s is not supported", method));
@@ -141,16 +136,13 @@ public class HTTP2JettyClient {
         }
         result.setRedirectLocation(redirectLocation);
       }
-      httpResponse = CacheManagerJettyHelper
-          .createApacheHttpResponseFromJettyContentResponse(contentResponse);
+      if (cacheManager != null) {
+        cacheManager.saveDetails(CacheManagerJettyHelper
+            .createApacheHttpResponseFromJettyContentResponse(contentResponse), result);
+      }
     }
 
     result.setRequestHeaders(getHeadersAsString(request.getHeaders()));
-
-    if (cacheManager != null) {
-      cacheManager.saveDetails(httpResponse, result);
-    }
-
     result = sampler.resultProcessing(areFollowingRedirect, depth, result);
     return result;
   }
@@ -370,21 +362,22 @@ public class HTTP2JettyClient {
   }
 
   private void setHeaders(HttpRequest request, HeaderManager headerManager, URL url,
-      CacheManager cacheManager, boolean areFollowingRedirect, HTTP2Sampler sampler)
+      CacheManager cacheManager)
       throws URISyntaxException {
-    StreamSupport.stream(headerManager.getHeaders().spliterator(), false)
-        .map(prop -> (Header) prop.getObjectValue())
-        .filter(header -> (!header.getName().isEmpty()) && (!HTTPConstants.HEADER_CONTENT_LENGTH
-            .equalsIgnoreCase(header.getName())))
-        .forEach(header -> {
-          request.addHeader(createJettyHeader(header, url));
-        });
+    if (headerManager != null) {
+      StreamSupport.stream(headerManager.getHeaders().spliterator(), false)
+          .map(prop -> (Header) prop.getObjectValue())
+          .filter(header -> (!header.getName().isEmpty()) && (!HTTPConstants.HEADER_CONTENT_LENGTH
+              .equalsIgnoreCase(header.getName())))
+          .forEach(header -> {
+            request.addHeader(createJettyHeader(header, url));
+          });
+    }
 
     if (cacheManager != null) {
       URI uri = new URI(url.toString());
       HttpRequestBase reqBase = CacheManagerJettyHelper
-          .createApacheHttpRequest(uri, request.getMethod(),
-              areFollowingRedirect, sampler);
+          .createApacheHttpRequest(uri, request.getMethod());
       cacheManager.setHeaders(url, reqBase);
       if (reqBase.getFirstHeader(HTTPConstants.VARY) != null) {
         request.addHeader(new HttpField(HTTPConstants.VARY,
