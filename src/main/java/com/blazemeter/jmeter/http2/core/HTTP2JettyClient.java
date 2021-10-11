@@ -1,7 +1,7 @@
 package com.blazemeter.jmeter.http2.core;
 
-import com.blazemeter.jmeter.http2.sampler.HTTP2Sampler;
 import com.blazemeter.jmeter.http2.core.utils.CacheManagerJettyHelper;
+import com.blazemeter.jmeter.http2.sampler.HTTP2Sampler;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -23,9 +23,7 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 import org.apache.http.HttpResponse;
-import org.apache.http.ProtocolVersion;
 import org.apache.http.client.methods.HttpRequestBase;
-import org.apache.http.message.BasicHttpResponse;
 import org.apache.jmeter.protocol.http.control.AuthManager;
 import org.apache.jmeter.protocol.http.control.AuthManager.Mechanism;
 import org.apache.jmeter.protocol.http.control.Authorization;
@@ -116,7 +114,8 @@ public class HTTP2JettyClient {
     }
     // If result of request is cached, then return it
     if (cacheManager != null && HTTPConstants.GET.equalsIgnoreCase(method) && cacheManager
-        .inCache(url, CacheManagerJettyHelper.convertJettyHeadersToApacheHeaders(request.getHeaders()))) {
+        .inCache(url,
+            CacheManagerJettyHelper.convertJettyHeadersToApacheHeaders(request.getHeaders()))) {
       return CacheManagerJettyHelper.updateSampleResultForResourceInCache(result);
     }
     CookieManager cookieManager = sampler.getCookieManager();
@@ -142,7 +141,8 @@ public class HTTP2JettyClient {
         }
         result.setRedirectLocation(redirectLocation);
       }
-      httpResponse = CacheManagerJettyHelper.createApacheHttpResponseFromJettyContentResponse(contentResponse);
+      httpResponse = CacheManagerJettyHelper
+          .createApacheHttpResponseFromJettyContentResponse(contentResponse);
     }
 
     result.setRequestHeaders(getHeadersAsString(request.getHeaders()));
@@ -382,8 +382,9 @@ public class HTTP2JettyClient {
 
     if (cacheManager != null) {
       URI uri = new URI(url.toString());
-      HttpRequestBase reqBase = CacheManagerJettyHelper.createApacheHttpRequest(uri, request.getMethod(),
-          areFollowingRedirect, sampler);
+      HttpRequestBase reqBase = CacheManagerJettyHelper
+          .createApacheHttpRequest(uri, request.getMethod(),
+              areFollowingRedirect, sampler);
       cacheManager.setHeaders(url, reqBase);
       if (reqBase.getFirstHeader(HTTPConstants.VARY) != null) {
         request.addHeader(new HttpField(HTTPConstants.VARY,
