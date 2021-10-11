@@ -446,7 +446,6 @@ public class HTTP2JettyClient {
     StringBuilder value = new StringBuilder(arg.getEncodedValue(contentCharset.name()))
         .append(NEW_LINE);
 
-    // TODO dfilgueiras: UTF-8 en vez de ASCII
     return postBody.append(firstBoundary).append(contentDisposition).append(contentType)
         .append(contentTEncoding).append(value);
   }
