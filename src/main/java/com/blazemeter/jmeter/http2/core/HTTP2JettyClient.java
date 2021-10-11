@@ -385,11 +385,11 @@ public class HTTP2JettyClient {
       }
       if (reqBase.getFirstHeader(HTTPConstants.IF_MODIFIED_SINCE) != null) {
         request.addHeader(new HttpField(HTTPConstants.IF_MODIFIED_SINCE,
-            reqBase.getFirstHeader(HTTPConstants.LAST_MODIFIED).getValue()));
+            reqBase.getFirstHeader(HTTPConstants.IF_MODIFIED_SINCE).getValue()));
       }
       if (reqBase.getFirstHeader(HTTPConstants.IF_NONE_MATCH) != null) {
         request.addHeader(new HttpField(HTTPConstants.IF_NONE_MATCH,
-            reqBase.getFirstHeader(HTTPConstants.ETAG).getValue()));
+            reqBase.getFirstHeader(HTTPConstants.IF_NONE_MATCH).getValue()));
       }
     }
   }
