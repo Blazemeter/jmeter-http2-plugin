@@ -39,11 +39,13 @@ import org.eclipse.jetty.client.HttpClientTransport;
 import org.eclipse.jetty.client.HttpProxy;
 import org.eclipse.jetty.client.HttpRequest;
 import org.eclipse.jetty.client.Origin.Address;
+import org.eclipse.jetty.client.api.AuthenticationStore;
 import org.eclipse.jetty.client.api.ContentResponse;
 import org.eclipse.jetty.client.api.Request;
 import org.eclipse.jetty.client.api.Request.Content;
 import org.eclipse.jetty.client.dynamic.HttpClientTransportDynamic;
 import org.eclipse.jetty.client.http.HttpClientConnectionFactory;
+import org.eclipse.jetty.client.util.AbstractAuthentication;
 import org.eclipse.jetty.client.util.BasicAuthentication;
 import org.eclipse.jetty.client.util.DigestAuthentication;
 import org.eclipse.jetty.client.util.FormRequestContent;
@@ -190,31 +192,34 @@ public class HTTP2JettyClient {
 
     AuthManager authManager = sampler.getAuthManager();
     if (authManager != null) {
-
-      if (JMeterUtils.getPropDefault(
-          "httpclient4.auth.preemptive", false)) {
-        StreamSupport.stream(authManagerToSpliterator(authManager), false)
-            .map(this::getAuthorizationObjectFromProperty)
-            .filter(auth -> isMechanismBasic(auth) && isURL(auth))
-            .forEach(auth -> httpClient.getAuthenticationStore().addAuthenticationResult(
-                new BasicAuthentication.BasicResult(URI.create(auth.getURL()), auth.getUser(),
-                    auth.getPass())));
-      } else {
-        StreamSupport.stream(authManagerToSpliterator(authManager), false)
-            .map(this::getAuthorizationObjectFromProperty)
-            .filter(auth -> isMechanismBasic(auth) && isURL(auth))
-            .forEach(auth -> httpClient.getAuthenticationStore().addAuthentication(
-                new BasicAuthentication(URI.create(auth.getURL()), auth.getRealm(), auth.getUser(),
-                    auth.getPass())));
-        StreamSupport.stream(authManagerToSpliterator(authManager), false)
-            .map(this::getAuthorizationObjectFromProperty)
-            .filter(auth -> isMechanismDigest(auth) && isURL(auth))
-            .forEach(auth -> httpClient.getAuthenticationStore()
-                .addAuthentication(new DigestAuthentication(URI.create(auth.getURL()),
-                    auth.getRealm(), auth.getUser(), auth.getPass())));
-      }
+      StreamSupport.stream(authManagerToSpliterator(authManager), false)
+          .map(this::getAuthorizationObjectFromProperty)
+          .filter(auth -> isSupportedMechanism(auth) && isNotEmptyURL(auth))
+          .forEach(this::addAuthenticationToJettyClient);
     }
+  }
 
+  private void addAuthenticationToJettyClient(Authorization auth) {
+    AuthenticationStore authenticationStore = httpClient.getAuthenticationStore();
+    String authName = auth.getMechanism().name();
+    if (authName.equals(Mechanism.BASIC.name()) && JMeterUtils.getPropDefault(
+        "httpJettyClient.auth.preemptive", false)) {
+      authenticationStore.addAuthenticationResult(
+          new BasicAuthentication.BasicResult(URI.create(auth.getURL()), auth.getUser(),
+              auth.getPass()));
+    } else {
+      AbstractAuthentication authentication =
+          authName.equals(Mechanism.BASIC.name()) ? new BasicAuthentication(
+              URI.create(auth.getURL()), auth.getRealm(), auth.getUser(), auth.getPass())
+              : new DigestAuthentication(URI.create(auth.getURL()), auth.getRealm(), auth.getUser(),
+                  auth.getPass());
+      authenticationStore.addAuthentication(authentication);
+    }
+  }
+
+  private boolean isSupportedMechanism(Authorization auth) {
+    String authName = auth.getMechanism().name();
+    return authName.equals(Mechanism.BASIC.name()) || authName.equals(Mechanism.DIGEST.name());
   }
 
   private Spliterator<JMeterProperty> authManagerToSpliterator(AuthManager authManager) {
@@ -225,20 +230,8 @@ public class HTTP2JettyClient {
     return (Authorization) jMeterProperty.getObjectValue();
   }
 
-  private boolean isURL(Authorization authorization) {
+  private boolean isNotEmptyURL(Authorization authorization) {
     return authorization.getURL() != null && !authorization.getURL().isEmpty();
-  }
-
-  private boolean isMechanismBasic(Authorization authorization) {
-    return authorization.getMechanism().name().equals(Mechanism.BASIC.name());
-  }
-
-  private boolean isMechanismDigest(Authorization authorization) {
-    return authorization.getMechanism().name().equals(Mechanism.DIGEST.name());
-  }
-
-  public void clearClientAuthenticationResults() {
-    httpClient.getAuthenticationStore().clearAuthenticationResults();
   }
 
   public void start() throws Exception {

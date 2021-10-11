@@ -23,10 +23,10 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.zip.GZIPOutputStream;
 import jodd.net.MimeTypes;
-import org.apache.jmeter.protocol.http.control.CookieManager;
 import org.apache.jmeter.protocol.http.control.AuthManager;
 import org.apache.jmeter.protocol.http.control.AuthManager.Mechanism;
 import org.apache.jmeter.protocol.http.control.Authorization;
+import org.apache.jmeter.protocol.http.control.CookieManager;
 import org.apache.jmeter.protocol.http.control.Header;
 import org.apache.jmeter.protocol.http.control.HeaderManager;
 import org.apache.jmeter.protocol.http.sampler.HTTPSampleResult;
@@ -118,8 +118,8 @@ public class HTTP2JettyClientTest {
   @Test
   public void shouldGetResponseWhenGetMethodIsSent() throws Exception {
     startServer(setupServer(createGetServerResponse()));
-    HTTPSampleResult result = client
-        .sample(sampler, createURL(SERVER_PATH_200), HTTPConstants.GET, false, 0);
+    HTTPSampleResult result = client.sample(sampler, createURL(SERVER_PATH_200),
+        HTTPConstants.GET, false, 0);
     assertThat(result.getResponseDataAsString()).isEqualTo(SERVER_RESPONSE);
   }
 
@@ -295,7 +295,7 @@ public class HTTP2JettyClientTest {
   }
 
   @Test
-  public void shouldReturnSuccessDigestAuthSampleResultWhenPreemptiveIsFalse() throws Exception {
+  public void shouldReturnSuccessDigestAuthSampleResultWhenAuthDigestIsSet() throws Exception {
     HTTPSampleResult expected = new HTTPSampleResult();
     expected.setResponseData(SERVER_RESPONSE, StandardCharsets.UTF_8.name());
     expected.setResponseCode(String.valueOf(HttpStatus.OK_200));
@@ -328,7 +328,7 @@ public class HTTP2JettyClientTest {
 
   @Test
   public void shouldReturnSuccessBasicAuthSampleResultWhenHeaderIsSet() throws Exception {
-    JMeterUtils.setProperty("httpclient4.auth.preemptive", "true");
+    JMeterUtils.setProperty("httpJettyClient.auth.preemptive", "true");
     HTTPSampleResult expected = new HTTPSampleResult();
     expected.setResponseData(SERVER_RESPONSE, StandardCharsets.UTF_8.name());
     expected.setResponseCode(String.valueOf(HttpStatus.OK_200));
