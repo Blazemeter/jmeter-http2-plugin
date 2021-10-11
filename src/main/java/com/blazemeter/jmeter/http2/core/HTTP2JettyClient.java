@@ -56,6 +56,7 @@ import org.eclipse.jetty.client.util.PathRequestContent;
 import org.eclipse.jetty.client.util.StringRequestContent;
 import org.eclipse.jetty.http.HttpField;
 import org.eclipse.jetty.http.HttpFields;
+import org.eclipse.jetty.http.HttpStatus;
 import org.eclipse.jetty.http2.client.HTTP2Client;
 import org.eclipse.jetty.http2.client.http.ClientConnectionFactoryOverHTTP2;
 import org.eclipse.jetty.io.ClientConnector;
@@ -254,8 +255,11 @@ public class HTTP2JettyClient {
       HTTP2Sampler sampler) throws IOException {
     result.setSuccessful(contentResponse.getStatus() >= 200 && contentResponse.getStatus() <= 399);
     result.setResponseCode(String.valueOf(contentResponse.getStatus()));
-    result
-        .setResponseMessage(contentResponse.getReason() != null ? contentResponse.getReason() : "");
+    // Get response message if it's not an exception result from content
+    String responseMessage = contentResponse.getReason() != null ? contentResponse.getReason()
+        : HttpStatus.getMessage(contentResponse.getStatus());
+    result.setResponseMessage(responseMessage);
+
     result.setResponseHeaders(contentResponse.getHeaders().asString());
 
     InputStream inputStream = new ByteArrayInputStream(contentResponse.getContent());
