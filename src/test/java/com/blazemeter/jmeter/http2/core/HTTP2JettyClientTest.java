@@ -234,7 +234,7 @@ public class HTTP2JettyClientTest {
 
   @Test
   public void shouldReturnFailureSampleResultWhenResponse400() throws Exception {
-    HTTPSampleResult expected = createExpectedResult(false, HttpStatus.BAD_REQUEST_400,
+    HTTPSampleResult expected = createExpectedResult(false, HttpStatus.BAD_REQUEST_400, 0,
         REQUEST_HEADERS);
     startServer(setupServer(createGetServerResponse()));
     configureSampler(HTTPConstants.GET);
@@ -244,11 +244,11 @@ public class HTTP2JettyClientTest {
   }
 
   private HTTPSampleResult createExpectedResult(boolean successful, int responseCode,
-      String responseMessage, long sentBytes, String headers) {
+      long sentBytes, String headers) {
     HTTPSampleResult expected = new HTTPSampleResult();
     expected.setSuccessful(successful);
     expected.setResponseCode(String.valueOf(responseCode));
-    expected.setResponseMessage(responseMessage);
+    expected.setResponseMessage(HttpStatus.getMessage(responseCode));
     expected.setSentBytes(sentBytes);
     expected.setRequestHeaders(headers);
     return expected;
@@ -264,8 +264,9 @@ public class HTTP2JettyClientTest {
 
   @Test
   public void shouldGetEmbeddedResourcesWithSubSampleWhenImageParserIsEnabled() throws Exception {
-    HTTPSampleResult expected = createExpectedResult(true, HttpStatus.OK_200, REQUEST_HEADERS);
-    expected.setResponseData(HTTP2JettyClientTest.BASIC_HTML_TEMPLATE, StandardCharsets.UTF_8.name());
+    HTTPSampleResult expected = createExpectedResult(true, HttpStatus.OK_200, 0, REQUEST_HEADERS);
+    expected
+        .setResponseData(HTTP2JettyClientTest.BASIC_HTML_TEMPLATE, StandardCharsets.UTF_8.name());
     startServer(setupServer(createGetServerResponse()));
     sampler.setImageParser(true);
     HTTPSampleResult result = client
@@ -276,7 +277,7 @@ public class HTTP2JettyClientTest {
   @Test
   public void shouldUseCookiesFromFirstRequestOnSecondRequestWhenSecondRequestIsSent()
       throws Exception {
-    HTTPSampleResult expected = createExpectedResult(true, HttpStatus.OK_200, REQUEST_HEADERS);
+    HTTPSampleResult expected = createExpectedResult(true, HttpStatus.OK_200, 0, REQUEST_HEADERS);
     expected.setCookies(RESPONSE_DATA_COOKIES);
     expected.setResponseData(RESPONSE_DATA_COOKIES,
         StandardCharsets.UTF_8.name());
@@ -293,7 +294,7 @@ public class HTTP2JettyClientTest {
 
   @Test
   public void shouldReturnSuccessSampleResultWhenSuccessRequestWithHeaders() throws Exception {
-    HTTPSampleResult expected = createExpectedResult(true, HttpStatus.OK_200,
+    HTTPSampleResult expected = createExpectedResult(true, HttpStatus.OK_200, 0,
         "Accept-Encoding: gzip\r\nUser-Agent: Jetty/11.0.6\r\nHeader1: "
             + "value1\r\nHeader2: value2\r\n\r\n");
     expected.setResponseData(SERVER_RESPONSE, StandardCharsets.UTF_8.name());
@@ -309,6 +310,7 @@ public class HTTP2JettyClientTest {
     HTTPSampleResult expected = new HTTPSampleResult();
     expected.setResponseData(SERVER_RESPONSE, StandardCharsets.UTF_8.name());
     expected.setResponseCode(String.valueOf(HttpStatus.OK_200));
+    expected.setResponseMessage(HttpStatus.getMessage(HttpStatus.OK_200));
     expected.setSuccessful(true);
     expected.setRequestHeaders(REQUEST_HEADERS);
     Server server = setupServer(createGetServerResponse());
@@ -325,6 +327,7 @@ public class HTTP2JettyClientTest {
     HTTPSampleResult expected = new HTTPSampleResult();
     expected.setResponseData(SERVER_RESPONSE, StandardCharsets.UTF_8.name());
     expected.setResponseCode(String.valueOf(HttpStatus.OK_200));
+    expected.setResponseMessage(HttpStatus.getMessage(HttpStatus.OK_200));
     expected.setSuccessful(true);
     expected.setRequestHeaders(REQUEST_HEADERS);
     Server server = setupServer(createGetServerResponse());
@@ -342,6 +345,7 @@ public class HTTP2JettyClientTest {
     HTTPSampleResult expected = new HTTPSampleResult();
     expected.setResponseData(SERVER_RESPONSE, StandardCharsets.UTF_8.name());
     expected.setResponseCode(String.valueOf(HttpStatus.OK_200));
+    expected.setResponseMessage(HttpStatus.getMessage(HttpStatus.OK_200));
     expected.setSuccessful(true);
     expected.setRequestHeaders("Accept-Encoding: gzip\r\n"
         + "User-Agent: Jetty/11.0.6\r\n"
@@ -359,7 +363,7 @@ public class HTTP2JettyClientTest {
   @Test
   public void shouldGetRedirectedResultWithSubSampleWhenFollowRedirectEnabledAndRedirected()
       throws Exception {
-    HTTPSampleResult expected = createExpectedResult(true, HttpStatus.OK_200, REQUEST_HEADERS);
+    HTTPSampleResult expected = createExpectedResult(true, HttpStatus.OK_200, 0, REQUEST_HEADERS);
     expected.setResponseData(SERVER_RESPONSE, StandardCharsets.UTF_8.name());
     expected.setRedirectLocation("https://localhost:6666/test/200");
     startServer(setupServer(createGetServerResponse()));
@@ -395,7 +399,7 @@ public class HTTP2JettyClientTest {
 
   @Test
   public void shouldGetFileDataWithFileIsSentAsBodyPart() throws Exception {
-    HTTPSampleResult expected = createExpectedResult(true, HttpStatus.OK_200,
+    HTTPSampleResult expected = createExpectedResult(true, HttpStatus.OK_200, 9018,
         "Accept-Encoding: gzip\r\n"
             + "User-Agent: Jetty/11.0.6\r\n"
             + "Content-Type: image/png\r\n"
@@ -429,7 +433,7 @@ public class HTTP2JettyClientTest {
 
   @Test
   public void shouldNoUseCacheWhenNotUseExpire() throws Exception {
-    HTTPSampleResult expected = createExpectedResultsAndServerResponse("200");
+    HTTPSampleResult expected = createExpectedResultsAndServerResponse("200", "OK");
     configureCacheManagerToSampler(false, false);
     HTTPSampleResult result = client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS,
         HOST_NAME, SERVER_PORT, SERVER_PATH_200_EMBEDDED), HTTPConstants.GET, false, 0);
@@ -448,7 +452,7 @@ public class HTTP2JettyClientTest {
     JMeterUtils.setProperty("cache_manager.cached_resource_mode", "RETURN_CUSTOM_STATUS");
     JMeterUtils.setProperty("RETURN_CUSTOM_STATUS.message", message);
     JMeterUtils.setProperty("RETURN_CUSTOM_STATUS.code", responseCode);
-    HTTPSampleResult expected = createExpectedResultsAndServerResponse("200");
+    HTTPSampleResult expected = createExpectedResultsAndServerResponse("200", message);
     configureCacheManagerToSampler(true, false);
     HTTPSampleResult result = client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS,
         HOST_NAME, SERVER_PORT, SERVER_PATH_200_EMBEDDED), HTTPConstants.GET, false, 0);
@@ -468,7 +472,7 @@ public class HTTP2JettyClientTest {
     String message = "message";
     JMeterUtils.setProperty("cache_manager.cached_resource_mode", "RETURN_200_CACHE");
     JMeterUtils.setProperty("RETURN_200_CACHE.message", message);
-    HTTPSampleResult expected = createExpectedResultsAndServerResponse("200");
+    HTTPSampleResult expected = createExpectedResultsAndServerResponse("200", message);
     configureCacheManagerToSampler(true, false);
     HTTPSampleResult result = client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS,
         HOST_NAME, SERVER_PORT, SERVER_PATH_200_EMBEDDED), HTTPConstants.GET, false, 0);
@@ -485,7 +489,7 @@ public class HTTP2JettyClientTest {
 
   @Test
   public void shouldGetSubResultWhenCacheCleanBetweenIterations() throws Exception {
-    HTTPSampleResult expected = createExpectedResultsAndServerResponse("200");
+    HTTPSampleResult expected = createExpectedResultsAndServerResponse("200", "OK");
     configureCacheManagerToSampler(false, true);
     HTTPSampleResult result = client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS,
         HOST_NAME, SERVER_PORT, SERVER_PATH_200_EMBEDDED), HTTPConstants.GET, false, 0);
@@ -497,11 +501,13 @@ public class HTTP2JettyClientTest {
     validateEmbeddedResources(resultNotCached, expected);
   }
 
-  private HTTPSampleResult createExpectedResultsAndServerResponse(String responseCode)
+  private HTTPSampleResult createExpectedResultsAndServerResponse(String responseCode,
+      String message)
       throws Exception {
     HTTPSampleResult expected = new HTTPSampleResult();
     expected.setSuccessful(true);
     expected.setResponseCode(responseCode);
+    expected.setResponseMessage(message);
     expected.setRequestHeaders(REQUEST_HEADERS);
     expected.setResponseData(BASIC_HTML_TEMPLATE,
         StandardCharsets.UTF_8.name());
