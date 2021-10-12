@@ -254,6 +254,7 @@ public class HTTP2JettyClientTest {
     HTTPSampleResult expected = new HTTPSampleResult();
     expected.setSuccessful(successful);
     expected.setResponseCode(String.valueOf(responseCode));
+    expected.setResponseMessage(HttpStatus.getMessage(responseCode));
     expected.setRequestHeaders(headers);
     return expected;
   }
