@@ -25,7 +25,6 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 import org.apache.commons.lang3.StringUtils;
-import org.apache.http.HttpResponse;
 import org.apache.http.client.methods.HttpRequestBase;
 import org.apache.jmeter.protocol.http.control.AuthManager;
 import org.apache.jmeter.protocol.http.control.AuthManager.Mechanism;
@@ -309,7 +308,8 @@ public class HTTP2JettyClient {
           postBody.append(writeArgumentsRequestBody(multipartEntityBuilder, arg, contentCharset,
               contentEncoding, boundary));
           multipartEntityBuilder.addFieldPart(parameterName,
-              new StringRequestContent(contentTypeHeader, arg.getEncodedValue(contentCharset.name()),
+              new StringRequestContent(contentTypeHeader,
+                  arg.getEncodedValue(contentCharset.name()),
                   contentCharset), null);
         }
       }

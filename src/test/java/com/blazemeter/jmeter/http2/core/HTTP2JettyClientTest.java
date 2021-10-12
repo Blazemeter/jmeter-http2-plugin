@@ -656,7 +656,7 @@ public class HTTP2JettyClientTest {
       client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS,
           HOST_NAME, SERVER_PORT, SERVER_PATH_200_FILE_SENT), HTTPConstants.POST, false, 0);
     });
-    String expectedException = "java.lang.IllegalStateException: Name is blank";
+    String expectedException = "java.lang.IllegalStateException: Param name is blank";
     softly.assertThat(exception.toString()).contains(expectedException);
 
   }
