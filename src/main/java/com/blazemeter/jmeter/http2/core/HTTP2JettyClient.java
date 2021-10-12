@@ -255,7 +255,6 @@ public class HTTP2JettyClient {
       HTTP2Sampler sampler) throws IOException {
     result.setSuccessful(contentResponse.getStatus() >= 200 && contentResponse.getStatus() <= 399);
     result.setResponseCode(String.valueOf(contentResponse.getStatus()));
-    // Get response message if it's not an exception result from content
     String responseMessage = contentResponse.getReason() != null ? contentResponse.getReason()
         : HttpStatus.getMessage(contentResponse.getStatus());
     result.setResponseMessage(responseMessage);
