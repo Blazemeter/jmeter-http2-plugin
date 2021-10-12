@@ -20,16 +20,13 @@ import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.List;
 import java.util.Collections;
+import java.util.List;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.zip.GZIPOutputStream;
 import jodd.net.MimeTypes;
-import org.apache.commons.lang3.ArrayUtils;
-import org.apache.commons.lang3.StringUtils;
-import org.apache.jmeter.config.Argument;
 import org.apache.jmeter.config.Arguments;
 import org.apache.jmeter.protocol.http.control.AuthManager;
 import org.apache.jmeter.protocol.http.control.AuthManager.Mechanism;
@@ -507,7 +504,7 @@ public class HTTP2JettyClientTest {
 
   @Test
   public void shouldGetTwoFilesAndTwoParams() throws Exception {
-    HTTPSampleResult expected = createExpectedResultsAndServerResponse();
+    HTTPSampleResult expected = createExpectedResultsAndServerResponse("200");
     sampler.setDoMultipart(true);
     configureSampler(HTTPConstants.POST);
 
@@ -544,7 +541,7 @@ public class HTTP2JettyClientTest {
 
   @Test
   public void shouldGetOneFileAndOneParam() throws Exception {
-    HTTPSampleResult expected = createExpectedResultsAndServerResponse();
+    HTTPSampleResult expected = createExpectedResultsAndServerResponse("200");
     sampler.setDoMultipart(true);
     configureSampler(HTTPConstants.POST);
 
@@ -576,7 +573,7 @@ public class HTTP2JettyClientTest {
 
   @Test
   public void shouldGetOnlyTwoFiles() throws Exception {
-    HTTPSampleResult expected = createExpectedResultsAndServerResponse();
+    HTTPSampleResult expected = createExpectedResultsAndServerResponse("200");
     sampler.setDoMultipart(true);
     configureSampler(HTTPConstants.POST);
 
@@ -604,7 +601,7 @@ public class HTTP2JettyClientTest {
 
   @Test
   public void shouldGetOnlyTwoParams() throws Exception {
-    HTTPSampleResult expected = createExpectedResultsAndServerResponse();
+    HTTPSampleResult expected = createExpectedResultsAndServerResponse("200");
     sampler.setDoMultipart(true);
     configureSampler(HTTPConstants.POST);
 
@@ -633,7 +630,7 @@ public class HTTP2JettyClientTest {
 
   @Test
   public void shouldReturnErrorInBlankFileName() throws Exception {
-    HTTPSampleResult expected = createExpectedResultsAndServerResponse();
+    HTTPSampleResult expected = createExpectedResultsAndServerResponse("200");
     sampler.setDoMultipart(true);
 
     // Create one File with empty name

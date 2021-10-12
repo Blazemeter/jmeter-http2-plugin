@@ -300,36 +300,27 @@ public class HTTP2JettyClient {
     Content requestContent;
 
     if (sampler.getDoMultipart()) {
-
-      // Create and add Fields and Files Parts
-      final MultiPartRequestContent multipartEntityBuilder = new MultiPartRequestContent();
+      MultiPartRequestContent multipartEntityBuilder = new MultiPartRequestContent();
       String boundary = multipartEntityBuilder.getContentType().split(" ")[1].split("=")[1];
-
-      // Add all parameters
-      for (final JMeterProperty jMeterProperty : sampler.getArguments()) {
-        final HTTPArgument arg = (HTTPArgument) jMeterProperty.getObjectValue();
-        final String parameterName = arg.getName();
-        if (arg.isSkippable(parameterName)) {
-          continue;
+      for (JMeterProperty jMeterProperty : sampler.getArguments()) {
+        HTTPArgument arg = (HTTPArgument) jMeterProperty.getObjectValue();
+        String parameterName = arg.getName();
+        if (!arg.isSkippable(parameterName)) {
+          postBody.append(writeArgumentsRequestBody(multipartEntityBuilder, arg, contentCharset,
+              contentEncoding, boundary));
+          multipartEntityBuilder.addFieldPart(parameterName,
+              new StringRequestContent(contentTypeHeader, arg.getEncodedValue(contentCharset.name()),
+                  contentCharset), null);
         }
-
-        postBody = writeArgumentsRequestBody(multipartEntityBuilder, arg, contentCharset,
-            contentEncoding, boundary, postBody);
-
-        multipartEntityBuilder.addFieldPart(parameterName,
-            new StringRequestContent(contentTypeHeader, arg.getEncodedValue(contentCharset.name()),
-                contentCharset), null);
       }
-
-      // Add all files
-      final Content[] fileBodies = new PathRequestContent[sampler
-          .getHTTPFiles().length]; // Cannot retrieve parts once added
+      Content[] fileBodies = new PathRequestContent[sampler
+          .getHTTPFiles().length];
+      // Cannot retrieve parts once added
       for (int i = 0; i < sampler.getHTTPFiles().length; i++) {
         final HTTPFileArg file = sampler.getHTTPFiles()[i];
-
-        // Name is requiered
+        // Name is required
         if (StringUtils.isBlank(file.getParamName())) {
-          throw new IllegalStateException("Name is blank");
+          throw new IllegalStateException("Param name is blank");
         }
         String mimeTypeFile = null;
         if (!hasContentTypeHeader) {
@@ -344,21 +335,14 @@ public class HTTP2JettyClient {
         } else {
           fileBodies[i] = new PathRequestContent(Path.of(file.getPath()));
         }
-
         String fileName = Paths.get((file.getPath())).getFileName().toString();
-        postBody = writeFilesRequestBody(multipartEntityBuilder, file, fileName, contentCharset,
-            contentEncoding, boundary, postBody);
-
+        postBody.append(writeFilesRequestBody(multipartEntityBuilder, file, fileName, boundary));
         multipartEntityBuilder.addFilePart(file.getParamName(), fileName, fileBodies[i],
             null);
       }
-      StringBuilder lastBoundary =
-          new StringBuilder(DASH_DASH).append(boundary).append(DASH_DASH).append(NEW_LINE);
-      postBody.append(lastBoundary);
+      postBody.append(DASH_DASH).append(boundary).append(DASH_DASH).append(NEW_LINE);
       multipartEntityBuilder.close();
-
       request.body(multipartEntityBuilder);
-
     } else {
       if (!sampler.hasArguments() && sampler.getSendFileAsPostBody()) {
         // Only one File support in not multipart scenario
@@ -508,10 +492,10 @@ public class HTTP2JettyClient {
 
   private StringBuilder writeArgumentsRequestBody(
       MultiPartRequestContent multipartEntityBuilder, HTTPArgument arg, Charset contentCharset,
-      String contentEncoding, String boundary, StringBuilder postBody)
+      String contentEncoding, String boundary)
       throws UnsupportedEncodingException {
     String disposition = multipartEntityBuilder.getContentType().split(" ")[0].split("/")[1];
-
+    StringBuilder ret = new StringBuilder();
     StringBuilder firstBoundary =
         new StringBuilder(DASH_DASH).append(boundary).append(NEW_LINE);
     StringBuilder contentDisposition = new StringBuilder("Content-Disposition: ")
@@ -527,15 +511,14 @@ public class HTTP2JettyClient {
     StringBuilder value = new StringBuilder(arg.getEncodedValue(contentCharset.name()))
         .append(NEW_LINE);
 
-    return postBody.append(firstBoundary).append(contentDisposition).append(contentType)
+    return ret.append(firstBoundary).append(contentDisposition).append(contentType)
         .append(contentTEncoding).append(value);
   }
 
   private StringBuilder writeFilesRequestBody(MultiPartRequestContent multipartEntityBuilder,
-      HTTPFileArg file, String fileName, Charset contentCharset, String contentEncoding,
-      String boundary, StringBuilder postBody) {
+      HTTPFileArg file, String fileName, String boundary) {
     String disposition = multipartEntityBuilder.getContentType().split(" ")[0].split("/")[1];
-
+    StringBuilder ret = new StringBuilder();
     StringBuilder firstBoundary =
         new StringBuilder(DASH_DASH).append(boundary).append(NEW_LINE);
     StringBuilder contentDisposition = new StringBuilder("Content-Disposition: ")
@@ -548,7 +531,7 @@ public class HTTP2JettyClient {
     StringBuilder notShowContent =
         new StringBuilder("<actual file content, not shown here>").append(NEW_LINE);
 
-    return postBody.append(firstBoundary).append(contentDisposition).append(contentType)
+    return ret.append(firstBoundary).append(contentDisposition).append(contentType)
         .append(contentTEncoding).append(notShowContent);
   }
 
