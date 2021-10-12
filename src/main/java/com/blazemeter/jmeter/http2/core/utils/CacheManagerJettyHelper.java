@@ -1,6 +1,5 @@
-package com.blazemeter.jmeter.http2.utils;
+package com.blazemeter.jmeter.http2.core.utils;
 
-import com.blazemeter.jmeter.http2.sampler.HTTP2Sampler;
 import java.net.URI;
 import org.apache.http.HttpResponse;
 import org.apache.http.ProtocolVersion;
@@ -15,7 +14,6 @@ import org.apache.http.client.methods.HttpTrace;
 import org.apache.http.message.BasicHeader;
 import org.apache.http.message.BasicHttpResponse;
 import org.apache.jmeter.protocol.http.sampler.HTTPHC4Impl.HttpDelete;
-import org.apache.jmeter.protocol.http.sampler.HTTPHC4Impl.HttpGetWithEntity;
 import org.apache.jmeter.protocol.http.sampler.HTTPSampleResult;
 import org.apache.jmeter.protocol.http.sampler.HttpWebdav;
 import org.apache.jmeter.protocol.http.util.HTTPConstants;
@@ -23,36 +21,16 @@ import org.apache.jmeter.util.JMeterUtils;
 import org.eclipse.jetty.client.api.ContentResponse;
 import org.eclipse.jetty.http.HttpFields;
 
-public class CacheManagerHelper {
+public class CacheManagerJettyHelper {
 
-  private static final CachedResourceMode CACHED_RESOURCE_MODE =
-      CachedResourceMode.valueOf(
-          JMeterUtils.getPropDefault("cache_manager.cached_resource_mode",
-              CachedResourceMode.RETURN_NO_SAMPLE.toString()));
-  private static final String RETURN_200_CACHE_MESSAGE =
-      JMeterUtils.getPropDefault("RETURN_200_CACHE.message", "(ex cache)");
-  private static final String RETURN_CUSTOM_STATUS_CODE =
-      JMeterUtils.getProperty("RETURN_CUSTOM_STATUS.code");
-  private static final String RETURN_CUSTOM_STATUS_MESSAGE =
-      JMeterUtils.getProperty("RETURN_CUSTOM_STATUS.message");
-  private static final String DEFAULT_EXPIRE_DATE = "Sat, 25 Sep 2041 00:00:00 GMT";
-
-  public static HttpRequestBase createHttpRequest(URI uri, String method,
-      boolean areFollowingRedirect,
-      HTTP2Sampler sampler) {
+  public static HttpRequestBase createApacheHttpRequest(URI uri, String method) {
     HttpRequestBase result;
     switch (method) {
       case HTTPConstants.POST:
         result = new HttpPost(uri);
         break;
       case HTTPConstants.GET:
-        if (!areFollowingRedirect
-            && ((!sampler.hasArguments() && sampler.getSendFileAsPostBody())
-            || sampler.getSendParameterValuesAsPostBody())) {
-          result = new HttpGetWithEntity(uri);
-        } else {
-          result = new HttpGet(uri);
-        }
+        result = new HttpGet(uri);
         break;
       case HTTPConstants.PUT:
         result = new HttpPut(uri);
@@ -84,19 +62,26 @@ public class CacheManagerHelper {
   }
 
   public static HTTPSampleResult updateSampleResultForResourceInCache(HTTPSampleResult res) {
-    switch (CACHED_RESOURCE_MODE) {
+    CachedResourceMode cachedResourceMode = CachedResourceMode.valueOf(JMeterUtils
+        .getPropDefault("cache_manager.cached_resource_mode",
+            CachedResourceMode.RETURN_NO_SAMPLE.toString()));
+    String returnMessage;
+    switch (cachedResourceMode) {
       case RETURN_NO_SAMPLE:
         return null;
       case RETURN_200_CACHE:
+        returnMessage = JMeterUtils.getPropDefault("RETURN_200_CACHE.message", "(ex cache)");
         res.sampleEnd();
         res.setResponseCodeOK();
-        res.setResponseMessage(RETURN_200_CACHE_MESSAGE);
+        res.setResponseMessage(returnMessage);
         res.setSuccessful(true);
         return res;
       case RETURN_CUSTOM_STATUS:
+        String returnStatusCode = JMeterUtils.getProperty("RETURN_CUSTOM_STATUS.code");
+        returnMessage = JMeterUtils.getPropDefault("RETURN_CUSTOM_STATUS.message", "(ex cache)");
         res.sampleEnd();
-        res.setResponseCode(RETURN_CUSTOM_STATUS_CODE);
-        res.setResponseMessage(RETURN_CUSTOM_STATUS_MESSAGE);
+        res.setResponseCode(returnStatusCode);
+        res.setResponseMessage(returnMessage);
         res.setSuccessful(true);
         return res;
       default:
@@ -104,16 +89,14 @@ public class CacheManagerHelper {
     }
   }
 
-  public static org.apache.http.Header[] convertFieldsToHeaders(HttpFields fields) {
+  public static org.apache.http.Header[] convertJettyHeadersToApacheHeaders(HttpFields fields) {
     return fields.stream()
         .map(h -> new BasicHeader(h.getName(), h.getValue()))
         .toArray(org.apache.http.Header[]::new);
   }
 
-  /**
-   * Create an HttpResponse from a ContentResponse of Jetty.
-   */
-  public static HttpResponse createHttpResponse(ContentResponse contentResponse) {
+  public static HttpResponse createApacheHttpResponseFromJettyContentResponse(
+      ContentResponse contentResponse) {
     HttpResponse httpResponse = new BasicHttpResponse(new ProtocolVersion("HTTP/2", 2, 2),
         contentResponse.getStatus(),
         contentResponse.getReason());

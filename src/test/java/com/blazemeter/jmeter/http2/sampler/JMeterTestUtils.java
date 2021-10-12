@@ -1,13 +1,11 @@
 package com.blazemeter.jmeter.http2.sampler;
 
-import java.io.File;
 import kg.apc.emulators.TestJMeterUtils;
 import org.apache.jmeter.util.JMeterUtils;
 
 public class JMeterTestUtils {
 
   private static boolean jeerEnvironmentInitialized = false;
-  private static String filePrefix;
 
   public JMeterTestUtils() {
   }
@@ -27,8 +25,6 @@ public class JMeterTestUtils {
       JMeterUtils
           .setProperty("cssParser.className", "org.apache.jmeter.protocol.http.parser.CssParser");
       JMeterUtils.setProperty("cssParser.types", "text/css");
-      JMeterUtils.setProperty("cache_manager.cached_resource_mode", "RETURN_200_CACHE");
-      JMeterUtils.setProperty("RETURN_200_CACHE.message", "(ex cache)");
     }
   }
 }
