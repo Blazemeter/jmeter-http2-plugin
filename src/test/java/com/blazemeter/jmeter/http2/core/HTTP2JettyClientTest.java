@@ -248,6 +248,7 @@ public class HTTP2JettyClientTest {
     HTTPSampleResult expected = new HTTPSampleResult();
     expected.setSuccessful(successful);
     expected.setResponseCode(String.valueOf(responseCode));
+    expected.setResponseMessage(HttpStatus.getMessage(responseCode));
     expected.setRequestHeaders(headers);
     return expected;
   }
@@ -496,7 +497,8 @@ public class HTTP2JettyClientTest {
     validateEmbeddedResources(resultNotCached, expected);
   }
 
-  private HTTPSampleResult createExpectedResultsAndServerResponse(String responseCode) throws Exception {
+  private HTTPSampleResult createExpectedResultsAndServerResponse(String responseCode)
+      throws Exception {
     HTTPSampleResult expected = new HTTPSampleResult();
     expected.setSuccessful(true);
     expected.setResponseCode(responseCode);
