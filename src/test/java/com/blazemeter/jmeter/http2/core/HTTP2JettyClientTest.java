@@ -66,7 +66,6 @@ import org.eclipse.jetty.util.ssl.SslContextFactory;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.BeforeClass;
-import org.junit.Ignore;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -95,9 +94,6 @@ public class HTTP2JettyClientTest {
   private static final String[] ROLES = new String[]{"can-access"};
   private static final String BASIC_HTML_TEMPLATE = "<!DOCTYPE html><html><head><title>Page "
       + "Title</title></head><body><div><img src='image.png'></div></body></html>";
-  private final String imagePath = getClass().getResource("blazemeter-labs-logo"
-      + ".png").getPath();
-  private static final String MESSAGE_CACHED = "(ex cache)";
   private static final byte[] BINARY_RESPONSE_BODY = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
 
   @Rule

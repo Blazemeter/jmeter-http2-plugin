@@ -17,12 +17,10 @@ import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Set;
-import java.util.Spliterator;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.regex.Pattern;
-import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.http.client.methods.HttpRequestBase;
@@ -60,6 +58,7 @@ import org.eclipse.jetty.client.util.PathRequestContent;
 import org.eclipse.jetty.client.util.StringRequestContent;
 import org.eclipse.jetty.http.HttpField;
 import org.eclipse.jetty.http.HttpFields;
+import org.eclipse.jetty.http.HttpHeader;
 import org.eclipse.jetty.http.HttpStatus;
 import org.eclipse.jetty.http2.client.HTTP2Client;
 import org.eclipse.jetty.http2.client.http.ClientConnectionFactoryOverHTTP2;
@@ -80,8 +79,9 @@ public class HTTP2JettyClient {
   private static final boolean ADD_CONTENT_TYPE_TO_POST_IF_MISSING = JMeterUtils.getPropDefault(
       "http.post_add_content_type_if_missing", false);
   private static final Pattern PORT_PATTERN = Pattern.compile("\\d+");
-  private static final String DASH_DASH = "--";
-  private static final String NEW_LINE = "\r\n";
+  private static final String MULTI_PART_SEPARATOR = "--";
+  private static final String LINE_SEPARATOR = "\r\n";
+  private static final String DEFAULT_FILE_MIME_TYPE = "application/octet-stream";
   private final HttpClient httpClient;
 
   public HTTP2JettyClient() {
@@ -96,72 +96,91 @@ public class HTTP2JettyClient {
     this.httpClient = new HttpClient(transport);
   }
 
+  public void start() throws Exception {
+    if (!httpClient.isStarted()) {
+      httpClient.start();
+    }
+  }
+
+  public void stop() throws Exception {
+    httpClient.stop();
+  }
+
   public HTTPSampleResult sample(HTTP2Sampler sampler, URL url, String method,
       boolean areFollowingRedirect, int depth)
-      throws URISyntaxException, IOException, InterruptedException,
-      ExecutionException, TimeoutException {
-    HTTPSampleResult result = new HTTPSampleResult();
-    result.setSampleLabel(getSampleLabel(url, sampler));
-    result.setHTTPMethod(method);
-    result.setURL(url);
+      throws URISyntaxException, IOException, InterruptedException, ExecutionException,
+      TimeoutException {
+
     if (!sampler.getProxyHost().isEmpty()) {
       setProxy(sampler.getProxyHost(), sampler.getProxyPortInt(), sampler.getProxyScheme());
     }
-    result.sampleStart();
+
     setAuthManager(sampler);
-    HttpRequest request = createRequest(url, result);
+
+    HTTPSampleResult result = buildResult(sampler, url, method);
+    HttpRequest request = buildRequest(url, result);
     setTimeouts(sampler, request);
     request.followRedirects(sampler.getAutoRedirects());
     request.method(method);
+
     CacheManager cacheManager = sampler.getCacheManager();
     setHeaders(request, sampler.getHeaderManager(), url, cacheManager);
-    // If result of request is cached, then return it
-    if (cacheManager != null && HTTPConstants.GET.equalsIgnoreCase(method) && cacheManager
-        .inCache(url,
-            CacheManagerJettyHelper.convertJettyHeadersToApacheHeaders(request.getHeaders()))) {
+    if (cacheManager != null && HTTPConstants.GET.equalsIgnoreCase(method) && cacheManager.inCache(
+        url, CacheManagerJettyHelper.convertJettyHeadersToApacheHeaders(request.getHeaders()))) {
       return CacheManagerJettyHelper.updateSampleResultForResourceInCache(result);
     }
+
     CookieManager cookieManager = sampler.getCookieManager();
     if (cookieManager != null) {
       result.setCookies(buildCookies(request, url, cookieManager));
     }
+
     setBody(request, sampler, result);
     if (!isSupportedMethod(method)) {
-      throw new UnsupportedOperationException(
-          String.format("Method %s is not supported", method));
-    } else {
-      ContentResponse contentResponse = request.send();
-      saveCookiesInCookieManager(contentResponse, url, sampler.getCookieManager());
-      setResultContentResponse(result, contentResponse, sampler);
-      result.sampleEnd();
-      if (result.isRedirect()) {
-        String redirectLocation = contentResponse.getHeaders() != null
-            ? contentResponse.getHeaders().get(HTTPConstants.HEADER_LOCATION)
-            : null;
-        if (redirectLocation == null) {
-          throw new IllegalArgumentException("Missing location header in redirect");
-        }
-        result.setRedirectLocation(redirectLocation);
-      }
-      if (cacheManager != null) {
-        cacheManager.saveDetails(CacheManagerJettyHelper
-            .createApacheHttpResponseFromJettyContentResponse(contentResponse), result);
-      }
+      throw new UnsupportedOperationException(String.format("Method %s is not supported", method));
     }
 
-    result.setRequestHeaders(getHeadersAsString(request.getHeaders()));
-    result = sampler.resultProcessing(areFollowingRedirect, depth, result);
+    result.sampleStart();
+    ContentResponse contentResponse = request.send();
+    result.sampleEnd();
+
+    saveCookiesInCookieManager(contentResponse, url, sampler.getCookieManager());
+    setResultContentResponse(result, contentResponse, sampler);
+
+    if (result.isRedirect()) {
+      String redirectLocation = contentResponse.getHeaders() != null
+          ? contentResponse.getHeaders().get(HTTPConstants.HEADER_LOCATION)
+          : null;
+      if (redirectLocation == null) {
+        throw new IllegalArgumentException("Missing location header in redirect");
+      }
+      result.setRedirectLocation(redirectLocation);
+    }
+
+    if (cacheManager != null) {
+      cacheManager.saveDetails(CacheManagerJettyHelper
+          .createApacheHttpResponseFromJettyContentResponse(contentResponse), result);
+    }
+
+    result.setRequestHeaders(buildHeadersString(request.getHeaders()));
+    return sampler.resultProcessing(areFollowingRedirect, depth, result);
+  }
+
+  private HTTPSampleResult buildResult(HTTP2Sampler sampler, URL url, String method) {
+    HTTPSampleResult result = new HTTPSampleResult();
+    result.setSampleLabel(getSampleLabel(url, sampler));
+    result.setHTTPMethod(method);
+    result.setURL(url);
     return result;
   }
 
-  private String getHeadersAsString(HttpFields headers) {
-    if (headers == null) {
-      return "";
-    } else {
-      return headers.stream().filter(h -> !h.getName().equals(HTTPConstants.HEADER_COOKIE))
-          .map(h -> h.getName() + ": " + h.getValue()).collect(Collectors.joining("\r\n"))
-          + "\r\n\r\n";
-    }
+  private boolean isSupportedMethod(String method) {
+    return SUPPORTED_METHODS.contains(method);
+  }
+
+  private String buildHeadersString(HttpFields headers) {
+    return headers == null ? ""
+        : HttpFields.build(headers).remove(HTTPConstants.HEADER_COOKIE).toString();
   }
 
   private void saveCookiesInCookieManager(ContentResponse response, URL url,
@@ -188,28 +207,31 @@ public class HTTP2JettyClient {
     httpClient.getProxyConfiguration().getProxies().add(proxy);
   }
 
-  private HttpRequest createRequest(URL url, HTTPSampleResult result) throws URISyntaxException,
+  private HttpRequest buildRequest(URL url, HTTPSampleResult result) throws URISyntaxException,
       IllegalArgumentException {
     Request request = httpClient.newRequest(url.toURI());
-    if (request instanceof HttpRequest && result != null) {
-      HttpRequest httpRequest = (HttpRequest) request;
-      httpRequest.onRequestBegin(l -> result.connectEnd());
-      httpRequest.onResponseBegin(l -> result.latencyEnd());
-      return httpRequest;
-    } else {
+    if (!(request instanceof HttpRequest) || result == null) {
       throw new IllegalArgumentException("HttpRequest is expected");
     }
+    HttpRequest httpRequest = (HttpRequest) request;
+    httpRequest.onRequestBegin(l -> result.connectEnd());
+    httpRequest.onResponseBegin(l -> result.latencyEnd());
+    return httpRequest;
   }
 
   private void setAuthManager(HTTP2Sampler sampler) {
-
     AuthManager authManager = sampler.getAuthManager();
     if (authManager != null) {
-      StreamSupport.stream(authManagerToSpliterator(authManager), false)
-          .map(this::getAuthorizationObjectFromProperty)
-          .filter(auth -> isSupportedMechanism(auth) && isNotEmptyURL(auth))
+      StreamSupport.stream(authManager.getAuthObjects().spliterator(), false)
+          .map(j -> (Authorization) j.getObjectValue())
+          .filter(auth -> isSupportedMechanism(auth) && !StringUtils.isEmpty(auth.getURL()))
           .forEach(this::addAuthenticationToJettyClient);
     }
+  }
+
+  private boolean isSupportedMechanism(Authorization auth) {
+    String authName = auth.getMechanism().name();
+    return authName.equals(Mechanism.BASIC.name()) || authName.equals(Mechanism.DIGEST.name());
   }
 
   private void addAuthenticationToJettyClient(Authorization auth) {
@@ -228,33 +250,6 @@ public class HTTP2JettyClient {
                   auth.getPass());
       authenticationStore.addAuthentication(authentication);
     }
-  }
-
-  private boolean isSupportedMechanism(Authorization auth) {
-    String authName = auth.getMechanism().name();
-    return authName.equals(Mechanism.BASIC.name()) || authName.equals(Mechanism.DIGEST.name());
-  }
-
-  private Spliterator<JMeterProperty> authManagerToSpliterator(AuthManager authManager) {
-    return authManager.getAuthObjects().spliterator();
-  }
-
-  private Authorization getAuthorizationObjectFromProperty(JMeterProperty jMeterProperty) {
-    return (Authorization) jMeterProperty.getObjectValue();
-  }
-
-  private boolean isNotEmptyURL(Authorization authorization) {
-    return authorization.getURL() != null && !authorization.getURL().isEmpty();
-  }
-
-  public void start() throws Exception {
-    if (!httpClient.isStarted()) {
-      httpClient.start();
-    }
-  }
-
-  public void stop() throws Exception {
-    httpClient.stop();
   }
 
   private void setResultContentResponse(HTTPSampleResult result, ContentResponse contentResponse,
@@ -292,31 +287,24 @@ public class HTTP2JettyClient {
   private void setBody(HttpRequest request, HTTP2Sampler sampler, HTTPSampleResult result)
       throws IOException {
     String contentEncoding = sampler.getContentEncoding();
-    Charset contentCharset =
-        !contentEncoding.isEmpty() ? Charset.forName(contentEncoding) : StandardCharsets.UTF_8;
-    Charset contentCharsetAsciiDefault =
-        !contentEncoding.isEmpty() ? Charset.forName(contentEncoding) : StandardCharsets.US_ASCII;
     String contentTypeHeader =
         request.getHeaders() != null ? request.getHeaders().get(HTTPConstants.HEADER_CONTENT_TYPE)
             : null;
     boolean hasContentTypeHeader = contentTypeHeader != null && contentTypeHeader.isEmpty();
     StringBuilder postBody = new StringBuilder();
-    Content requestContent;
-
     if (sampler.getUseMultipart()) {
       MultiPartRequestContent multipartEntityBuilder = new MultiPartRequestContent();
-      String boundary = multipartEntityBuilder.getContentType().split(" ")[1].split("=")[1];
+      String boundary = extractMultipartBoundary(multipartEntityBuilder);
+      Charset contentCharset =
+          buildCharsetOrDefault(contentEncoding, StandardCharsets.US_ASCII);
       for (JMeterProperty jMeterProperty : sampler.getArguments()) {
         HTTPArgument arg = (HTTPArgument) jMeterProperty.getObjectValue();
         String parameterName = arg.getName();
         if (!arg.isSkippable(parameterName)) {
           postBody.append(
-              writeArgumentsRequestBody(multipartEntityBuilder, arg, contentCharsetAsciiDefault,
-                  contentEncoding, boundary));
+              buildArgumentPartRequestBody(arg, contentCharset, contentEncoding, boundary));
           multipartEntityBuilder.addFieldPart(parameterName,
-              new StringRequestContent(contentTypeHeader,
-                  arg.getEncodedValue(contentCharsetAsciiDefault.name()),
-                  contentCharsetAsciiDefault), null);
+              new StringRequestContent(contentTypeHeader, arg.getValue(), contentCharset), null);
         }
       }
       Content[] fileBodies = new PathRequestContent[sampler
@@ -324,29 +312,18 @@ public class HTTP2JettyClient {
       // Cannot retrieve parts once added
       for (int i = 0; i < sampler.getHTTPFiles().length; i++) {
         final HTTPFileArg file = sampler.getHTTPFiles()[i];
-        // Name is required
         if (StringUtils.isBlank(file.getParamName())) {
           throw new IllegalStateException("Param name is blank");
         }
-        String mimeTypeFile = null;
-        if (!hasContentTypeHeader) {
-          if (file.getMimeType() != null && !file.getMimeType().isEmpty()) {
-            mimeTypeFile = file.getMimeType();
-          } else if (ADD_CONTENT_TYPE_TO_POST_IF_MISSING) {
-            mimeTypeFile = HTTPConstants.APPLICATION_X_WWW_FORM_URLENCODED;
-          }
-        }
-        if (mimeTypeFile != null) {
-          fileBodies[i] = new PathRequestContent(mimeTypeFile, Path.of(file.getPath()));
-        } else {
-          fileBodies[i] = new PathRequestContent(Path.of(file.getPath()));
-        }
+        String mimeTypeFile = extractFileMimeType(hasContentTypeHeader, file);
+        fileBodies[i] = new PathRequestContent(mimeTypeFile, Path.of(file.getPath()));
         String fileName = Paths.get((file.getPath())).getFileName().toString();
-        postBody.append(writeFilesRequestBody(multipartEntityBuilder, file, fileName, boundary));
+        postBody.append(buildFilePartRequestBody(file, fileName, boundary));
         multipartEntityBuilder.addFilePart(file.getParamName(), fileName, fileBodies[i],
             null);
       }
-      postBody.append(DASH_DASH).append(boundary).append(DASH_DASH).append(NEW_LINE);
+      postBody.append(MULTI_PART_SEPARATOR).append(boundary).append(MULTI_PART_SEPARATOR)
+          .append(LINE_SEPARATOR);
       multipartEntityBuilder.close();
       request.body(multipartEntityBuilder);
     } else {
@@ -357,20 +334,12 @@ public class HTTP2JettyClient {
           LOG.info("Send multiples files is not currently supported, only first file will be "
               + "sending");
         }
-        String mimeTypeFile = null;
-        if (!hasContentTypeHeader) {
-          if (file.getMimeType() != null && !file.getMimeType().isEmpty()) {
-            mimeTypeFile = file.getMimeType();
-          } else if (ADD_CONTENT_TYPE_TO_POST_IF_MISSING) {
-            mimeTypeFile = HTTPConstants.APPLICATION_X_WWW_FORM_URLENCODED;
-          }
-        }
-        if (mimeTypeFile != null) {
+
+        String mimeTypeFile = extractFileMimeType(hasContentTypeHeader, file);
+        if (!DEFAULT_FILE_MIME_TYPE.equals(mimeTypeFile)) {
           request.addHeader(new HttpField(HTTPConstants.HEADER_CONTENT_TYPE, mimeTypeFile));
-          requestContent = new PathRequestContent(mimeTypeFile, Path.of(file.getPath()));
-        } else {
-          requestContent = new PathRequestContent(Path.of(file.getPath()));
         }
+        Content requestContent = new PathRequestContent(mimeTypeFile, Path.of(file.getPath()));
         request.body(requestContent);
         postBody.append("<actual file content, not shown here>");
       } else {
@@ -378,12 +347,13 @@ public class HTTP2JettyClient {
           request.addHeader(new HttpField(HTTPConstants.HEADER_CONTENT_TYPE,
               HTTPConstants.APPLICATION_X_WWW_FORM_URLENCODED));
         }
+        Charset contentCharset = buildCharsetOrDefault(contentEncoding, StandardCharsets.UTF_8);
         if (sampler.getSendParameterValuesAsPostBody()) {
           for (JMeterProperty jMeterProperty : sampler.getArguments()) {
             HTTPArgument arg = (HTTPArgument) jMeterProperty.getObjectValue();
             postBody.append(arg.getEncodedValue(contentCharset.name()));
           }
-          requestContent = new StringRequestContent(contentTypeHeader, postBody.toString(),
+          Content requestContent = new StringRequestContent(contentTypeHeader, postBody.toString(),
               contentCharset);
           request.body(requestContent);
         } else if (isMethodWithBody(sampler.getMethod())) {
@@ -404,17 +374,34 @@ public class HTTP2JettyClient {
               fields.add(parameterName, parameterValue);
             }
           }
-          requestContent = new FormRequestContent(fields, contentCharset);
           postBody.append(FormRequestContent.convert(fields));
-          request.body(requestContent);
+          request.body(new FormRequestContent(fields, contentCharset));
         }
       }
     }
     result.setQueryString(postBody.toString());
   }
 
-  private boolean isSupportedMethod(String method) {
-    return SUPPORTED_METHODS.contains(method);
+  private String extractFileMimeType(boolean hasContentTypeHeader, HTTPFileArg file) {
+    String ret = null;
+    if (!hasContentTypeHeader) {
+      if (file.getMimeType() != null && !file.getMimeType().isEmpty()) {
+        ret = file.getMimeType();
+      } else if (ADD_CONTENT_TYPE_TO_POST_IF_MISSING) {
+        ret = HTTPConstants.APPLICATION_X_WWW_FORM_URLENCODED;
+      }
+    }
+    return ret == null ? DEFAULT_FILE_MIME_TYPE : ret;
+  }
+
+  private String extractMultipartBoundary(MultiPartRequestContent multipartEntityBuilder) {
+    String contentType = multipartEntityBuilder.getContentType();
+    String boundaryParam = contentType.substring(contentType.indexOf(" ") + 1);
+    return boundaryParam.substring(boundaryParam.indexOf("=") + 1);
+  }
+
+  private Charset buildCharsetOrDefault(String contentEncoding, Charset defaultCharset) {
+    return !contentEncoding.isEmpty() ? Charset.forName(contentEncoding) : defaultCharset;
   }
 
   private boolean isMethodWithBody(String method) {
@@ -422,16 +409,13 @@ public class HTTP2JettyClient {
   }
 
   private void setHeaders(HttpRequest request, HeaderManager headerManager, URL url,
-      CacheManager cacheManager)
-      throws URISyntaxException {
+      CacheManager cacheManager) throws URISyntaxException {
     if (headerManager != null) {
       StreamSupport.stream(headerManager.getHeaders().spliterator(), false)
           .map(prop -> (Header) prop.getObjectValue())
           .filter(header -> (!header.getName().isEmpty()) && (!HTTPConstants.HEADER_CONTENT_LENGTH
               .equalsIgnoreCase(header.getName())))
-          .forEach(header -> {
-            request.addHeader(createJettyHeader(header, url));
-          });
+          .forEach(header -> request.addHeader(createJettyHeader(header, url)));
     }
 
     if (cacheManager != null) {
@@ -496,49 +480,30 @@ public class HTTP2JettyClient {
     }
   }
 
-  private StringBuilder writeArgumentsRequestBody(
-      MultiPartRequestContent multipartEntityBuilder, HTTPArgument arg, Charset contentCharset,
-      String contentEncoding, String boundary)
-      throws UnsupportedEncodingException {
-    String disposition = multipartEntityBuilder.getContentType().split(" ")[0].split("/")[1];
-    StringBuilder ret = new StringBuilder();
-    StringBuilder firstBoundary =
-        new StringBuilder(DASH_DASH).append(boundary).append(NEW_LINE);
-    StringBuilder contentDisposition = new StringBuilder("Content-Disposition: ")
-        .append(disposition).append(" name=\"").append(arg.getEncodedName())
-        .append("\"").append(NEW_LINE);
-    StringBuilder contentType = new StringBuilder("Content-Type: ").append(arg.getContentType())
-        .append("; charset=").append(contentCharset.name())
-        .append(NEW_LINE);
-    StringBuilder contentTEncoding =
-        new StringBuilder("Content-Transfer-Encoding: ")
-            .append(((StringUtils.isNotBlank(contentEncoding))
-                ? contentEncoding : "8bit")).append(NEW_LINE).append(NEW_LINE);
-    StringBuilder value = new StringBuilder(arg.getEncodedValue(contentCharset.name()))
-        .append(NEW_LINE);
-
-    return ret.append(firstBoundary).append(contentDisposition).append(contentType)
-        .append(contentTEncoding).append(value);
+  private String buildArgumentPartRequestBody(HTTPArgument arg, Charset contentCharset,
+      String contentEncoding, String boundary) throws UnsupportedEncodingException {
+    String disposition = "name=\"" + arg.getEncodedName() + "\"";
+    String contentType = arg.getContentType() + "; charset=" + contentCharset.name();
+    String encoding = StringUtils.isNotBlank(contentEncoding) ? contentEncoding : "8bit";
+    return buildPartBody(boundary, disposition, contentType, encoding,
+        arg.getEncodedValue(contentCharset.name()));
   }
 
-  private StringBuilder writeFilesRequestBody(MultiPartRequestContent multipartEntityBuilder,
-      HTTPFileArg file, String fileName, String boundary) {
-    String disposition = multipartEntityBuilder.getContentType().split(" ")[0].split("/")[1];
-    StringBuilder ret = new StringBuilder();
-    StringBuilder firstBoundary =
-        new StringBuilder(DASH_DASH).append(boundary).append(NEW_LINE);
-    StringBuilder contentDisposition = new StringBuilder("Content-Disposition: ")
-        .append(disposition).append(" name=\"").append(file.getParamName()).append("\"; ").append(
-            "filename=\"").append(fileName).append("\"").append(NEW_LINE);
-    StringBuilder contentType = new StringBuilder("Content-Type: ").append(file.getMimeType())
-        .append(NEW_LINE);
-    StringBuilder contentTEncoding =
-        new StringBuilder("Content-Transfer-Encoding: binary").append(NEW_LINE).append(NEW_LINE);
-    StringBuilder notShowContent =
-        new StringBuilder("<actual file content, not shown here>").append(NEW_LINE);
+  private String buildPartBody(String boundary, String disposition, String contentType,
+      String encoding, String value) {
+    return MULTI_PART_SEPARATOR + boundary + LINE_SEPARATOR +
+        HttpFields.build()
+            .add("Content-Disposition", "form-data; " + disposition)
+            .add(HttpHeader.CONTENT_TYPE.toString(), contentType)
+            .add("Content-Transfer-Encoding", encoding)
+            .toString()
+        + value + LINE_SEPARATOR;
+  }
 
-    return ret.append(firstBoundary).append(contentDisposition).append(contentType)
-        .append(contentTEncoding).append(notShowContent);
+  private String buildFilePartRequestBody(HTTPFileArg file, String fileName, String boundary) {
+    String disposition = "name=\"" + file.getParamName() + "\"; filename=\"" + fileName + "\"";
+    return buildPartBody(boundary, disposition, file.getMimeType(), "binary",
+        "<actual file content, not shown here>");
   }
 
 }
