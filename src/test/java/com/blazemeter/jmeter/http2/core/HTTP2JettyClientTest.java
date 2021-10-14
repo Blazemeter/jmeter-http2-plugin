@@ -194,14 +194,14 @@ public class HTTP2JettyClientTest {
             resp.getWriter().write(BASIC_HTML_TEMPLATE);
             resp.addHeader(HTTPConstants.EXPIRES,
                 "Sat, 25 Sep 2041 00:00:00 GMT");
-            return;
+            break;
           case SERVER_IMAGE:
             resp.getOutputStream().write(new byte[]{1, 2, 3, 4, 5});
           case SERVER_PATH_200_FILE_SENT:
             resp.setContentType("image/png");
             byte[] requestBody = req.getInputStream().readAllBytes();
             resp.getOutputStream().write(requestBody);
-            return;
+            break;
           case SERVER_PATH_200_GZIP:
             resp.addHeader("Content-Encoding", "gzip");
             GZIPOutputStream gzipOutputStream = new GZIPOutputStream(resp.getOutputStream());
