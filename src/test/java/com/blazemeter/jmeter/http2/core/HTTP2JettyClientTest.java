@@ -697,7 +697,7 @@ public class HTTP2JettyClientTest {
 
   @Test
   public void shouldUseMultipartWhenHasFilesAndNotSendAsPostBody() throws Exception {
-    HTTPSampleResult expected = createExpectedResult(true, 200, REQUEST_HEADERS);
+    HTTPSampleResult expected = createExpectedResult(true, 200, "OK", 0, REQUEST_HEADERS);
     startServer(setupServer(createGetServerResponse()));
     sampler.setImageParser(true);
     configureSampler(HTTPConstants.POST);
@@ -727,7 +727,7 @@ public class HTTP2JettyClientTest {
 
   @Test
   public void shouldNotUseMultipartWhenHasOneFileWithEmptyParamName() throws Exception {
-    HTTPSampleResult expected = createExpectedResult(true, HttpStatus.OK_200,
+    HTTPSampleResult expected = createExpectedResult(true, HttpStatus.OK_200, "OK", 9018,
         "Accept-Encoding: gzip\r\n"
             + "User-Agent: Jetty/11.0.6\r\n"
             + "Content-Type: image/png\r\n"
