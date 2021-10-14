@@ -81,7 +81,7 @@ public class HTTP2JettyClient {
       "http.post_add_content_type_if_missing", false);
   private static final Pattern PORT_PATTERN = Pattern.compile("\\d+");
   private static final String DASH_DASH = "--";
-  private static final String NEW_LINE = "\n";
+  private static final String NEW_LINE = "\r\n";
   private final HttpClient httpClient;
 
   public HTTP2JettyClient() {
@@ -294,6 +294,8 @@ public class HTTP2JettyClient {
     String contentEncoding = sampler.getContentEncoding();
     Charset contentCharset =
         !contentEncoding.isEmpty() ? Charset.forName(contentEncoding) : StandardCharsets.UTF_8;
+    Charset contentCharsetAsciiDefault =
+        !contentEncoding.isEmpty() ? Charset.forName(contentEncoding) : StandardCharsets.US_ASCII;
     String contentTypeHeader =
         request.getHeaders() != null ? request.getHeaders().get(HTTPConstants.HEADER_CONTENT_TYPE)
             : null;
@@ -301,19 +303,20 @@ public class HTTP2JettyClient {
     StringBuilder postBody = new StringBuilder();
     Content requestContent;
 
-    if (sampler.getDoMultipart()) {
+    if (sampler.getUseMultipart()) {
       MultiPartRequestContent multipartEntityBuilder = new MultiPartRequestContent();
       String boundary = multipartEntityBuilder.getContentType().split(" ")[1].split("=")[1];
       for (JMeterProperty jMeterProperty : sampler.getArguments()) {
         HTTPArgument arg = (HTTPArgument) jMeterProperty.getObjectValue();
         String parameterName = arg.getName();
         if (!arg.isSkippable(parameterName)) {
-          postBody.append(writeArgumentsRequestBody(multipartEntityBuilder, arg, contentCharset,
-              contentEncoding, boundary));
+          postBody.append(
+              writeArgumentsRequestBody(multipartEntityBuilder, arg, contentCharsetAsciiDefault,
+                  contentEncoding, boundary));
           multipartEntityBuilder.addFieldPart(parameterName,
               new StringRequestContent(contentTypeHeader,
-                  arg.getEncodedValue(contentCharset.name()),
-                  contentCharset), null);
+                  arg.getEncodedValue(contentCharsetAsciiDefault.name()),
+                  contentCharsetAsciiDefault), null);
         }
       }
       Content[] fileBodies = new PathRequestContent[sampler
