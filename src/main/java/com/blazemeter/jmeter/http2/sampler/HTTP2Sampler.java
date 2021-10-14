@@ -4,6 +4,7 @@ import com.blazemeter.jmeter.http2.core.HTTP2JettyClient;
 import com.helger.commons.annotation.VisibleForTesting;
 import java.net.MalformedURLException;
 import java.net.URL;
+import java.nio.file.NoSuchFileException;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
@@ -49,6 +50,8 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
       LOG.error("The sampling has been interrupted", e);
+      return errorResult(e, new HTTPSampleResult());
+    } catch (NoSuchFileException e) {
       return errorResult(e, new HTTPSampleResult());
     } catch (Exception e) {
       LOG.error("Error while sampling", e);
