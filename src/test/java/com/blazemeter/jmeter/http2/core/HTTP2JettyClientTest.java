@@ -66,6 +66,7 @@ import org.eclipse.jetty.util.ssl.SslContextFactory;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.BeforeClass;
+import org.junit.Ignore;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -692,6 +693,61 @@ public class HTTP2JettyClientTest {
     String expectedException = "java.lang.IllegalStateException: Param name is blank";
     softly.assertThat(exception.toString()).contains(expectedException);
 
+  }
+
+  @Test
+  public void shouldUseMultipartWhenHasFilesAndNotSendAsPostBody() throws Exception {
+    HTTPSampleResult expected = createExpectedResult(true, 200, REQUEST_HEADERS);
+    startServer(setupServer(createGetServerResponse()));
+    sampler.setImageParser(true);
+    configureSampler(HTTPConstants.POST);
+
+    // Create two Files
+    String filePath1 = getClass().getResource("blazemeter-labs-logo.png").getPath();
+    String filePath2 = getClass().getResource("blazemeter-labs-logo.png").getPath();
+    HTTPFileArg fileArg1 = new HTTPFileArg(filePath1, "blazemeter-labs-logo1", "image/png");
+    HTTPFileArg fileArg2 = new HTTPFileArg(filePath2, "blazemeter-labs-logo2", "image/png");
+    sampler.setHTTPFiles(new HTTPFileArg[]{fileArg1, fileArg2});
+
+    HTTPSampleResult result = client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS,
+        HOST_NAME, SERVER_PORT, SERVER_PATH_200_FILE_SENT), HTTPConstants.POST, false, 0);
+
+    // Get JettyHttpClientBoundary from result
+    String boundary = result.getResponseDataAsString().split("\\r?\\n")[0];
+    expected.setRequestHeaders(expected.getRequestHeaders().concat("Content-Type: "
+        + "multipart/form-data; boundary="
+        + boundary.substring(2)));
+    expected.setResponseData(getByteArrayFromFilesAndParams(expected, new ArrayList<>(0),
+        new ArrayList<>(
+            Arrays.asList(fileArg1, fileArg2)), boundary));
+
+    softly.assertThat(sampler.getUseMultipart()).isTrue();
+    validateMultipartResponse(result, expected);
+  }
+
+  @Test
+  public void shouldNotUseMultipartWhenHasOneFileWithEmptyParamName() throws Exception {
+    HTTPSampleResult expected = createExpectedResult(true, HttpStatus.OK_200,
+        "Accept-Encoding: gzip\r\n"
+            + "User-Agent: Jetty/11.0.6\r\n"
+            + "Content-Type: image/png\r\n"
+            + "Content-Length: 9018\r\n"
+            + "\r\n");
+
+    // Create one File with empty param name
+    String filePath = getClass().getResource("blazemeter-labs-logo.png").getPath();
+    InputStream inputStream = Files.newInputStream(Paths.get(filePath));
+    expected.setResponseData(sampler.readResponse(expected, inputStream, 0));
+    configureSampler(HTTPConstants.POST);
+    HTTPFileArg fileArg = new HTTPFileArg(filePath, "", "image/png");
+    sampler.setHTTPFiles(new HTTPFileArg[]{fileArg});
+    startServer(setupServer(createGetServerResponse()));
+
+    HTTPSampleResult result = client
+        .sample(sampler, createURL(SERVER_PATH_200_FILE_SENT), HTTPConstants.POST, false, 0);
+
+    softly.assertThat(sampler.getUseMultipart()).isFalse();
+    validateResponse(result, expected);
   }
 
   private void configureSampler(String method) {
