@@ -85,9 +85,9 @@ public class JettyCacheManager {
   }
 
   public boolean inCache(URL url, HttpFields headers) {
-    org.apache.http.Header[] apacheHeaders = headers.stream()
+    Header[] apacheHeaders = headers.stream()
         .map(h -> new BasicHeader(h.getName(), h.getValue()))
-        .toArray(org.apache.http.Header[]::new);
+        .toArray(Header[]::new);
     return cacheManager.inCache(url, apacheHeaders);
   }
 
