@@ -1,6 +1,5 @@
 package com.blazemeter.jmeter.http2.core;
 
-import com.blazemeter.jmeter.http2.core.utils.CacheManagerJettyHelper;
 import com.blazemeter.jmeter.http2.sampler.HTTP2Sampler;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -23,11 +22,9 @@ import java.util.concurrent.TimeoutException;
 import java.util.regex.Pattern;
 import java.util.stream.StreamSupport;
 import org.apache.commons.lang3.StringUtils;
-import org.apache.http.client.methods.HttpRequestBase;
 import org.apache.jmeter.protocol.http.control.AuthManager;
 import org.apache.jmeter.protocol.http.control.AuthManager.Mechanism;
 import org.apache.jmeter.protocol.http.control.Authorization;
-import org.apache.jmeter.protocol.http.control.CacheManager;
 import org.apache.jmeter.protocol.http.control.CookieManager;
 import org.apache.jmeter.protocol.http.control.Header;
 import org.apache.jmeter.protocol.http.control.HeaderManager;
@@ -123,11 +120,14 @@ public class HTTP2JettyClient {
     request.followRedirects(sampler.getAutoRedirects());
     request.method(method);
 
-    CacheManager cacheManager = sampler.getCacheManager();
-    setHeaders(request, sampler.getHeaderManager(), url, cacheManager);
-    if (cacheManager != null && HTTPConstants.GET.equalsIgnoreCase(method) && cacheManager.inCache(
-        url, CacheManagerJettyHelper.convertJettyHeadersToApacheHeaders(request.getHeaders()))) {
-      return CacheManagerJettyHelper.updateSampleResultForResourceInCache(result);
+    setHeaders(request, url, sampler.getHeaderManager());
+    JettyCacheManager cacheManager = JettyCacheManager.fromCacheManager(sampler.getCacheManager());
+    if (cacheManager != null) {
+      cacheManager.setHeaders(url, request);
+      if (HTTPConstants.GET.equalsIgnoreCase(method) && cacheManager.inCache(url,
+          request.getHeaders())) {
+        return cacheManager.buildCachedSampleResult(result);
+      }
     }
 
     CookieManager cookieManager = sampler.getCookieManager();
@@ -158,8 +158,7 @@ public class HTTP2JettyClient {
     }
 
     if (cacheManager != null) {
-      cacheManager.saveDetails(CacheManagerJettyHelper
-          .createApacheHttpResponseFromJettyContentResponse(contentResponse), result);
+      cacheManager.saveDetails(contentResponse, result);
     }
 
     result.setRequestHeaders(buildHeadersString(request.getHeaders()));
@@ -409,33 +408,13 @@ public class HTTP2JettyClient {
     return METHODS_WITH_BODY.contains(method);
   }
 
-  private void setHeaders(HttpRequest request, HeaderManager headerManager, URL url,
-      CacheManager cacheManager) throws URISyntaxException {
+  private void setHeaders(HttpRequest request, URL url, HeaderManager headerManager) {
     if (headerManager != null) {
       StreamSupport.stream(headerManager.getHeaders().spliterator(), false)
           .map(prop -> (Header) prop.getObjectValue())
           .filter(header -> (!header.getName().isEmpty()) && (!HTTPConstants.HEADER_CONTENT_LENGTH
               .equalsIgnoreCase(header.getName())))
           .forEach(header -> request.addHeader(createJettyHeader(header, url)));
-    }
-
-    if (cacheManager != null) {
-      URI uri = new URI(url.toString());
-      HttpRequestBase reqBase = CacheManagerJettyHelper
-          .createApacheHttpRequest(uri, request.getMethod());
-      cacheManager.setHeaders(url, reqBase);
-      if (reqBase.getFirstHeader(HTTPConstants.VARY) != null) {
-        request.addHeader(new HttpField(HTTPConstants.VARY,
-            reqBase.getFirstHeader(HTTPConstants.VARY).getValue()));
-      }
-      if (reqBase.getFirstHeader(HTTPConstants.IF_MODIFIED_SINCE) != null) {
-        request.addHeader(new HttpField(HTTPConstants.IF_MODIFIED_SINCE,
-            reqBase.getFirstHeader(HTTPConstants.IF_MODIFIED_SINCE).getValue()));
-      }
-      if (reqBase.getFirstHeader(HTTPConstants.IF_NONE_MATCH) != null) {
-        request.addHeader(new HttpField(HTTPConstants.IF_NONE_MATCH,
-            reqBase.getFirstHeader(HTTPConstants.IF_NONE_MATCH).getValue()));
-      }
     }
   }
 
