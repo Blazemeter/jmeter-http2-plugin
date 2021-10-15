@@ -9,6 +9,7 @@ import com.google.common.base.Stopwatch;
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.MalformedURLException;
@@ -17,23 +18,40 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.zip.GZIPOutputStream;
 import java.util.stream.Collectors;
 import jodd.net.MimeTypes;
+import org.apache.jmeter.config.Arguments;
+import org.apache.jmeter.protocol.http.control.AuthManager;
+import org.apache.jmeter.protocol.http.control.AuthManager.Mechanism;
+import org.apache.jmeter.protocol.http.control.Authorization;
+import org.apache.jmeter.protocol.http.control.CacheManager;
 import org.apache.jmeter.protocol.http.control.CookieManager;
 import org.apache.jmeter.protocol.http.control.Header;
 import org.apache.jmeter.protocol.http.control.HeaderManager;
 import org.apache.jmeter.protocol.http.sampler.HTTPSampleResult;
+import org.apache.jmeter.protocol.http.util.HTTPArgument;
 import org.apache.jmeter.protocol.http.util.HTTPConstants;
 import org.apache.jmeter.protocol.http.util.HTTPFileArg;
 import org.apache.jmeter.samplers.SampleResult;
+import org.apache.jmeter.util.JMeterUtils;
 import org.assertj.core.api.JUnitSoftAssertions;
 import org.eclipse.jetty.http.HttpStatus;
 import org.eclipse.jetty.http2.HTTP2Cipher;
 import org.eclipse.jetty.http2.server.HTTP2ServerConnectionFactory;
+import org.eclipse.jetty.security.ConstraintMapping;
+import org.eclipse.jetty.security.ConstraintSecurityHandler;
+import org.eclipse.jetty.security.HashLoginService;
+import org.eclipse.jetty.security.UserStore;
+import org.eclipse.jetty.security.authentication.BasicAuthenticator;
+import org.eclipse.jetty.security.authentication.DigestAuthenticator;
 import org.eclipse.jetty.server.ConnectionFactory;
 import org.eclipse.jetty.server.HttpConfiguration;
 import org.eclipse.jetty.server.SecureRequestCustomizer;
@@ -43,6 +61,8 @@ import org.eclipse.jetty.server.SslConnectionFactory;
 import org.eclipse.jetty.servlet.ServletContextHandler;
 import org.eclipse.jetty.servlet.ServletHolder;
 import org.eclipse.jetty.util.resource.Resource;
+import org.eclipse.jetty.util.security.Constraint;
+import org.eclipse.jetty.util.security.Password;
 import org.eclipse.jetty.util.ssl.SslContextFactory;
 import org.junit.After;
 import org.junit.Before;
@@ -57,6 +77,14 @@ public class HTTP2JettyClientTest {
 
   private static final String HOST_NAME = "localhost";
   private static final String SERVER_RESPONSE = "Hello World!";
+  private static final String REQUEST_HEADERS = "Accept-Encoding: gzip\r\nUser-Agent: Jetty/11.0"
+      + ".6\r\n\r\n";
+  private static final String REQUEST_HEADERS_FILE_CONTENT = "Accept-Encoding: gzip\r\n"
+      + "User-Agent: Jetty/11.0.6\r\n"
+      + "Content-Type: image/png\r\n"
+      + "Content-Length: 9018\r\n"
+      + "\r\n";
+  private static final String SERVER_IMAGE = "/test/image.png";
   private static final String SERVER_PATH = "/test";
   private static final String SERVER_PATH_SET_COOKIES = "/test/set-cookies";
   private static final String SERVER_PATH_USE_COOKIES = "/test/use-cookies";
@@ -74,9 +102,12 @@ public class HTTP2JettyClientTest {
   private static final String TEST_ARGUMENT_2 = "valueTest2";
   private static final String STANDARD_CHARSETS = StandardCharsets.UTF_8.name();
   private static final int SERVER_PORT = 6666;
+  private static final String[] ROLES = new String[]{"can-access"};
   private static final String BASIC_HTML_TEMPLATE = "<!DOCTYPE html><html><head><title>Page "
-      + "Title</title></head><body><div><img src=%s></div></body></html>";
+      + "Title</title></head><body><div><img src='image.png'></div></body></html>";
   private static final byte[] BINARY_RESPONSE_BODY = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
+  private static final String RESPONSE_MESSAGE_200 = "OK";
+  private static final String RESPONSE_MESSAGE_400 = "Bad Request";
 
   @Rule
   public final JUnitSoftAssertions softly = new JUnitSoftAssertions();
@@ -107,9 +138,9 @@ public class HTTP2JettyClientTest {
 
   @Test
   public void shouldGetResponseWhenGetMethodIsSent() throws Exception {
-    startServer(createGetServerResponse());
-    HTTPSampleResult result = client
-        .sample(sampler, createURL(SERVER_PATH_200), HTTPConstants.GET, false, 0);
+    startServer(setupServer(createGetServerResponse()));
+    HTTPSampleResult result = client.sample(sampler, createURL(SERVER_PATH_200),
+        HTTPConstants.GET, false, 0);
     assertThat(result.getResponseDataAsString()).isEqualTo(SERVER_RESPONSE);
   }
 
@@ -127,7 +158,7 @@ public class HTTP2JettyClientTest {
   @Test
   public void shouldReturnSuccessSampleResultWhenSuccessResponseWithContentTypeGzip()
       throws Exception {
-    startServer(createGetServerResponse());
+    startServer(setupServer(createGetServerResponse()));
     HTTPSampleResult result = client
         .sample(sampler, createURL(SERVER_PATH_200_GZIP), HTTPConstants.GET, false, 0);
     assertThat(HTTP2JettyClientTest.BINARY_RESPONSE_BODY).isEqualTo(result.getResponseData());
@@ -174,13 +205,17 @@ public class HTTP2JettyClientTest {
             break;
           case SERVER_PATH_200_EMBEDDED:
             resp.setContentType(MimeTypes.MIME_TEXT_HTML + ";" + StandardCharsets.UTF_8.name());
-            resp.getWriter().write(HTTP2JettyClientTest.getBasicHtmlTemplate());
-            return;
+            resp.getWriter().write(BASIC_HTML_TEMPLATE);
+            resp.addHeader(HTTPConstants.EXPIRES,
+                "Sat, 25 Sep 2041 00:00:00 GMT");
+            break;
+          case SERVER_IMAGE:
+            resp.getOutputStream().write(new byte[]{1, 2, 3, 4, 5});
           case SERVER_PATH_200_FILE_SENT:
             resp.setContentType("image/png");
             byte[] requestBody = req.getInputStream().readAllBytes();
             resp.getOutputStream().write(requestBody);
-            return;
+            break;
           case SERVER_PATH_200_GZIP:
             resp.addHeader("Content-Encoding", "gzip");
             GZIPOutputStream gzipOutputStream = new GZIPOutputStream(resp.getOutputStream());
@@ -195,7 +230,7 @@ public class HTTP2JettyClientTest {
     };
   }
 
-  private void startServer(HttpServlet servlet) throws Exception {
+  private Server setupServer(HttpServlet servlet) throws Exception {
     Server server = new Server();
     HttpConfiguration httpsConfig = new HttpConfiguration();
     httpsConfig.addCustomizer(new SecureRequestCustomizer());
@@ -212,18 +247,21 @@ public class HTTP2JettyClientTest {
     server.addConnector(connector);
     ServletContextHandler context = new ServletContextHandler(server, "/", true, false);
     context.addServlet(new ServletHolder(servlet), SERVER_PATH + "/*");
+
+    return server;
+  }
+
+  private void startServer(Server server) throws Exception {
     server.start();
   }
 
   @Test
   public void shouldSendBodyInformationWhenRequestWithBodyRaw () throws Exception {
-    String headers =  getCommonHeaders()
-        .withContentLength(20)
-        .withContentType("application/octet-stream")
-        .build();
-    HTTPSampleResult expected = createExpectedResult(true, HttpStatus.OK_200, headers);
+    HTTPSampleResult expected = createExpectedResult(true, HttpStatus.OK_200,
+        RESPONSE_MESSAGE_200, 0, REQUEST_HEADERS +
+            "Content-Type: application/octet-stream\r\nContent-Length: 20");
     expected.setResponseData(TEST_ARGUMENT_1 + TEST_ARGUMENT_2, STANDARD_CHARSETS);
-    startServer(createGetServerResponse());
+    startServer(setupServer(createGetServerResponse()));
     sampler.setMethod(HTTPConstants.POST);
     sampler.addArgument("", TEST_ARGUMENT_1);
     sampler.addArgument("", TEST_ARGUMENT_2);
@@ -234,14 +272,12 @@ public class HTTP2JettyClientTest {
 
   @Test
   public void shouldSendBodyInformationWhenRequestWithArguments () throws Exception {
-    String headers =  getCommonHeaders()
-        .withContentLength(33)
-        .withContentType("application/x-www-form-urlencoded")
-        .build();
-    HTTPSampleResult expected = createExpectedResult(true, HttpStatus.OK_200, headers);
+    HTTPSampleResult expected = createExpectedResult(true, HttpStatus.OK_200,
+        RESPONSE_MESSAGE_200, 0, REQUEST_HEADERS +
+            "Content-Type: application/x-www-form-urlencoded\r\nContent-Length: 33");
     expected.setResponseData("test1=" + TEST_ARGUMENT_1 + "&" + "test2="
         + TEST_ARGUMENT_2, STANDARD_CHARSETS);
-    startServer(createGetServerResponse());
+    startServer(setupServer(createGetServerResponse()));
     sampler.setMethod(HTTPConstants.POST);
     sampler.addArgument("test1", TEST_ARGUMENT_1);
     sampler.addArgument("test2", TEST_ARGUMENT_2);
@@ -263,13 +299,11 @@ public class HTTP2JettyClientTest {
 
   @Test
   public void shouldSendBodyWhenDeleteMethodWithRawData() throws Exception {
-    String headers =  getCommonHeaders()
-        .withContentType("application/octet-stream")
-        .withContentLength(20)
-        .build();
-    HTTPSampleResult expected = createExpectedResult(true, HttpStatus.OK_200, headers);
+    HTTPSampleResult expected = createExpectedResult(true, HttpStatus.OK_200,
+        RESPONSE_MESSAGE_200, 0 , REQUEST_HEADERS +
+            "Content-Type: application/octet-stream\r\nContent-Length: 20");
     expected.setResponseData(TEST_ARGUMENT_1 + TEST_ARGUMENT_2, STANDARD_CHARSETS);
-    startServer(createGetServerResponse());
+    startServer(setupServer(createGetServerResponse()));
     sampler.setMethod(HTTPConstants.DELETE);
     sampler.addArgument("", TEST_ARGUMENT_1);
     sampler.addArgument("", TEST_ARGUMENT_2);
@@ -280,10 +314,10 @@ public class HTTP2JettyClientTest {
 
   @Test
   public void shouldReturnFailureSampleResultWhenResponse400() throws Exception {
-    String headers =  getCommonHeaders().build();
     HTTPSampleResult expected = createExpectedResult(false, HttpStatus.BAD_REQUEST_400,
-        headers);
-    startServer(createGetServerResponse());
+        RESPONSE_MESSAGE_400, 0,
+        REQUEST_HEADERS);
+    startServer(setupServer(createGetServerResponse()));
     configureSampler(HTTPConstants.GET);
     HTTPSampleResult result = client
         .sample(sampler, createURL(SERVER_PATH_400), HTTPConstants.GET, false, 0);
@@ -291,11 +325,33 @@ public class HTTP2JettyClientTest {
   }
 
   private HTTPSampleResult createExpectedResult(boolean successful, int responseCode,
-      String headers) {
+      String responseMessage, long sentBytes, String headers) {
     HTTPSampleResult expected = new HTTPSampleResult();
     expected.setSuccessful(successful);
     expected.setResponseCode(String.valueOf(responseCode));
+    expected.setResponseMessage(responseMessage);
+    expected.setSentBytes(sentBytes);
     expected.setRequestHeaders(headers);
+    return expected;
+  }
+
+  private HTTPSampleResult buildSuccesfulExpectedResult() {
+    HTTPSampleResult expected = new HTTPSampleResult();
+    expected.setSuccessful(true);
+    expected.setResponseCode(String.valueOf(HttpStatus.OK_200));
+    expected.setResponseMessage(HttpStatus.getMessage(HttpStatus.OK_200));
+    expected.setSentBytes(0);
+    expected.setRequestHeaders(REQUEST_HEADERS);
+    return expected;
+  }
+
+  private HTTPSampleResult buildSuccesfulExpectedResultWithFileContent() {
+    HTTPSampleResult expected = new HTTPSampleResult();
+    expected.setSuccessful(true);
+    expected.setResponseCode(String.valueOf(HttpStatus.OK_200));
+    expected.setResponseMessage(HttpStatus.getMessage(HttpStatus.OK_200));
+    expected.setSentBytes(9018);
+    expected.setRequestHeaders(REQUEST_HEADERS_FILE_CONTENT);
     return expected;
   }
 
@@ -309,10 +365,10 @@ public class HTTP2JettyClientTest {
 
   @Test
   public void shouldGetEmbeddedResourcesWithSubSampleWhenImageParserIsEnabled() throws Exception {
-    String headers =  getCommonHeaders().build();
-    HTTPSampleResult expected = createExpectedResult(true, HttpStatus.OK_200, headers);
-    expected.setResponseData(HTTP2JettyClientTest.getBasicHtmlTemplate(), STANDARD_CHARSETS);
-    startServer(createGetServerResponse());
+    HTTPSampleResult expected = buildSuccesfulExpectedResult();
+    expected
+        .setResponseData(HTTP2JettyClientTest.BASIC_HTML_TEMPLATE, StandardCharsets.UTF_8.name());
+    startServer(setupServer(createGetServerResponse()));
     sampler.setImageParser(true);
     HTTPSampleResult result = client
         .sample(sampler, createURL(SERVER_PATH_200_EMBEDDED), HTTPConstants.GET, false, 0);
@@ -322,11 +378,11 @@ public class HTTP2JettyClientTest {
   @Test
   public void shouldUseCookiesFromFirstRequestOnSecondRequestWhenSecondRequestIsSent()
       throws Exception {
-    String headers = getCommonHeaders().build();
-    HTTPSampleResult expected = createExpectedResult(true, HttpStatus.OK_200, headers);
+    HTTPSampleResult expected = buildSuccesfulExpectedResult();
     expected.setCookies(RESPONSE_DATA_COOKIES);
-    expected.setResponseData(RESPONSE_DATA_COOKIES, STANDARD_CHARSETS);
-    startServer(createGetServerResponse());
+    expected.setResponseData(RESPONSE_DATA_COOKIES,
+        StandardCharsets.UTF_8.name());
+    startServer(setupServer(createGetServerResponse()));
     CookieManager cookieManager = new CookieManager();
     cookieManager.testStarted(HOST_NAME);
     sampler.setCookieManager(cookieManager);
@@ -339,11 +395,12 @@ public class HTTP2JettyClientTest {
 
   @Test
   public void shouldReturnSuccessSampleResultWhenSuccessRequestWithHeaders() throws Exception {
-    String headers = getCommonHeaders().build();
-    HTTPSampleResult expected = createExpectedResult(true, HttpStatus.OK_200,
-        headers + "Header1: " + "value1\r\nHeader2: value2\r\n\r\n");
-    expected.setResponseData(SERVER_RESPONSE, STANDARD_CHARSETS);
-    startServer(createGetServerResponse());
+    HTTPSampleResult expected = createExpectedResult(true, HttpStatus.OK_200, RESPONSE_MESSAGE_200,
+        0,
+        "Accept-Encoding: gzip\r\nUser-Agent: Jetty/11.0.6\r\nHeader1: "
+            + "value1\r\nHeader2: value2\r\n\r\n");
+    expected.setResponseData(SERVER_RESPONSE, StandardCharsets.UTF_8.name());
+    startServer(setupServer(createGetServerResponse()));
     configureHeaderManagerToSampler();
     HTTPSampleResult result = client
         .sample(sampler, createURL(SERVER_PATH_200), HTTPConstants.GET, false, 0);
@@ -351,14 +408,60 @@ public class HTTP2JettyClientTest {
   }
 
   @Test
+  public void shouldReturnSuccessDigestAuthSampleResultWhenAuthDigestIsSet() throws Exception {
+    HTTPSampleResult expected = buildSuccesfulExpectedResult();
+    ;
+    expected.setResponseData(SERVER_RESPONSE, StandardCharsets.UTF_8.name());
+    Server server = setupServer(createGetServerResponse());
+    configureAuthenticationMechanisms(server, Constraint.__DIGEST_AUTH);
+    startServer(server);
+    configureAuthManager(Mechanism.DIGEST);
+    HTTPSampleResult result = client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS,
+        HOST_NAME, SERVER_PORT, SERVER_PATH_200), HTTPConstants.GET, false, 0);
+    validateResponse(result, expected);
+  }
+
+  @Test
+  public void shouldReturnSuccessBasicAuthSampleResultWhenPreemptiveIsFalse() throws Exception {
+    HTTPSampleResult expected = buildSuccesfulExpectedResult();
+    expected.setResponseData(SERVER_RESPONSE, StandardCharsets.UTF_8.name());
+    Server server = setupServer(createGetServerResponse());
+    configureAuthenticationMechanisms(server, Constraint.__BASIC_AUTH);
+    startServer(server);
+    configureAuthManager(Mechanism.BASIC);
+    HTTPSampleResult result = client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS,
+        HOST_NAME, SERVER_PORT, SERVER_PATH_200), HTTPConstants.GET, false, 0);
+    validateResponse(result, expected);
+  }
+
+  @Test
+  public void shouldReturnSuccessBasicAuthSampleResultWhenHeaderIsSet() throws Exception {
+    JMeterUtils.setProperty("httpJettyClient.auth.preemptive", "true");
+    HTTPSampleResult expected = new HTTPSampleResult();
+    expected.setResponseData(SERVER_RESPONSE, StandardCharsets.UTF_8.name());
+    expected.setResponseCode(String.valueOf(HttpStatus.OK_200));
+    expected.setResponseMessage(HttpStatus.getMessage(HttpStatus.OK_200));
+    expected.setSuccessful(true);
+    expected.setRequestHeaders("Accept-Encoding: gzip\r\n"
+        + "User-Agent: Jetty/11.0.6\r\n"
+        + "Authorization: Basic dXNlcm5hbWU6cGFzc3dvcmQ=\r\n"
+        + "\r\n");
+    Server server = setupServer(createGetServerResponse());
+    configureAuthenticationMechanisms(server, Constraint.__BASIC_AUTH);
+    startServer(server);
+    configureAuthManager(Mechanism.BASIC);
+    HTTPSampleResult result = client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS,
+        HOST_NAME, SERVER_PORT, SERVER_PATH_200), HTTPConstants.GET, false, 0);
+    validateResponse(result, expected);
+  }
+
+  @Test
   public void shouldGetRedirectedResultWithSubSampleWhenFollowRedirectEnabledAndRedirected()
       throws Exception {
-    String headers = getCommonHeaders().build();
-
-    HTTPSampleResult expected = createExpectedResult(true, HttpStatus.OK_200, headers);
-    expected.setResponseData(SERVER_RESPONSE, STANDARD_CHARSETS);
+    HTTPSampleResult expected = buildSuccesfulExpectedResult();
+    expected.setResponseData(SERVER_RESPONSE, StandardCharsets.UTF_8.name());
     expected.setRedirectLocation("https://localhost:6666/test/200");
-    startServer(createGetServerResponse());
+    startServer(setupServer(createGetServerResponse()));
     configureSampler(HTTPConstants.GET);
     sampler.setFollowRedirects(true);
     HTTPSampleResult result = client
@@ -369,7 +472,7 @@ public class HTTP2JettyClientTest {
   @Test
   public void shouldGetOnlyRedirectedResultWhenFollowRedirectDisabledAndRedirected()
       throws Exception {
-    startServer(createGetServerResponse());
+    startServer(setupServer(createGetServerResponse()));
     configureSampler(HTTPConstants.GET);
     HTTPSampleResult result = client
         .sample(sampler, createURL(SERVER_PATH_302), HTTPConstants.GET, false, 0);
@@ -378,20 +481,27 @@ public class HTTP2JettyClientTest {
   }
 
   @Test
+  public void shouldGetOnlyRedirectedResultWhenRedirectAutomaticallyEnabledAndRedirected()
+      throws Exception {
+    startServer(setupServer(createGetServerResponse()));
+    configureSampler(HTTPConstants.GET);
+    sampler.setAutoRedirects(true);
+    HTTPSampleResult result = client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS,
+        HOST_NAME, SERVER_PORT, SERVER_PATH_302), HTTPConstants.GET, false, 0);
+    softly.assertThat(result.getResponseCode()).isEqualTo("200");
+    softly.assertThat(result.getSubResults().length).isEqualTo(0);
+  }
+
+  @Test
   public void shouldGetFileDataWithFileIsSentAsBodyPart() throws Exception {
-    String headers = getCommonHeaders()
-        .withContentType("image/png")
-        .withContentLength(9018)
-        .build();
-    HTTPSampleResult expected = createExpectedResult(true, HttpStatus.OK_200,
-        headers + "\r\n");
+    HTTPSampleResult expected = buildSuccesfulExpectedResultWithFileContent();
     String filePath = getClass().getResource("blazemeter-labs-logo.png").getPath();
     InputStream inputStream = Files.newInputStream(Paths.get(filePath));
     expected.setResponseData(sampler.readResponse(expected, inputStream, 0));
     configureSampler(HTTPConstants.POST);
     HTTPFileArg fileArg = new HTTPFileArg(filePath, "", "image/png");
     sampler.setHTTPFiles(new HTTPFileArg[]{fileArg});
-    startServer(createGetServerResponse());
+    startServer(setupServer(createGetServerResponse()));
     HTTPSampleResult result = client
         .sample(sampler, createURL(SERVER_PATH_200_FILE_SENT), HTTPConstants.POST, false, 0);
     validateResponse(result, expected);
@@ -400,7 +510,7 @@ public class HTTP2JettyClientTest {
   @Test
   public void shouldReturnErrorMessageWhenResponseTimeIsOver() throws Exception {
     long timeout = 1000;
-    startServer(createGetServerResponse());
+    startServer(setupServer(createGetServerResponse()));
     configureSampler(HTTPConstants.GET);
     sampler.setResponseTimeout(String.valueOf(timeout));
     Stopwatch waitTime = Stopwatch.createStarted();
@@ -409,6 +519,305 @@ public class HTTP2JettyClientTest {
     });
     softly.assertThat(exception).isInstanceOf(TimeoutException.class);
     softly.assertThat(waitTime.elapsed(TimeUnit.MILLISECONDS)).isGreaterThanOrEqualTo(timeout);
+  }
+
+  @Test
+  public void shouldNoUseCacheWhenNotUseExpire() throws Exception {
+    HTTPSampleResult expected = buildSuccesfulExpectedResult();
+    expected.setResponseData(BASIC_HTML_TEMPLATE, StandardCharsets.UTF_8.name());
+    startServer(setupServer(createGetServerResponse()));
+    sampler.setImageParser(true);
+    configureCacheManagerToSampler(false, false);
+    HTTPSampleResult result = client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS,
+        HOST_NAME, SERVER_PORT, SERVER_PATH_200_EMBEDDED), HTTPConstants.GET, false, 0);
+    // First request must connect to the server
+    validateEmbeddedResources(result, expected);
+    HTTPSampleResult resultNotCached = client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS,
+        HOST_NAME, SERVER_PORT, SERVER_PATH_200_EMBEDDED), HTTPConstants.GET, false, 0);
+    // Same request connect again because use expire is false
+    validateEmbeddedResources(resultNotCached, expected);
+  }
+
+  @Test
+  public void shouldNotGetSubResultWhenResourceIsCachedWithNoMsg() throws Exception {
+    String message = "message";
+    String responseCode = "300";
+    JMeterUtils.setProperty("cache_manager.cached_resource_mode", "RETURN_CUSTOM_STATUS");
+    JMeterUtils.setProperty("RETURN_CUSTOM_STATUS.message", message);
+    JMeterUtils.setProperty("RETURN_CUSTOM_STATUS.code", responseCode);
+    HTTPSampleResult expected = buildSuccesfulExpectedResult();
+    expected.setResponseData(BASIC_HTML_TEMPLATE, StandardCharsets.UTF_8.name());
+    startServer(setupServer(createGetServerResponse()));
+    sampler.setImageParser(true);
+    configureCacheManagerToSampler(true, false);
+    HTTPSampleResult result = client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS,
+        HOST_NAME, SERVER_PORT, SERVER_PATH_200_EMBEDDED), HTTPConstants.GET, false, 0);
+    // First request must connect to the server
+    validateEmbeddedResources(result, expected);
+    expected.setResponseCode(responseCode);
+    HTTPSampleResult resultCached = client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS,
+        HOST_NAME, SERVER_PORT, SERVER_PATH_200_EMBEDDED), HTTPConstants.GET, false, 0);
+    // Same request use cached result with no message, request and data response
+    expected.setRequestHeaders("");
+    expected.setResponseData("", StandardCharsets.UTF_8.name());
+    expected.setResponseMessage(message);
+    validateEmbeddedResultCached(resultCached, expected);
+  }
+
+  @Test
+  public void shouldNotGetSubResultWhenResourceIsCachedWithMsg() throws Exception {
+    String message = "message";
+    JMeterUtils.setProperty("cache_manager.cached_resource_mode", "RETURN_200_CACHE");
+    JMeterUtils.setProperty("RETURN_200_CACHE.message", message);
+    HTTPSampleResult expected = buildSuccesfulExpectedResult();
+    expected.setResponseData(BASIC_HTML_TEMPLATE, StandardCharsets.UTF_8.name());
+    startServer(setupServer(createGetServerResponse()));
+    sampler.setImageParser(true);
+    configureCacheManagerToSampler(true, false);
+    HTTPSampleResult result = client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS,
+        HOST_NAME, SERVER_PORT, SERVER_PATH_200_EMBEDDED), HTTPConstants.GET, false, 0);
+    // First request must connect to the server
+    validateEmbeddedResources(result, expected);
+    HTTPSampleResult resultCached = client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS,
+        HOST_NAME, SERVER_PORT, SERVER_PATH_200_EMBEDDED), HTTPConstants.GET, false, 0);
+    // Same request use cached result with message response from property system
+    expected.setRequestHeaders("");
+    expected.setResponseData("",
+        StandardCharsets.UTF_8.name());
+    expected.setResponseMessage(message);
+    validateEmbeddedResultCached(resultCached, expected);
+  }
+
+  @Test
+  public void shouldGetSubResultWhenCacheCleanBetweenIterations() throws Exception {
+    HTTPSampleResult expected = buildSuccesfulExpectedResult();
+    expected.setResponseData(BASIC_HTML_TEMPLATE, StandardCharsets.UTF_8.name());
+    startServer(setupServer(createGetServerResponse()));
+    sampler.setImageParser(true);
+    configureCacheManagerToSampler(false, true);
+    HTTPSampleResult result = client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS,
+        HOST_NAME, SERVER_PORT, SERVER_PATH_200_EMBEDDED), HTTPConstants.GET, false, 0);
+    // First request must connect to the server
+    validateEmbeddedResources(result, expected);
+    HTTPSampleResult resultNotCached = client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS,
+        HOST_NAME, SERVER_PORT, SERVER_PATH_200_EMBEDDED), HTTPConstants.GET, false, 0);
+    // Same request connect again because clear cache iteration is enabled
+    validateEmbeddedResources(resultNotCached, expected);
+  }
+
+  @Test
+  public void shouldGetTwoFilesAndTwoParams() throws Exception {
+    HTTPSampleResult expected = buildSuccesfulExpectedResult();
+    startServer(setupServer(createGetServerResponse()));
+    sampler.setImageParser(true); // Indicates download embedded resources
+    sampler.setDoMultipart(true);
+    configureSampler(HTTPConstants.POST);
+
+    // Create two Parameters (args)
+    HTTPArgument arg1 = new HTTPArgument("Param1", "Valor1");
+    HTTPArgument arg2 = new HTTPArgument("Param2", "Valor2");
+    Arguments args = new Arguments();
+    args.addArgument(arg1);
+    args.addArgument(arg2);
+    sampler.setArguments(args);
+
+    // Create two Files
+    String filePath1 = getClass().getResource("blazemeter-labs-logo.png").getPath();
+    String filePath2 = getClass().getResource("blazemeter-labs-logo.png").getPath();
+
+    HTTPFileArg fileArg1 = new HTTPFileArg(filePath1, "blazemeter-labs-logo1", "image/png");
+    HTTPFileArg fileArg2 = new HTTPFileArg(filePath2, "blazemeter-labs-logo2", "image/png");
+    sampler.setHTTPFiles(new HTTPFileArg[]{fileArg1, fileArg2});
+
+    HTTPSampleResult result = client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS,
+        HOST_NAME, SERVER_PORT, SERVER_PATH_200_FILE_SENT), HTTPConstants.POST, false, 0);
+
+    // Get JettyHttpClientBoundary from result
+    String boundary = result.getResponseDataAsString().split("\\r?\\n")[0];
+    expected.setRequestHeaders(expected.getRequestHeaders().concat("Content-Type: "
+        + "multipart/form-data; boundary="
+        + boundary.substring(2)));
+    expected.setResponseData(getByteArrayFromFilesAndParams(expected, new ArrayList<>(
+        Arrays.asList(arg1, arg2)), new ArrayList<>(
+        Arrays.asList(fileArg1, fileArg2)), boundary));
+
+    validateMultipartResponse(result, expected);
+  }
+
+  @Test
+  public void shouldGetOneFileAndOneParam() throws Exception {
+    HTTPSampleResult expected = buildSuccesfulExpectedResult();
+    startServer(setupServer(createGetServerResponse()));
+    sampler.setImageParser(true);
+    sampler.setDoMultipart(true);
+    configureSampler(HTTPConstants.POST);
+
+    // Create one Parameter (arg)
+    HTTPArgument arg1 = new HTTPArgument("Param1", "Valor1");
+    Arguments args = new Arguments();
+    args.addArgument(arg1);
+    sampler.setArguments(args);
+
+    // Create one File
+    String filePath = getClass().getResource("blazemeter-labs-logo.png").getPath();
+    HTTPFileArg fileArg = new HTTPFileArg(filePath, "blazemeter-labs-logo", "image/png");
+    sampler.setHTTPFiles(new HTTPFileArg[]{fileArg});
+
+    HTTPSampleResult result = client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS,
+        HOST_NAME, SERVER_PORT, SERVER_PATH_200_FILE_SENT), HTTPConstants.POST, false, 0);
+
+    // Get JettyHttpClientBoundary from result
+    String boundary = result.getResponseDataAsString().split("\\r?\\n")[0];
+    expected.setRequestHeaders(expected.getRequestHeaders().concat("Content-Type: "
+        + "multipart/form-data; boundary="
+        + boundary.substring(2)));
+    expected.setResponseData(getByteArrayFromFilesAndParams(expected, new ArrayList<>(
+        Collections.singletonList(arg1)), new ArrayList<>(
+        Collections.singletonList(fileArg)), boundary));
+
+    validateMultipartResponse(result, expected);
+  }
+
+  @Test
+  public void shouldGetOnlyTwoFiles() throws Exception {
+    HTTPSampleResult expected = buildSuccesfulExpectedResult();
+    startServer(setupServer(createGetServerResponse()));
+    sampler.setImageParser(true);
+    sampler.setDoMultipart(true);
+    configureSampler(HTTPConstants.POST);
+
+    // Create two Files
+    String filePath1 = getClass().getResource("blazemeter-labs-logo.png").getPath();
+    String filePath2 = getClass().getResource("blazemeter-labs-logo.png").getPath();
+    HTTPFileArg fileArg1 = new HTTPFileArg(filePath1, "blazemeter-labs-logo1", "image/png");
+    HTTPFileArg fileArg2 = new HTTPFileArg(filePath2, "blazemeter-labs-logo2", "image/png");
+    sampler.setHTTPFiles(new HTTPFileArg[]{fileArg1, fileArg2});
+
+    HTTPSampleResult result = client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS,
+        HOST_NAME, SERVER_PORT, SERVER_PATH_200_FILE_SENT), HTTPConstants.POST, false, 0);
+
+    // Get JettyHttpClientBoundary from result
+    String boundary = result.getResponseDataAsString().split("\\r?\\n")[0];
+    expected.setRequestHeaders(expected.getRequestHeaders().concat("Content-Type: "
+        + "multipart/form-data; boundary="
+        + boundary.substring(2)));
+    expected.setResponseData(getByteArrayFromFilesAndParams(expected, new ArrayList<>(0),
+        new ArrayList<>(
+            Arrays.asList(fileArg1, fileArg2)), boundary));
+
+    validateMultipartResponse(result, expected);
+  }
+
+  @Test
+  public void shouldGetOnlyTwoParams() throws Exception {
+    HTTPSampleResult expected = buildSuccesfulExpectedResult();
+    startServer(setupServer(createGetServerResponse()));
+    sampler.setImageParser(true);
+    sampler.setDoMultipart(true);
+    configureSampler(HTTPConstants.POST);
+
+    // Create two Parameters (args)
+    HTTPArgument arg1 = new HTTPArgument("Param1", "Valor1");
+    HTTPArgument arg2 = new HTTPArgument("Param2", "Valor2");
+    Arguments args = new Arguments();
+    args.addArgument(arg1);
+    args.addArgument(arg2);
+    sampler.setArguments(args);
+
+    HTTPSampleResult result = client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS,
+        HOST_NAME, SERVER_PORT, SERVER_PATH_200_FILE_SENT), HTTPConstants.POST, false, 0);
+
+    // Get JettyHttpClientBoundary from result
+    String boundary = result.getResponseDataAsString().split("\\r?\\n")[0];
+    expected.setRequestHeaders(expected.getRequestHeaders().concat("Content-Type: "
+        + "multipart/form-data; boundary="
+        + boundary.substring(2)));
+    expected.setResponseData(getByteArrayFromFilesAndParams(expected, new ArrayList<>(
+            Arrays.asList(arg1, arg2)), new ArrayList<>(0),
+        boundary));
+
+    validateMultipartResponse(result, expected);
+  }
+
+  @Test
+  public void shouldReturnErrorInBlankFileName() throws Exception {
+    startServer(setupServer(createGetServerResponse()));
+    sampler.setImageParser(true);
+    sampler.setDoMultipart(true);
+
+    // Create one File with empty name
+    String filePath = getClass().getResource("blazemeter-labs-logo.png").getPath();
+    InputStream inputStream = Files.newInputStream(Paths.get(filePath));
+    HTTPSampleResult expected = buildSuccesfulExpectedResult();
+    expected.setResponseData(sampler.readResponse(expected, inputStream, 0));
+    expected.setRequestHeaders(REQUEST_HEADERS_FILE_CONTENT);
+    configureSampler(HTTPConstants.POST);
+    HTTPFileArg fileArg = new HTTPFileArg(filePath, "", "image/png");
+    sampler.setHTTPFiles(new HTTPFileArg[]{fileArg});
+
+    // Create one Parameter (arg)
+    HTTPArgument arg1 = new HTTPArgument("Param1", "Valor1");
+    Arguments args = new Arguments();
+    args.addArgument(arg1);
+    sampler.setArguments(args);
+
+    IllegalStateException exception = assertThrows(IllegalStateException.class, () -> {
+      client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS,
+          HOST_NAME, SERVER_PORT, SERVER_PATH_200_FILE_SENT), HTTPConstants.POST, false, 0);
+    });
+    String expectedException = "java.lang.IllegalStateException: Param name is blank";
+    softly.assertThat(exception.toString()).contains(expectedException);
+
+  }
+
+  @Test
+  public void shouldUseMultipartWhenHasFilesAndNotSendAsPostBody() throws Exception {
+    HTTPSampleResult expected = buildSuccesfulExpectedResult();
+    startServer(setupServer(createGetServerResponse()));
+    sampler.setImageParser(true);
+    configureSampler(HTTPConstants.POST);
+
+    // Create two Files
+    String filePath1 = getClass().getResource("blazemeter-labs-logo.png").getPath();
+    String filePath2 = getClass().getResource("blazemeter-labs-logo.png").getPath();
+    HTTPFileArg fileArg1 = new HTTPFileArg(filePath1, "blazemeter-labs-logo1", "image/png");
+    HTTPFileArg fileArg2 = new HTTPFileArg(filePath2, "blazemeter-labs-logo2", "image/png");
+    sampler.setHTTPFiles(new HTTPFileArg[]{fileArg1, fileArg2});
+
+    HTTPSampleResult result = client.sample(sampler, new URL(HTTPConstants.PROTOCOL_HTTPS,
+        HOST_NAME, SERVER_PORT, SERVER_PATH_200_FILE_SENT), HTTPConstants.POST, false, 0);
+
+    // Get JettyHttpClientBoundary from result
+    String boundary = result.getResponseDataAsString().split("\\r?\\n")[0];
+    expected.setRequestHeaders(expected.getRequestHeaders().concat("Content-Type: "
+        + "multipart/form-data; boundary="
+        + boundary.substring(2)));
+    expected.setResponseData(getByteArrayFromFilesAndParams(expected, new ArrayList<>(0),
+        new ArrayList<>(
+            Arrays.asList(fileArg1, fileArg2)), boundary));
+
+    softly.assertThat(sampler.getUseMultipart()).isTrue();
+    validateMultipartResponse(result, expected);
+  }
+
+  @Test
+  public void shouldNotUseMultipartWhenHasOneFileWithEmptyParamName() throws Exception {
+    HTTPSampleResult expected = buildSuccesfulExpectedResultWithFileContent();
+
+    // Create one File with empty param name
+    String filePath = getClass().getResource("blazemeter-labs-logo.png").getPath();
+    InputStream inputStream = Files.newInputStream(Paths.get(filePath));
+    expected.setResponseData(sampler.readResponse(expected, inputStream, 0));
+    configureSampler(HTTPConstants.POST);
+    HTTPFileArg fileArg = new HTTPFileArg(filePath, "", "image/png");
+    sampler.setHTTPFiles(new HTTPFileArg[]{fileArg});
+    startServer(setupServer(createGetServerResponse()));
+
+    HTTPSampleResult result = client
+        .sample(sampler, createURL(SERVER_PATH_200_FILE_SENT), HTTPConstants.POST, false, 0);
+
+    softly.assertThat(sampler.getUseMultipart()).isFalse();
+    validateResponse(result, expected);
   }
 
   private void configureSampler(String method) {
@@ -426,9 +835,38 @@ public class HTTP2JettyClientTest {
     sampler.setHeaderManager(hm);
   }
 
+  private void configureAuthManager(Mechanism mechanism) {
+    AuthManager authManager = new AuthManager();
+
+    Authorization authorization = new Authorization();
+    authorization.setURL(HTTPConstants.PROTOCOL_HTTPS
+        .concat("://")
+        .concat(HOST_NAME)
+        .concat(":")
+        .concat(String.valueOf(SERVER_PORT))
+        .concat(SERVER_PATH_200));
+    authorization.setUser("username");
+    authorization.setPass("password");
+    authorization.setRealm("realm");
+    authorization.setMechanism(mechanism);
+
+    authManager.addAuth(authorization);
+    sampler.setAuthManager(authManager);
+  }
+
+  private void configureCacheManagerToSampler(boolean useExpire, boolean clearCacheIteration) {
+    CacheManager cacheManager = new CacheManager();
+    cacheManager.setUseExpires(useExpire);
+    cacheManager.setClearEachIteration(clearCacheIteration);
+    cacheManager.testIterationStart(null); // Use to initialize private attrs
+    sampler.setCacheManager(cacheManager);
+  }
+
   private void validateResponse(SampleResult result, SampleResult expected) {
     softly.assertThat(result.isSuccessful()).isEqualTo(expected.isSuccessful());
     softly.assertThat(result.getResponseCode()).isEqualTo(expected.getResponseCode());
+    softly.assertThat(result.getResponseMessage()).isEqualTo(expected.getResponseMessage());
+    softly.assertThat(result.getSentBytes()).isEqualTo(expected.getSentBytes());
     softly.assertThat(result.getResponseDataAsString())
         .isEqualTo(expected.getResponseDataAsString());
     softly.assertThat(result.getRequestHeaders().replace("\r\n", ""))
@@ -448,75 +886,140 @@ public class HTTP2JettyClientTest {
     softly.assertThat(results[0].getDataType()).isEqualTo(SampleResult.TEXT);
     softly.assertThat(results[0].getUrlAsString())
         .isEqualTo("https://localhost:6666/test/embedded");
-    softly.assertThat(results[1].getDataType()).isEqualTo(SampleResult.TEXT);
-    softly.assertThat(results[1].getUrlAsString()).isEqualTo("https://localhost:6666/test/200");
+    softly.assertThat(results[1].getDataType()).isEqualTo(SampleResult.BINARY);
+    softly.assertThat(results[1].getUrlAsString())
+        .isEqualTo("https://localhost:6666/test/image.png");
   }
 
-  private static String getBasicHtmlTemplate() {
-    return String.format(BASIC_HTML_TEMPLATE,
-        "https://localhost:" + SERVER_PORT + SERVER_PATH_200);
+  /**
+   * Validate same result as expected, but also control that not sample result was added.
+   */
+  private void validateEmbeddedResultCached(HTTPSampleResult result, HTTPSampleResult expected) {
+    this.validateResponse(result, expected);
+    softly.assertThat(result.getResponseData().length).isEqualTo(0);
   }
 
-  private static class HeadersBuilder {
-    private String encoding = "";
-    private String agent = "";
-    private String type = "";
-    private String length = "";
 
-    public HeadersBuilder withAcceptEncoding(String acceptEncoding) {
-      this.encoding = acceptEncoding;
-      return this;
+  private void configureAuthenticationMechanisms(Server server, String mechanism) {
+    HashLoginService loginService = getLoginService();
+
+    switch (mechanism) {
+      case Constraint.__BASIC_AUTH:
+        server.setHandler(addBasicAuth(server, loginService));
+        break;
+      case Constraint.__DIGEST_AUTH:
+        server.setHandler(addDigestAuth(server, loginService));
+        break;
     }
 
-    public HeadersBuilder withUserAgent(String userAgent) {
-      this.agent = userAgent;
-      return this;
-    }
-
-    public HeadersBuilder withContentType(String type) {
-      this.type = type;
-      return this;
-    }
-
-    public HeadersBuilder withContentLength(int length) {
-      this.length = String.valueOf(length);
-      return this;
-    }
-
-    public String build() {
-      StringBuilder headers = new StringBuilder();
-
-      if (!this.encoding.isEmpty()) {
-        headers = headers.append("Accept-Encoding: ")
-            .append(this.encoding)
-            .append("\r\n");
-      }
-
-      if (!this.agent.isEmpty()) {
-        headers = headers.append("User-Agent: ")
-            .append(this.agent)
-            .append("\r\n");
-      }
-
-      if (!this.type.isEmpty()) {
-        headers = headers.append("Content-Type: ")
-            .append(this.type)
-            .append("\r\n");
-      }
-
-      if (!this.length.isEmpty()) {
-        headers = headers.append("Content-Length: ")
-            .append(this.length)
-            .append("\r\n");
-      }
-
-      return headers.toString();
-    }
   }
 
-  private HeadersBuilder getCommonHeaders() {
-    return new HeadersBuilder()
-        .withAcceptEncoding("gzip")
-        .withUserAgent("Jetty/11.0.6");
+  private ConstraintSecurityHandler addDigestAuth(Server server, HashLoginService loginService) {
+    ConstraintSecurityHandler securityHandler = new ConstraintSecurityHandler();
+    securityHandler.setAuthenticator(new DigestAuthenticator());
+    securityHandler.setConstraintMappings(
+        Collections.singletonList(getConstraintByMechanism(Constraint.__DIGEST_AUTH)));
+
+    return setCommonPropertiesAndReturnHandler(securityHandler, server, loginService);
+  }
+
+  private ConstraintSecurityHandler addBasicAuth(Server server, HashLoginService loginService) {
+    ConstraintSecurityHandler securityHandler = new ConstraintSecurityHandler();
+    securityHandler.setAuthenticator(new BasicAuthenticator());
+    securityHandler.setConstraintMappings(
+        Collections.singletonList(getConstraintByMechanism(Constraint.__BASIC_AUTH)));
+
+    return setCommonPropertiesAndReturnHandler(securityHandler, server, loginService);
+  }
+
+  private ConstraintSecurityHandler setCommonPropertiesAndReturnHandler(
+      ConstraintSecurityHandler securityHandler, Server server, HashLoginService loginService) {
+    securityHandler.setRealmName("realm");
+    securityHandler.setLoginService(loginService);
+    securityHandler.setHandler(server.getHandler());
+
+    return securityHandler;
+  }
+
+  private HashLoginService getLoginService() {
+    HashLoginService loginService = new HashLoginService();
+    loginService.setName("realm");
+    loginService.setUserStore(buildUserStore());
+
+    return loginService;
+  }
+
+  private ConstraintMapping getConstraintByMechanism(String mechanism) {
+    Constraint constraint = new Constraint();
+    constraint.setName(mechanism);
+    constraint.setAuthenticate(true);
+    constraint.setRoles(ROLES);
+
+    ConstraintMapping mapping = new ConstraintMapping();
+    mapping.setPathSpec("/*");
+    mapping.setConstraint(constraint);
+
+    return mapping;
+  }
+
+  private UserStore buildUserStore() {
+    UserStore userStore = new UserStore();
+    userStore.addUser("username", new Password("password"), ROLES);
+    return userStore;
+  }
+
+  private byte[] getByteArrayFromFilesAndParams(HTTPSampleResult expected, List<HTTPArgument> args,
+      List<HTTPFileArg> files, String boundary) throws IOException {
+
+    ByteArrayOutputStream output = new ByteArrayOutputStream();
+    String newLine = "\r\n";
+    String dashDash = "--";
+    // Set body response for Arguments
+    args.forEach(httpArgument -> {
+      StringBuilder headerParam = new StringBuilder(boundary).append(newLine)
+          .append("Content-Disposition: form-data; name=\"").append(httpArgument.getEncodedName())
+          .append("\"").append(newLine).append("Content-Type: null").append(newLine)
+          .append(newLine).append(httpArgument.getEncodedValue()).append(newLine);
+      try {
+        output.write(headerParam.toString().getBytes());
+      } catch (IOException e) {
+        e.printStackTrace();
+      }
+    });
+
+    // Set body response for Files
+    files.forEach(file -> {
+      String fileName = Paths.get((file.getPath())).getFileName().toString();
+      StringBuilder headerFile = new StringBuilder(boundary).append(newLine)
+          .append("Content-Disposition: form-data; name=\"").append(file.getParamName())
+          .append("\"; ").append("filename=\"").append(fileName).append("\"").append(newLine)
+          .append("Content-Type: ").append(file.getMimeType()).append(newLine).append(newLine);
+      try {
+        String filePath = file.getPath();
+        InputStream inputStream = Files.newInputStream(Paths.get(filePath));
+        byte[] data = sampler.readResponse(expected, inputStream, 0);
+        output.write(headerFile.toString().getBytes());
+        output.write(data);
+        output.write(newLine.getBytes());
+      } catch (IOException e) {
+        e.printStackTrace();
+      }
+    });
+
+    String finalResponse = new StringBuilder(dashDash).append(newLine).toString();
+    output.write(boundary.getBytes());
+    output.write(finalResponse.getBytes());
+
+    return output.toByteArray();
+  }
+
+
+  private void validateMultipartResponse(HTTPSampleResult result, HTTPSampleResult expected) {
+    softly.assertThat(result.isSuccessful()).isEqualTo(expected.isSuccessful());
+    softly.assertThat(result.getResponseCode()).isEqualTo(expected.getResponseCode());
+    softly.assertThat(result.getResponseDataAsString())
+        .isEqualToIgnoringNewLines(expected.getResponseDataAsString());
+    softly.assertThat(result.getRequestHeaders())
+        .isEqualToIgnoringNewLines(expected.getRequestHeaders());
   }
 }
