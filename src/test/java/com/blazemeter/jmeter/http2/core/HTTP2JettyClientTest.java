@@ -258,7 +258,7 @@ public class HTTP2JettyClientTest {
   @Test
   public void shouldSendBodyInformationWhenRequestWithBodyRaw () throws Exception {
     HTTPSampleResult expected = createExpectedResult(true, HttpStatus.OK_200,
-        RESPONSE_MESSAGE_200, 0, REQUEST_HEADERS +
+        RESPONSE_MESSAGE_200, 20, REQUEST_HEADERS +
             "Content-Type: application/octet-stream\r\nContent-Length: 20");
     expected.setResponseData(TEST_ARGUMENT_1 + TEST_ARGUMENT_2, STANDARD_CHARSETS);
     startServer(setupServer(createGetServerResponse()));
@@ -273,7 +273,7 @@ public class HTTP2JettyClientTest {
   @Test
   public void shouldSendBodyInformationWhenRequestWithArguments () throws Exception {
     HTTPSampleResult expected = createExpectedResult(true, HttpStatus.OK_200,
-        RESPONSE_MESSAGE_200, 0, REQUEST_HEADERS +
+        RESPONSE_MESSAGE_200, 33, REQUEST_HEADERS +
             "Content-Type: application/x-www-form-urlencoded\r\nContent-Length: 33");
     expected.setResponseData("test1=" + TEST_ARGUMENT_1 + "&" + "test2="
         + TEST_ARGUMENT_2, STANDARD_CHARSETS);
@@ -300,7 +300,7 @@ public class HTTP2JettyClientTest {
   @Test
   public void shouldSendBodyWhenDeleteMethodWithRawData() throws Exception {
     HTTPSampleResult expected = createExpectedResult(true, HttpStatus.OK_200,
-        RESPONSE_MESSAGE_200, 0 , REQUEST_HEADERS +
+        RESPONSE_MESSAGE_200, 20 , REQUEST_HEADERS +
             "Content-Type: application/octet-stream\r\nContent-Length: 20");
     expected.setResponseData(TEST_ARGUMENT_1 + TEST_ARGUMENT_2, STANDARD_CHARSETS);
     startServer(setupServer(createGetServerResponse()));
