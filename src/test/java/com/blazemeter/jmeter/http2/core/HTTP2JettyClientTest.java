@@ -78,6 +78,11 @@ public class HTTP2JettyClientTest {
   private static final String SERVER_RESPONSE = "Hello World!";
   private static final String REQUEST_HEADERS = "Accept-Encoding: gzip\r\nUser-Agent: Jetty/11.0"
       + ".6\r\n\r\n";
+  private static final String REQUEST_HEADERS_FILE_CONTENT = "Accept-Encoding: gzip\r\n"
+      + "User-Agent: Jetty/11.0.6\r\n"
+      + "Content-Type: image/png\r\n"
+      + "Content-Length: 9018\r\n"
+      + "\r\n";
   private static final String SERVER_IMAGE = "/test/image.png";
   private static final String SERVER_PATH = "/test";
   private static final String SERVER_PATH_SET_COOKIES = "/test/set-cookies";
@@ -95,6 +100,8 @@ public class HTTP2JettyClientTest {
   private static final String BASIC_HTML_TEMPLATE = "<!DOCTYPE html><html><head><title>Page "
       + "Title</title></head><body><div><img src='image.png'></div></body></html>";
   private static final byte[] BINARY_RESPONSE_BODY = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
+  private static final String RESPONSE_MESSAGE_200 = "OK";
+  private static final String RESPONSE_MESSAGE_400 = "Bad Request";
 
   @Rule
   public final JUnitSoftAssertions softly = new JUnitSoftAssertions();
@@ -191,14 +198,14 @@ public class HTTP2JettyClientTest {
             resp.getWriter().write(BASIC_HTML_TEMPLATE);
             resp.addHeader(HTTPConstants.EXPIRES,
                 "Sat, 25 Sep 2041 00:00:00 GMT");
-            return;
+            break;
           case SERVER_IMAGE:
             resp.getOutputStream().write(new byte[]{1, 2, 3, 4, 5});
           case SERVER_PATH_200_FILE_SENT:
             resp.setContentType("image/png");
             byte[] requestBody = req.getInputStream().readAllBytes();
             resp.getOutputStream().write(requestBody);
-            return;
+            break;
           case SERVER_PATH_200_GZIP:
             resp.addHeader("Content-Encoding", "gzip");
             GZIPOutputStream gzipOutputStream = new GZIPOutputStream(resp.getOutputStream());
@@ -238,6 +245,7 @@ public class HTTP2JettyClientTest {
   @Test
   public void shouldReturnFailureSampleResultWhenResponse400() throws Exception {
     HTTPSampleResult expected = createExpectedResult(false, HttpStatus.BAD_REQUEST_400,
+        RESPONSE_MESSAGE_400, 0,
         REQUEST_HEADERS);
     startServer(setupServer(createGetServerResponse()));
     configureSampler(HTTPConstants.GET);
@@ -247,12 +255,33 @@ public class HTTP2JettyClientTest {
   }
 
   private HTTPSampleResult createExpectedResult(boolean successful, int responseCode,
-      String headers) {
+      String responseMessage, long sentBytes, String headers) {
     HTTPSampleResult expected = new HTTPSampleResult();
     expected.setSuccessful(successful);
     expected.setResponseCode(String.valueOf(responseCode));
-    expected.setResponseMessage(HttpStatus.getMessage(responseCode));
+    expected.setResponseMessage(responseMessage);
+    expected.setSentBytes(sentBytes);
     expected.setRequestHeaders(headers);
+    return expected;
+  }
+
+  private HTTPSampleResult buildSuccesfulExpectedResult() {
+    HTTPSampleResult expected = new HTTPSampleResult();
+    expected.setSuccessful(true);
+    expected.setResponseCode(String.valueOf(HttpStatus.OK_200));
+    expected.setResponseMessage(HttpStatus.getMessage(HttpStatus.OK_200));
+    expected.setSentBytes(0);
+    expected.setRequestHeaders(REQUEST_HEADERS);
+    return expected;
+  }
+
+  private HTTPSampleResult buildSuccesfulExpectedResultWithFileContent() {
+    HTTPSampleResult expected = new HTTPSampleResult();
+    expected.setSuccessful(true);
+    expected.setResponseCode(String.valueOf(HttpStatus.OK_200));
+    expected.setResponseMessage(HttpStatus.getMessage(HttpStatus.OK_200));
+    expected.setSentBytes(9018);
+    expected.setRequestHeaders(REQUEST_HEADERS_FILE_CONTENT);
     return expected;
   }
 
@@ -266,7 +295,7 @@ public class HTTP2JettyClientTest {
 
   @Test
   public void shouldGetEmbeddedResourcesWithSubSampleWhenImageParserIsEnabled() throws Exception {
-    HTTPSampleResult expected = createExpectedResult(true, HttpStatus.OK_200, REQUEST_HEADERS);
+    HTTPSampleResult expected = buildSuccesfulExpectedResult();
     expected
         .setResponseData(HTTP2JettyClientTest.BASIC_HTML_TEMPLATE, StandardCharsets.UTF_8.name());
     startServer(setupServer(createGetServerResponse()));
@@ -279,7 +308,7 @@ public class HTTP2JettyClientTest {
   @Test
   public void shouldUseCookiesFromFirstRequestOnSecondRequestWhenSecondRequestIsSent()
       throws Exception {
-    HTTPSampleResult expected = createExpectedResult(true, HttpStatus.OK_200, REQUEST_HEADERS);
+    HTTPSampleResult expected = buildSuccesfulExpectedResult();
     expected.setCookies(RESPONSE_DATA_COOKIES);
     expected.setResponseData(RESPONSE_DATA_COOKIES,
         StandardCharsets.UTF_8.name());
@@ -296,7 +325,8 @@ public class HTTP2JettyClientTest {
 
   @Test
   public void shouldReturnSuccessSampleResultWhenSuccessRequestWithHeaders() throws Exception {
-    HTTPSampleResult expected = createExpectedResult(true, HttpStatus.OK_200,
+    HTTPSampleResult expected = createExpectedResult(true, HttpStatus.OK_200, RESPONSE_MESSAGE_200,
+        0,
         "Accept-Encoding: gzip\r\nUser-Agent: Jetty/11.0.6\r\nHeader1: "
             + "value1\r\nHeader2: value2\r\n\r\n");
     expected.setResponseData(SERVER_RESPONSE, StandardCharsets.UTF_8.name());
@@ -309,11 +339,9 @@ public class HTTP2JettyClientTest {
 
   @Test
   public void shouldReturnSuccessDigestAuthSampleResultWhenAuthDigestIsSet() throws Exception {
-    HTTPSampleResult expected = new HTTPSampleResult();
+    HTTPSampleResult expected = buildSuccesfulExpectedResult();
+    ;
     expected.setResponseData(SERVER_RESPONSE, StandardCharsets.UTF_8.name());
-    expected.setResponseCode(String.valueOf(HttpStatus.OK_200));
-    expected.setSuccessful(true);
-    expected.setRequestHeaders(REQUEST_HEADERS);
     Server server = setupServer(createGetServerResponse());
     configureAuthenticationMechanisms(server, Constraint.__DIGEST_AUTH);
     startServer(server);
@@ -325,11 +353,8 @@ public class HTTP2JettyClientTest {
 
   @Test
   public void shouldReturnSuccessBasicAuthSampleResultWhenPreemptiveIsFalse() throws Exception {
-    HTTPSampleResult expected = new HTTPSampleResult();
+    HTTPSampleResult expected = buildSuccesfulExpectedResult();
     expected.setResponseData(SERVER_RESPONSE, StandardCharsets.UTF_8.name());
-    expected.setResponseCode(String.valueOf(HttpStatus.OK_200));
-    expected.setSuccessful(true);
-    expected.setRequestHeaders(REQUEST_HEADERS);
     Server server = setupServer(createGetServerResponse());
     configureAuthenticationMechanisms(server, Constraint.__BASIC_AUTH);
     startServer(server);
@@ -345,6 +370,7 @@ public class HTTP2JettyClientTest {
     HTTPSampleResult expected = new HTTPSampleResult();
     expected.setResponseData(SERVER_RESPONSE, StandardCharsets.UTF_8.name());
     expected.setResponseCode(String.valueOf(HttpStatus.OK_200));
+    expected.setResponseMessage(HttpStatus.getMessage(HttpStatus.OK_200));
     expected.setSuccessful(true);
     expected.setRequestHeaders("Accept-Encoding: gzip\r\n"
         + "User-Agent: Jetty/11.0.6\r\n"
@@ -362,7 +388,7 @@ public class HTTP2JettyClientTest {
   @Test
   public void shouldGetRedirectedResultWithSubSampleWhenFollowRedirectEnabledAndRedirected()
       throws Exception {
-    HTTPSampleResult expected = createExpectedResult(true, HttpStatus.OK_200, REQUEST_HEADERS);
+    HTTPSampleResult expected = buildSuccesfulExpectedResult();
     expected.setResponseData(SERVER_RESPONSE, StandardCharsets.UTF_8.name());
     expected.setRedirectLocation("https://localhost:6666/test/200");
     startServer(setupServer(createGetServerResponse()));
@@ -398,12 +424,7 @@ public class HTTP2JettyClientTest {
 
   @Test
   public void shouldGetFileDataWithFileIsSentAsBodyPart() throws Exception {
-    HTTPSampleResult expected = createExpectedResult(true, HttpStatus.OK_200,
-        "Accept-Encoding: gzip\r\n"
-            + "User-Agent: Jetty/11.0.6\r\n"
-            + "Content-Type: image/png\r\n"
-            + "Content-Length: 9018\r\n"
-            + "\r\n");
+    HTTPSampleResult expected = buildSuccesfulExpectedResultWithFileContent();
     String filePath = getClass().getResource("blazemeter-labs-logo.png").getPath();
     InputStream inputStream = Files.newInputStream(Paths.get(filePath));
     expected.setResponseData(sampler.readResponse(expected, inputStream, 0));
@@ -432,7 +453,7 @@ public class HTTP2JettyClientTest {
 
   @Test
   public void shouldNoUseCacheWhenNotUseExpire() throws Exception {
-    HTTPSampleResult expected = createExpectedResult(true, 200, REQUEST_HEADERS);
+    HTTPSampleResult expected = buildSuccesfulExpectedResult();
     expected.setResponseData(BASIC_HTML_TEMPLATE, StandardCharsets.UTF_8.name());
     startServer(setupServer(createGetServerResponse()));
     sampler.setImageParser(true);
@@ -454,7 +475,7 @@ public class HTTP2JettyClientTest {
     JMeterUtils.setProperty("cache_manager.cached_resource_mode", "RETURN_CUSTOM_STATUS");
     JMeterUtils.setProperty("RETURN_CUSTOM_STATUS.message", message);
     JMeterUtils.setProperty("RETURN_CUSTOM_STATUS.code", responseCode);
-    HTTPSampleResult expected = createExpectedResult(true, 200, REQUEST_HEADERS);
+    HTTPSampleResult expected = buildSuccesfulExpectedResult();
     expected.setResponseData(BASIC_HTML_TEMPLATE, StandardCharsets.UTF_8.name());
     startServer(setupServer(createGetServerResponse()));
     sampler.setImageParser(true);
@@ -469,7 +490,8 @@ public class HTTP2JettyClientTest {
     // Same request use cached result with no message, request and data response
     expected.setRequestHeaders("");
     expected.setResponseData("", StandardCharsets.UTF_8.name());
-    validateEmbeddedResultCached(resultCached, expected, message);
+    expected.setResponseMessage(message);
+    validateEmbeddedResultCached(resultCached, expected);
   }
 
   @Test
@@ -477,7 +499,7 @@ public class HTTP2JettyClientTest {
     String message = "message";
     JMeterUtils.setProperty("cache_manager.cached_resource_mode", "RETURN_200_CACHE");
     JMeterUtils.setProperty("RETURN_200_CACHE.message", message);
-    HTTPSampleResult expected = createExpectedResult(true, 200, REQUEST_HEADERS);
+    HTTPSampleResult expected = buildSuccesfulExpectedResult();
     expected.setResponseData(BASIC_HTML_TEMPLATE, StandardCharsets.UTF_8.name());
     startServer(setupServer(createGetServerResponse()));
     sampler.setImageParser(true);
@@ -492,12 +514,13 @@ public class HTTP2JettyClientTest {
     expected.setRequestHeaders("");
     expected.setResponseData("",
         StandardCharsets.UTF_8.name());
-    validateEmbeddedResultCached(resultCached, expected, message);
+    expected.setResponseMessage(message);
+    validateEmbeddedResultCached(resultCached, expected);
   }
 
   @Test
   public void shouldGetSubResultWhenCacheCleanBetweenIterations() throws Exception {
-    HTTPSampleResult expected = createExpectedResult(true, 200, REQUEST_HEADERS);
+    HTTPSampleResult expected = buildSuccesfulExpectedResult();
     expected.setResponseData(BASIC_HTML_TEMPLATE, StandardCharsets.UTF_8.name());
     startServer(setupServer(createGetServerResponse()));
     sampler.setImageParser(true);
@@ -514,7 +537,7 @@ public class HTTP2JettyClientTest {
 
   @Test
   public void shouldGetTwoFilesAndTwoParams() throws Exception {
-    HTTPSampleResult expected = createExpectedResult(true, 200, REQUEST_HEADERS);
+    HTTPSampleResult expected = buildSuccesfulExpectedResult();
     startServer(setupServer(createGetServerResponse()));
     sampler.setImageParser(true); // Indicates download embedded resources
     sampler.setDoMultipart(true);
@@ -553,7 +576,7 @@ public class HTTP2JettyClientTest {
 
   @Test
   public void shouldGetOneFileAndOneParam() throws Exception {
-    HTTPSampleResult expected = createExpectedResult(true, 200, REQUEST_HEADERS);
+    HTTPSampleResult expected = buildSuccesfulExpectedResult();
     startServer(setupServer(createGetServerResponse()));
     sampler.setImageParser(true);
     sampler.setDoMultipart(true);
@@ -587,7 +610,7 @@ public class HTTP2JettyClientTest {
 
   @Test
   public void shouldGetOnlyTwoFiles() throws Exception {
-    HTTPSampleResult expected = createExpectedResult(true, 200, REQUEST_HEADERS);
+    HTTPSampleResult expected = buildSuccesfulExpectedResult();
     startServer(setupServer(createGetServerResponse()));
     sampler.setImageParser(true);
     sampler.setDoMultipart(true);
@@ -617,7 +640,7 @@ public class HTTP2JettyClientTest {
 
   @Test
   public void shouldGetOnlyTwoParams() throws Exception {
-    HTTPSampleResult expected = createExpectedResult(true, 200, REQUEST_HEADERS);
+    HTTPSampleResult expected = buildSuccesfulExpectedResult();
     startServer(setupServer(createGetServerResponse()));
     sampler.setImageParser(true);
     sampler.setDoMultipart(true);
@@ -648,7 +671,6 @@ public class HTTP2JettyClientTest {
 
   @Test
   public void shouldReturnErrorInBlankFileName() throws Exception {
-    HTTPSampleResult expected = createExpectedResult(true, 200, REQUEST_HEADERS);
     startServer(setupServer(createGetServerResponse()));
     sampler.setImageParser(true);
     sampler.setDoMultipart(true);
@@ -656,12 +678,9 @@ public class HTTP2JettyClientTest {
     // Create one File with empty name
     String filePath = getClass().getResource("blazemeter-labs-logo.png").getPath();
     InputStream inputStream = Files.newInputStream(Paths.get(filePath));
+    HTTPSampleResult expected = buildSuccesfulExpectedResult();
     expected.setResponseData(sampler.readResponse(expected, inputStream, 0));
-    expected.setRequestHeaders("Accept-Encoding: gzip\r\n"
-        + "User-Agent: Jetty/11.0.6\r\n"
-        + "Content-Type: image/png\r\n"
-        + "Content-Length: 9018\r\n"
-        + "\r\n");
+    expected.setRequestHeaders(REQUEST_HEADERS_FILE_CONTENT);
     configureSampler(HTTPConstants.POST);
     HTTPFileArg fileArg = new HTTPFileArg(filePath, "", "image/png");
     sampler.setHTTPFiles(new HTTPFileArg[]{fileArg});
@@ -683,7 +702,7 @@ public class HTTP2JettyClientTest {
 
   @Test
   public void shouldUseMultipartWhenHasFilesAndNotSendAsPostBody() throws Exception {
-    HTTPSampleResult expected = createExpectedResult(true, 200, REQUEST_HEADERS);
+    HTTPSampleResult expected = buildSuccesfulExpectedResult();
     startServer(setupServer(createGetServerResponse()));
     sampler.setImageParser(true);
     configureSampler(HTTPConstants.POST);
@@ -713,12 +732,7 @@ public class HTTP2JettyClientTest {
 
   @Test
   public void shouldNotUseMultipartWhenHasOneFileWithEmptyParamName() throws Exception {
-    HTTPSampleResult expected = createExpectedResult(true, HttpStatus.OK_200,
-        "Accept-Encoding: gzip\r\n"
-            + "User-Agent: Jetty/11.0.6\r\n"
-            + "Content-Type: image/png\r\n"
-            + "Content-Length: 9018\r\n"
-            + "\r\n");
+    HTTPSampleResult expected = buildSuccesfulExpectedResultWithFileContent();
 
     // Create one File with empty param name
     String filePath = getClass().getResource("blazemeter-labs-logo.png").getPath();
@@ -781,6 +795,8 @@ public class HTTP2JettyClientTest {
   private void validateResponse(SampleResult result, SampleResult expected) {
     softly.assertThat(result.isSuccessful()).isEqualTo(expected.isSuccessful());
     softly.assertThat(result.getResponseCode()).isEqualTo(expected.getResponseCode());
+    softly.assertThat(result.getResponseMessage()).isEqualTo(expected.getResponseMessage());
+    softly.assertThat(result.getSentBytes()).isEqualTo(expected.getSentBytes());
     softly.assertThat(result.getResponseDataAsString())
         .isEqualTo(expected.getResponseDataAsString());
     softly.assertThat(result.getRequestHeaders()).isEqualTo(expected.getRequestHeaders());
@@ -806,13 +822,9 @@ public class HTTP2JettyClientTest {
 
   /**
    * Validate same result as expected, but also control that not sample result was added.
-   *
-   * @param messageResponse if passed, validate if message response is equal to defined.
    */
-  private void validateEmbeddedResultCached(HTTPSampleResult result, HTTPSampleResult expected,
-      String messageResponse) {
+  private void validateEmbeddedResultCached(HTTPSampleResult result, HTTPSampleResult expected) {
     this.validateResponse(result, expected);
-    softly.assertThat(result.getResponseMessage()).isEqualTo(messageResponse);
     softly.assertThat(result.getResponseData().length).isEqualTo(0);
   }
 
