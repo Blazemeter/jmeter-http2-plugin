@@ -37,6 +37,7 @@ import org.apache.jmeter.protocol.http.control.CookieManager;
 import org.apache.jmeter.protocol.http.control.Header;
 import org.apache.jmeter.protocol.http.control.HeaderManager;
 import org.apache.jmeter.protocol.http.sampler.HTTPSampleResult;
+import org.apache.jmeter.protocol.http.sampler.HTTPSamplerBase;
 import org.apache.jmeter.protocol.http.util.HTTPArgument;
 import org.apache.jmeter.protocol.http.util.HTTPConstants;
 import org.apache.jmeter.protocol.http.util.HTTPFileArg;
@@ -373,6 +374,19 @@ public class HTTP2JettyClientTest {
     HTTPSampleResult result = client
         .sample(sampler, createURL(SERVER_PATH_200_EMBEDDED), HTTPConstants.GET, false, 0);
     validateEmbeddedResources(result, expected);
+  }
+
+  @Test
+  public void shouldNotDownloadEmbeddedResourcesWhenUrlDoesNotMatchFilter() throws Exception {
+    HTTPSampleResult expected = createExpectedResult(true, HttpStatus.OK_200, REQUEST_HEADERS);
+    expected
+        .setResponseData(HTTP2JettyClientTest.BASIC_HTML_TEMPLATE, StandardCharsets.UTF_8.name());
+    startServer(setupServer(createGetServerResponse()));
+    sampler.setImageParser(true);
+    sampler.setEmbeddedUrlRE(".+css");
+    HTTPSampleResult result = client
+        .sample(sampler, createURL(SERVER_PATH_200_EMBEDDED), HTTPConstants.GET, false, 0);
+    validateEmbeddedResourcesWithUrlFilter(result, expected);
   }
 
   @Test
@@ -889,6 +903,14 @@ public class HTTP2JettyClientTest {
     softly.assertThat(results[1].getDataType()).isEqualTo(SampleResult.BINARY);
     softly.assertThat(results[1].getUrlAsString())
         .isEqualTo("https://localhost:6666/test/image.png");
+  }
+
+  private void validateEmbeddedResourcesWithUrlFilter(HTTPSampleResult result,
+      HTTPSampleResult expected) {
+    SampleResult[] results = result.getSubResults();
+    validateResponse(result, expected);
+    softly.assertThat(result.getSubResults().length).isEqualTo(1);
+    softly.assertThat(results[0].getDataType()).isNotEqualTo(SampleResult.BINARY);
   }
 
   /**
