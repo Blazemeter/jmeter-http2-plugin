@@ -4,7 +4,6 @@ import com.blazemeter.jmeter.http2.core.HTTP2JettyClient;
 import com.helger.commons.annotation.VisibleForTesting;
 import java.net.MalformedURLException;
 import java.net.URL;
-import java.nio.file.NoSuchFileException;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
@@ -14,14 +13,14 @@ import org.apache.jmeter.engine.event.LoopIterationListener;
 import org.apache.jmeter.protocol.http.sampler.HTTPSampleResult;
 import org.apache.jmeter.protocol.http.sampler.HTTPSamplerBase;
 import org.apache.jmeter.protocol.http.util.HTTPConstants;
+import org.apache.jmeter.samplers.SampleResult;
 import org.apache.jmeter.testelement.ThreadListener;
 import org.apache.jmeter.threads.JMeterContextService;
 import org.apache.jmeter.threads.JMeterVariables;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListener,
-    ThreadListener {
+public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListener, ThreadListener {
 
   private static final Logger LOG = LoggerFactory.getLogger(HTTP2Sampler.class);
   private static final ThreadLocal<Map<HTTP2ClientKey, HTTP2JettyClient>> CONNECTIONS =
@@ -44,19 +43,24 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
   @Override
   protected HTTPSampleResult sample(URL url, String method, boolean areFollowingRedirect,
       int depth) {
+    HTTPSampleResult result = buildResult(url, method);
     try {
       HTTP2JettyClient client = clientFactory.call();
-      return client.sample(this, url, method, areFollowingRedirect, depth);
+      return client.sample(this, result, areFollowingRedirect, depth);
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
-      LOG.error("The sampling has been interrupted", e);
-      return errorResult(e, new HTTPSampleResult());
-    } catch (NoSuchFileException e) {
       return errorResult(e, new HTTPSampleResult());
     } catch (Exception e) {
-      LOG.error("Error while sampling", e);
       return errorResult(e, new HTTPSampleResult());
     }
+  }
+
+  private HTTPSampleResult buildResult(URL url, String method) {
+    HTTPSampleResult result = new HTTPSampleResult();
+    result.setSampleLabel(SampleResult.isRenameSampleLabel() ? getName() : url.toString());
+    result.setHTTPMethod(method);
+    result.setURL(url);
+    return result;
   }
 
   @Override

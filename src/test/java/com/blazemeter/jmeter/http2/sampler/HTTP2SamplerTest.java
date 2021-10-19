@@ -39,7 +39,7 @@ public class HTTP2SamplerTest {
 
   @Test
   public void shouldReturnErrorMessageWhenThreadIsInterrupted() throws Exception {
-    when(client.sample(any(), any(), anyString(), anyBoolean(), anyInt()))
+    when(client.sample(any(), any(), anyBoolean(), anyInt()))
         .thenThrow(new InterruptedException());
     validateErrorResponse(sampler.sample(), InterruptedException.class.getName());
   }
@@ -51,7 +51,7 @@ public class HTTP2SamplerTest {
 
   @Test
   public void shouldReturnErrorMessageWhenClientThrowException() throws Exception {
-    when(client.sample(any(), any(), anyString(), anyBoolean(), anyInt()))
+    when(client.sample(any(), any(), anyBoolean(), anyInt()))
         .thenThrow(new TimeoutException());
     validateErrorResponse(sampler.sample(), TimeoutException.class.getName());
   }

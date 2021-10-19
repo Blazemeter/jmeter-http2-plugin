@@ -16,9 +16,7 @@ import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Set;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 import java.util.regex.Pattern;
 import java.util.stream.StreamSupport;
 import org.apache.commons.lang3.StringUtils;
@@ -32,7 +30,6 @@ import org.apache.jmeter.protocol.http.sampler.HTTPSampleResult;
 import org.apache.jmeter.protocol.http.util.HTTPArgument;
 import org.apache.jmeter.protocol.http.util.HTTPConstants;
 import org.apache.jmeter.protocol.http.util.HTTPFileArg;
-import org.apache.jmeter.samplers.SampleResult;
 import org.apache.jmeter.testelement.property.JMeterProperty;
 import org.apache.jmeter.util.JMeterUtils;
 import org.eclipse.jetty.client.HttpClient;
@@ -102,10 +99,8 @@ public class HTTP2JettyClient {
     httpClient.stop();
   }
 
-  public HTTPSampleResult sample(HTTP2Sampler sampler, URL url, String method,
-      boolean areFollowingRedirect, int depth)
-      throws URISyntaxException, IOException, InterruptedException, ExecutionException,
-      TimeoutException {
+  public HTTPSampleResult sample(HTTP2Sampler sampler, HTTPSampleResult result,
+      boolean areFollowingRedirect, int depth) throws Exception {
 
     if (!sampler.getProxyHost().isEmpty()) {
       setProxy(sampler.getProxyHost(), sampler.getProxyPortInt(), sampler.getProxyScheme());
@@ -113,10 +108,11 @@ public class HTTP2JettyClient {
 
     setAuthManager(sampler);
 
-    HTTPSampleResult result = buildResult(sampler, url, method);
+    URL url = result.getURL();
     HttpRequest request = buildRequest(url, result);
     setTimeouts(sampler, request);
     request.followRedirects(sampler.getAutoRedirects());
+    String method = result.getHTTPMethod();
     request.method(method);
 
     setHeaders(request, url, sampler.getHeaderManager());
@@ -162,14 +158,6 @@ public class HTTP2JettyClient {
 
     result.setRequestHeaders(buildHeadersString(request.getHeaders()));
     return sampler.resultProcessing(areFollowingRedirect, depth, result);
-  }
-
-  private HTTPSampleResult buildResult(HTTP2Sampler sampler, URL url, String method) {
-    HTTPSampleResult result = new HTTPSampleResult();
-    result.setSampleLabel(getSampleLabel(url, sampler));
-    result.setHTTPMethod(method);
-    result.setURL(url);
-    return result;
   }
 
   private boolean isSupportedMethod(String method) {
@@ -444,10 +432,6 @@ public class HTTP2JettyClient {
       }
     }
     return defaultValue;
-  }
-
-  private String getSampleLabel(URL url, HTTP2Sampler sampler) {
-    return SampleResult.isRenameSampleLabel() ? sampler.getName() : url.toString();
   }
 
   private void setTimeouts(HTTP2Sampler sampler, HttpRequest request) {
