@@ -414,9 +414,14 @@ public class HTTP2JettyClient {
   }
 
   private String buildHeadersString(HttpFields headers) {
-    return headers == null ? ""
-        : HttpFields.build(headers).remove(HTTPConstants.HEADER_COOKIE).toString()
-            .replace("\r\n", "\n");
+    if (headers == null) {
+      return "";
+    } else {
+      String ret = HttpFields.build(headers).remove(HTTPConstants.HEADER_COOKIE).toString()
+          .replace("\r\n", "\n");
+      return ret.substring(0,
+          ret.length() - 1); // removing final separator not included in jmeter headers
+    }
   }
 
   private void setResultContentResponse(HTTPSampleResult result, ContentResponse contentResponse,
@@ -458,7 +463,7 @@ public class HTTP2JettyClient {
   private String extractResponseHeaders(ContentResponse contentResponse,
       String message) {
     return contentResponse.getVersion() + " " + contentResponse.getStatus() + " " + message + "\n"
-        + contentResponse.getHeaders().asString().replace("\r\n", "\n");
+        + buildHeadersString(contentResponse.getHeaders());
   }
 
   private String extractRedirectLocation(ContentResponse contentResponse) {
