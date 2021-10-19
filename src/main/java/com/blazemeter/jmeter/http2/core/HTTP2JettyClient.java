@@ -16,9 +16,7 @@ import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Set;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 import java.util.regex.Pattern;
 import java.util.stream.StreamSupport;
 import org.apache.commons.lang3.StringUtils;
@@ -32,7 +30,6 @@ import org.apache.jmeter.protocol.http.sampler.HTTPSampleResult;
 import org.apache.jmeter.protocol.http.util.HTTPArgument;
 import org.apache.jmeter.protocol.http.util.HTTPConstants;
 import org.apache.jmeter.protocol.http.util.HTTPFileArg;
-import org.apache.jmeter.samplers.SampleResult;
 import org.apache.jmeter.testelement.property.JMeterProperty;
 import org.apache.jmeter.util.JMeterUtils;
 import org.eclipse.jetty.client.HttpClient;
@@ -102,24 +99,29 @@ public class HTTP2JettyClient {
     httpClient.stop();
   }
 
-  public HTTPSampleResult sample(HTTP2Sampler sampler, URL url, String method,
-      boolean areFollowingRedirect, int depth)
-      throws URISyntaxException, IOException, InterruptedException, ExecutionException,
-      TimeoutException {
+  public HTTPSampleResult sample(HTTP2Sampler sampler, HTTPSampleResult result,
+      boolean areFollowingRedirect, int depth) throws Exception {
+    setAuthManager(sampler);
+
+    URL url = result.getURL();
+    HttpRequest request = buildRequest(url, result);
+    setTimeouts(sampler, request);
+    request.followRedirects(sampler.getAutoRedirects());
+    String method = result.getHTTPMethod();
+    request.method(method);
+    setHeaders(request, url, sampler.getHeaderManager());
+
+    CookieManager cookieManager = sampler.getCookieManager();
+    if (cookieManager != null) {
+      result.setCookies(buildCookies(request, url, cookieManager));
+    }
 
     if (!sampler.getProxyHost().isEmpty()) {
       setProxy(sampler.getProxyHost(), sampler.getProxyPortInt(), sampler.getProxyScheme());
     }
 
-    setAuthManager(sampler);
+    result.sampleStart();
 
-    HTTPSampleResult result = buildResult(sampler, url, method);
-    HttpRequest request = buildRequest(url, result);
-    setTimeouts(sampler, request);
-    request.followRedirects(sampler.getAutoRedirects());
-    request.method(method);
-
-    setHeaders(request, url, sampler.getHeaderManager());
     JettyCacheManager cacheManager = JettyCacheManager.fromCacheManager(sampler.getCacheManager());
     if (cacheManager != null) {
       cacheManager.setHeaders(url, request);
@@ -129,92 +131,21 @@ public class HTTP2JettyClient {
       }
     }
 
-    CookieManager cookieManager = sampler.getCookieManager();
-    if (cookieManager != null) {
-      result.setCookies(buildCookies(request, url, cookieManager));
-    }
-
     setBody(request, sampler, result);
     if (!isSupportedMethod(method)) {
       throw new UnsupportedOperationException(String.format("Method %s is not supported", method));
     }
 
-    result.sampleStart();
     ContentResponse contentResponse = request.send();
-    result.sampleEnd();
-
-    saveCookiesInCookieManager(contentResponse, url, sampler.getCookieManager());
+    result.setRequestHeaders(buildHeadersString(request.getHeaders()));
     setResultContentResponse(result, contentResponse, sampler);
-
-    if (result.isRedirect()) {
-      String redirectLocation = contentResponse.getHeaders() != null
-          ? contentResponse.getHeaders().get(HTTPConstants.HEADER_LOCATION)
-          : null;
-      if (redirectLocation == null) {
-        throw new IllegalArgumentException("Missing location header in redirect");
-      }
-      result.setRedirectLocation(redirectLocation);
-    }
+    saveCookiesInCookieManager(contentResponse, url, sampler.getCookieManager());
 
     if (cacheManager != null) {
       cacheManager.saveDetails(contentResponse, result);
     }
 
-    result.setRequestHeaders(buildHeadersString(request.getHeaders()));
     return sampler.resultProcessing(areFollowingRedirect, depth, result);
-  }
-
-  private HTTPSampleResult buildResult(HTTP2Sampler sampler, URL url, String method) {
-    HTTPSampleResult result = new HTTPSampleResult();
-    result.setSampleLabel(getSampleLabel(url, sampler));
-    result.setHTTPMethod(method);
-    result.setURL(url);
-    return result;
-  }
-
-  private boolean isSupportedMethod(String method) {
-    return SUPPORTED_METHODS.contains(method);
-  }
-
-  private String buildHeadersString(HttpFields headers) {
-    return headers == null ? ""
-        : HttpFields.build(headers).remove(HTTPConstants.HEADER_COOKIE).toString();
-  }
-
-  private void saveCookiesInCookieManager(ContentResponse response, URL url,
-      CookieManager cookieManager) {
-    String cookieHeader = response.getHeaders().get(HTTPConstants.HEADER_SET_COOKIE);
-    if (cookieHeader != null && cookieManager != null) {
-      cookieManager.addCookieFromHeader(cookieHeader, url);
-    }
-  }
-
-  private String buildCookies(HttpRequest request, URL url, CookieManager cookieManager) {
-    if (cookieManager == null) {
-      return null;
-    }
-    String cookieString = cookieManager.getCookieHeaderForURL(url);
-    HttpField cookieHeader = new HttpField(HTTPConstants.HEADER_COOKIE, cookieString);
-    request.addHeader(cookieHeader);
-    return cookieString;
-  }
-
-  private void setProxy(String host, int port, String protocol) {
-    HttpProxy proxy =
-        new HttpProxy(new Address(host, port), HTTPConstants.PROTOCOL_HTTPS.equals(protocol));
-    httpClient.getProxyConfiguration().getProxies().add(proxy);
-  }
-
-  private HttpRequest buildRequest(URL url, HTTPSampleResult result) throws URISyntaxException,
-      IllegalArgumentException {
-    Request request = httpClient.newRequest(url.toURI());
-    if (!(request instanceof HttpRequest) || result == null) {
-      throw new IllegalArgumentException("HttpRequest is expected");
-    }
-    HttpRequest httpRequest = (HttpRequest) request;
-    httpRequest.onRequestBegin(l -> result.connectEnd());
-    httpRequest.onResponseBegin(l -> result.latencyEnd());
-    return httpRequest;
   }
 
   private void setAuthManager(HTTP2Sampler sampler) {
@@ -250,37 +181,82 @@ public class HTTP2JettyClient {
     }
   }
 
-  private void setResultContentResponse(HTTPSampleResult result, ContentResponse contentResponse,
-      HTTP2Sampler sampler) throws IOException {
-    result.setSuccessful(contentResponse.getStatus() >= 200 && contentResponse.getStatus() <= 399);
-    result.setResponseCode(String.valueOf(contentResponse.getStatus()));
-    String responseMessage = contentResponse.getReason() != null ? contentResponse.getReason()
-        : HttpStatus.getMessage(contentResponse.getStatus());
-    result.setResponseMessage(responseMessage);
-
-    result.setResponseHeaders(contentResponse.getHeaders().asString());
-
-    InputStream inputStream = new ByteArrayInputStream(contentResponse.getContent());
-    // When a resource is cached, the sample result is empty
-    result.setResponseData(sampler.readResponse(result, inputStream,
-        contentResponse.getContent().length));
-
-    String contentType = contentResponse.getHeaders() != null
-        ? contentResponse.getHeaders().get(HTTPConstants.HEADER_CONTENT_TYPE)
-        : null;
-    if (contentType != null) {
-      result.setContentType(contentType);
-      result.setEncodingAndType(contentType);
+  private HttpRequest buildRequest(URL url, HTTPSampleResult result) throws URISyntaxException,
+      IllegalArgumentException {
+    Request request = httpClient.newRequest(url.toURI());
+    if (!(request instanceof HttpRequest) || result == null) {
+      throw new IllegalArgumentException("HttpRequest is expected");
     }
+    HttpRequest httpRequest = (HttpRequest) request;
+    httpRequest.onRequestBegin(r -> result.connectEnd());
+    httpRequest.onRequestContent(
+        (r, c) -> result.setSentBytes(result.getSentBytes() + c.limit()));
+    httpRequest.onResponseBegin(r -> result.latencyEnd());
+    return httpRequest;
+  }
 
-    long headerBytes =
-        (long) result.getResponseHeaders().length()
-            + (long) contentResponse.getHeaders().asString().length()
-            + 1L
-            + 2L;
-    result.setHeadersSize((int) headerBytes);
-    result.setSentBytes(contentResponse.getRequest().getBody().getLength());
+  private void setTimeouts(HTTP2Sampler sampler, HttpRequest request) {
+    if (sampler.getConnectTimeout() > 0) {
+      httpClient.setConnectTimeout(sampler.getConnectTimeout());
+    }
+    if (sampler.getResponseTimeout() > 0) {
+      request.timeout(sampler.getResponseTimeout(), TimeUnit.MILLISECONDS);
+    }
+  }
 
+  private void setHeaders(HttpRequest request, URL url, HeaderManager headerManager) {
+    if (headerManager != null) {
+      StreamSupport.stream(headerManager.getHeaders().spliterator(), false)
+          .map(prop -> (Header) prop.getObjectValue())
+          .filter(header -> (!header.getName().isEmpty()) && (!HTTPConstants.HEADER_CONTENT_LENGTH
+              .equalsIgnoreCase(header.getName())))
+          .forEach(header -> request.addHeader(createJettyHeader(header, url)));
+    }
+  }
+
+  private HttpField createJettyHeader(Header header, URL url) {
+    String headerName = header.getName();
+    String headerValue = header.getValue();
+    if (HTTPConstants.HEADER_HOST.equalsIgnoreCase(headerName)) {
+      int port = getPortFromHostHeader(headerValue, url.getPort());
+      // remove any port specification
+      headerValue = headerValue.replaceFirst(":\\d+$", "");
+      if (port != -1 && port == url.getDefaultPort()) {
+        // no need to specify the port if it is the default
+        port = -1;
+      }
+      return port == -1 ? new HttpField(HTTPConstants.HEADER_HOST, headerValue)
+          : new HttpField(HTTPConstants.HEADER_HOST, headerValue + ":" + port);
+    } else {
+      return new HttpField(headerName, headerValue);
+    }
+  }
+
+  private int getPortFromHostHeader(String hostHeaderValue, int defaultValue) {
+    String[] hostParts = hostHeaderValue.split(":");
+    if (hostParts.length > 1) {
+      String portString = hostParts[hostParts.length - 1];
+      if (PORT_PATTERN.matcher(portString).matches()) {
+        return Integer.parseInt(portString);
+      }
+    }
+    return defaultValue;
+  }
+
+  private String buildCookies(HttpRequest request, URL url, CookieManager cookieManager) {
+    if (cookieManager == null) {
+      return null;
+    }
+    String cookieString = cookieManager.getCookieHeaderForURL(url);
+    HttpField cookieHeader = new HttpField(HTTPConstants.HEADER_COOKIE, cookieString);
+    request.addHeader(cookieHeader);
+    return cookieString;
+  }
+
+  private void setProxy(String host, int port, String protocol) {
+    HttpProxy proxy =
+        new HttpProxy(new Address(host, port), HTTPConstants.PROTOCOL_HTTPS.equals(protocol));
+    httpClient.getProxyConfiguration().getProxies().add(proxy);
   }
 
   private void setBody(HttpRequest request, HTTP2Sampler sampler, HTTPSampleResult result)
@@ -381,18 +357,6 @@ public class HTTP2JettyClient {
     result.setQueryString(postBody.toString());
   }
 
-  private String extractFileMimeType(boolean hasContentTypeHeader, HTTPFileArg file) {
-    String ret = null;
-    if (!hasContentTypeHeader) {
-      if (file.getMimeType() != null && !file.getMimeType().isEmpty()) {
-        ret = file.getMimeType();
-      } else if (ADD_CONTENT_TYPE_TO_POST_IF_MISSING) {
-        ret = HTTPConstants.APPLICATION_X_WWW_FORM_URLENCODED;
-      }
-    }
-    return ret == null ? DEFAULT_FILE_MIME_TYPE : ret;
-  }
-
   private String extractMultipartBoundary(MultiPartRequestContent multipartEntityBuilder) {
     String contentType = multipartEntityBuilder.getContentType();
     String boundaryParam = contentType.substring(contentType.indexOf(" ") + 1);
@@ -401,62 +365,6 @@ public class HTTP2JettyClient {
 
   private Charset buildCharsetOrDefault(String contentEncoding, Charset defaultCharset) {
     return !contentEncoding.isEmpty() ? Charset.forName(contentEncoding) : defaultCharset;
-  }
-
-  private boolean isMethodWithBody(String method) {
-    return METHODS_WITH_BODY.contains(method);
-  }
-
-  private void setHeaders(HttpRequest request, URL url, HeaderManager headerManager) {
-    if (headerManager != null) {
-      StreamSupport.stream(headerManager.getHeaders().spliterator(), false)
-          .map(prop -> (Header) prop.getObjectValue())
-          .filter(header -> (!header.getName().isEmpty()) && (!HTTPConstants.HEADER_CONTENT_LENGTH
-              .equalsIgnoreCase(header.getName())))
-          .forEach(header -> request.addHeader(createJettyHeader(header, url)));
-    }
-  }
-
-  private HttpField createJettyHeader(Header header, URL url) {
-    String headerName = header.getName();
-    String headerValue = header.getValue();
-    if (HTTPConstants.HEADER_HOST.equalsIgnoreCase(headerName)) {
-      int port = getPortFromHostHeader(headerValue, url.getPort());
-      // remove any port specification
-      headerValue = headerValue.replaceFirst(":\\d+$", "");
-      if (port != -1 && port == url.getDefaultPort()) {
-        // no need to specify the port if it is the default
-        port = -1;
-      }
-      return port == -1 ? new HttpField(HTTPConstants.HEADER_HOST, headerValue)
-          : new HttpField(HTTPConstants.HEADER_HOST, headerValue + ":" + port);
-    } else {
-      return new HttpField(headerName, headerValue);
-    }
-  }
-
-  private int getPortFromHostHeader(String hostHeaderValue, int defaultValue) {
-    String[] hostParts = hostHeaderValue.split(":");
-    if (hostParts.length > 1) {
-      String portString = hostParts[hostParts.length - 1];
-      if (PORT_PATTERN.matcher(portString).matches()) {
-        return Integer.parseInt(portString);
-      }
-    }
-    return defaultValue;
-  }
-
-  private String getSampleLabel(URL url, HTTP2Sampler sampler) {
-    return SampleResult.isRenameSampleLabel() ? sampler.getName() : url.toString();
-  }
-
-  private void setTimeouts(HTTP2Sampler sampler, HttpRequest request) {
-    if (sampler.getConnectTimeout() > 0) {
-      httpClient.setConnectTimeout(sampler.getConnectTimeout());
-    }
-    if (sampler.getResponseTimeout() > 0) {
-      request.timeout(sampler.getResponseTimeout(), TimeUnit.MILLISECONDS);
-    }
   }
 
   private String buildArgumentPartRequestBody(HTTPArgument arg, Charset contentCharset,
@@ -483,6 +391,96 @@ public class HTTP2JettyClient {
     String disposition = "name=\"" + file.getParamName() + "\"; filename=\"" + fileName + "\"";
     return buildPartBody(boundary, disposition, file.getMimeType(), "binary",
         "<actual file content, not shown here>");
+  }
+
+  private String extractFileMimeType(boolean hasContentTypeHeader, HTTPFileArg file) {
+    String ret = null;
+    if (!hasContentTypeHeader) {
+      if (file.getMimeType() != null && !file.getMimeType().isEmpty()) {
+        ret = file.getMimeType();
+      } else if (ADD_CONTENT_TYPE_TO_POST_IF_MISSING) {
+        ret = HTTPConstants.APPLICATION_X_WWW_FORM_URLENCODED;
+      }
+    }
+    return ret == null ? DEFAULT_FILE_MIME_TYPE : ret;
+  }
+
+  private boolean isMethodWithBody(String method) {
+    return METHODS_WITH_BODY.contains(method);
+  }
+
+  private boolean isSupportedMethod(String method) {
+    return SUPPORTED_METHODS.contains(method);
+  }
+
+  private String buildHeadersString(HttpFields headers) {
+    if (headers == null) {
+      return "";
+    } else {
+      String ret = HttpFields.build(headers).remove(HTTPConstants.HEADER_COOKIE).toString()
+          .replace("\r\n", "\n");
+      return ret.substring(0,
+          ret.length() - 1); // removing final separator not included in jmeter headers
+    }
+  }
+
+  private void setResultContentResponse(HTTPSampleResult result, ContentResponse contentResponse,
+      HTTP2Sampler sampler) throws IOException {
+    String contentType = contentResponse.getHeaders() != null
+        ? contentResponse.getHeaders().get(HTTPConstants.HEADER_CONTENT_TYPE)
+        : null;
+    if (contentType != null) {
+      result.setContentType(contentType);
+      result.setEncodingAndType(contentType);
+    }
+
+    // When a resource is cached, the sample result is empty
+    InputStream inputStream = new ByteArrayInputStream(contentResponse.getContent());
+    result.setResponseData(sampler.readResponse(result, inputStream,
+        contentResponse.getContent().length));
+
+    result.sampleEnd();
+
+    result.setResponseCode(String.valueOf(contentResponse.getStatus()));
+    String responseMessage = contentResponse.getReason() != null ? contentResponse.getReason()
+        : HttpStatus.getMessage(contentResponse.getStatus());
+    result.setResponseMessage(responseMessage);
+    result.setSuccessful(contentResponse.getStatus() >= 200 && contentResponse.getStatus() <= 399);
+    result.setResponseHeaders(extractResponseHeaders(contentResponse, responseMessage));
+    if (result.isRedirect()) {
+      result.setRedirectLocation(extractRedirectLocation(contentResponse));
+    }
+
+    long headerBytes =
+        (long) result.getResponseHeaders().length()   // condensed length (without \r)
+            + (long) contentResponse.getHeaders().asString().length() // Add \r for each header
+            + 1L // Add \r for initial header
+            + 2L; // final \r\n before data
+    result.setHeadersSize((int) headerBytes);
+  }
+
+  private String extractResponseHeaders(ContentResponse contentResponse,
+      String message) {
+    return contentResponse.getVersion() + " " + contentResponse.getStatus() + " " + message + "\n"
+        + buildHeadersString(contentResponse.getHeaders());
+  }
+
+  private String extractRedirectLocation(ContentResponse contentResponse) {
+    String redirectLocation = contentResponse.getHeaders() != null
+        ? contentResponse.getHeaders().get(HTTPConstants.HEADER_LOCATION)
+        : null;
+    if (redirectLocation == null) {
+      throw new IllegalArgumentException("Missing location header in redirect");
+    }
+    return redirectLocation;
+  }
+
+  private void saveCookiesInCookieManager(ContentResponse response, URL url,
+      CookieManager cookieManager) {
+    String cookieHeader = response.getHeaders().get(HTTPConstants.HEADER_SET_COOKIE);
+    if (cookieHeader != null && cookieManager != null) {
+      cookieManager.addCookieFromHeader(cookieHeader, url);
+    }
   }
 
 }
