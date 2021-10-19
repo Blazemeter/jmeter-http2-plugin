@@ -38,7 +38,6 @@ import org.eclipse.jetty.client.HttpRequest;
 import org.eclipse.jetty.client.Origin.Address;
 import org.eclipse.jetty.client.api.AuthenticationStore;
 import org.eclipse.jetty.client.api.ContentResponse;
-import org.eclipse.jetty.client.api.Request;
 import org.eclipse.jetty.client.api.Request.Content;
 import org.eclipse.jetty.client.dynamic.HttpClientTransportDynamic;
 import org.eclipse.jetty.client.http.HttpClientConnectionFactory;
@@ -194,16 +193,12 @@ public class HTTP2JettyClient {
 
   private HttpRequest buildRequest(URL url, HTTPSampleResult result) throws URISyntaxException,
       IllegalArgumentException {
-    Request request = httpClient.newRequest(url.toURI());
-    if (!(request instanceof HttpRequest) || result == null) {
-      throw new IllegalArgumentException("HttpRequest is expected");
-    }
-    HttpRequest httpRequest = (HttpRequest) request;
-    httpRequest.onRequestBegin(r -> result.connectEnd());
-    httpRequest.onRequestContent(
+    HttpRequest request = (HttpRequest) httpClient.newRequest(url.toURI());
+    request.onRequestBegin(r -> result.connectEnd());
+    request.onRequestContent(
         (r, c) -> result.setSentBytes(result.getSentBytes() + c.limit()));
-    httpRequest.onResponseBegin(r -> result.latencyEnd());
-    return httpRequest;
+    request.onResponseBegin(r -> result.latencyEnd());
+    return request;
   }
 
   private void setTimeouts(HTTP2Sampler sampler, HttpRequest request) {
