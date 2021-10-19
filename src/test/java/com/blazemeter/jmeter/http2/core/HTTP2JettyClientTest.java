@@ -77,7 +77,6 @@ public class HTTP2JettyClientTest {
 
   private static final String HOST_NAME = "localhost";
   private static final int SERVER_PORT = 6666;
-  private static final String LINE_SEPARATOR = "\r\n";
   private static final String SERVER_RESPONSE = "Hello World!";
   private static final String SERVER_IMAGE = "/test/image.png";
   private static final String SERVER_PATH = "/test";
@@ -117,13 +116,13 @@ public class HTTP2JettyClientTest {
   @Before
   public void setup() throws Exception {
     sampler = new HTTP2Sampler();
-    configureSampler(HTTPConstants.GET);
+    configureSampler();
     client = new HTTP2JettyClient();
     client.start();
   }
 
-  private void configureSampler(String method) {
-    sampler.setMethod(method);
+  private void configureSampler() {
+    sampler.setMethod(HTTPConstants.GET);
     sampler.setDomain("server");
     sampler.setProtocol(HTTPConstants.PROTOCOL_HTTPS);
     sampler.setPort(SERVER_PORT);
@@ -303,12 +302,12 @@ public class HTTP2JettyClientTest {
     expected.setResponseCode(String.valueOf(statusCode.getCode()));
     expected.setResponseMessage(statusCode.getMessage());
     expected.setSentBytes(requestBody != null ? requestBody.length : 0);
-    expected.setRequestHeaders("Accept-Encoding: gzip" + LINE_SEPARATOR
-        + "User-Agent: Jetty/11.0.6" + LINE_SEPARATOR
+    expected.setRequestHeaders("Accept-Encoding: gzip\n"
+        + "User-Agent: Jetty/11.0.6\n"
         + (headers != null ? headers : "")
-        + (requestContentType != null ? "Content-Type: " + requestContentType + LINE_SEPARATOR : "")
-        + (requestBody != null ? "Content-Length: " + requestBody.length + LINE_SEPARATOR : "")
-        + LINE_SEPARATOR);
+        + (requestContentType != null ? "Content-Type: " + requestContentType + "\n" : "")
+        + (requestBody != null ? "Content-Length: " + requestBody.length + "\n" : "")
+        + "\n");
     expected.setResponseData(requestBody);
     return expected;
   }
@@ -442,8 +441,8 @@ public class HTTP2JettyClientTest {
     hm.add(new Header(headerName2, headerValue2));
     sampler.setHeaderManager(hm);
     HTTPSampleResult expected = buildResult(true, Code.OK,
-        headerName1 + ": " + headerValue1 + LINE_SEPARATOR
-            + headerName2 + ": " + headerValue2 + LINE_SEPARATOR,
+        headerName1 + ": " + headerValue1 + "\n"
+            + headerName2 + ": " + headerValue2 + "\n",
         null, null);
     expected.setResponseData(SERVER_RESPONSE, StandardCharsets.UTF_8.name());
     validateResponse(sampleWithGet(), expected);
@@ -530,7 +529,7 @@ public class HTTP2JettyClientTest {
     JMeterUtils.setProperty("httpJettyClient.auth.preemptive", "true");
     configureAuthManager(Mechanism.BASIC);
     HTTPSampleResult expected = buildResult(true, Code.OK,
-        "Authorization: Basic " + base64Encode(AUTH_USERNAME + ":" + AUTH_PASSWORD) + LINE_SEPARATOR, null,
+        "Authorization: Basic " + base64Encode(AUTH_USERNAME + ":" + AUTH_PASSWORD) + "\n", null,
         null);
     expected.setResponseData(SERVER_RESPONSE, StandardCharsets.UTF_8.name());
     validateResponse(sampleWithGet(), expected);
@@ -728,7 +727,7 @@ public class HTTP2JettyClientTest {
       List<HTTPFileArg> files, String boundary) throws IOException {
 
     ByteArrayOutputStream output = new ByteArrayOutputStream();
-    String newLine = LINE_SEPARATOR;
+    String newLine = "\r\n";
     String dashDash = "--";
     // Set body response for Arguments
     args.forEach(httpArgument -> {

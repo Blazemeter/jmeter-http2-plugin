@@ -49,9 +49,9 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
       return client.sample(this, result, areFollowingRedirect, depth);
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
-      return errorResult(e, result);
+      return buildErrorResult(e, result);
     } catch (Exception e) {
-      return errorResult(e, result);
+      return buildErrorResult(e, result);
     }
   }
 
@@ -61,6 +61,16 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
     result.setHTTPMethod(method);
     result.setURL(url);
     return result;
+  }
+
+  private HTTPSampleResult buildErrorResult(Exception e, HTTPSampleResult result) {
+    if (result.getStartTime() == 0) {
+      result.sampleStart();
+    }
+    if (result.getEndTime() == 0) {
+      result.sampleEnd();
+    }
+    return errorResult(e, result);
   }
 
   @Override
