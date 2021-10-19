@@ -457,7 +457,6 @@ public class HTTP2JettyClient {
             + 1L // Add \r for initial header
             + 2L; // final \r\n before data
     result.setHeadersSize((int) headerBytes);
-    result.setBodySize(contentResponse.getRequest().getBody().getLength());
   }
 
   private String extractResponseHeaders(ContentResponse contentResponse,

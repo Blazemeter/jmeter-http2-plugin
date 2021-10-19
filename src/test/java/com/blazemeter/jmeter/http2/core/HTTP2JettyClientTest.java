@@ -306,8 +306,7 @@ public class HTTP2JettyClientTest {
         + "User-Agent: Jetty/11.0.6\n"
         + (headers != null ? headers : "")
         + (requestContentType != null ? "Content-Type: " + requestContentType + "\n" : "")
-        + (requestBody != null ? "Content-Length: " + requestBody.length + "\n" : "")
-        + "\n");
+        + (requestBody != null ? "Content-Length: " + requestBody.length + "\n" : ""));
     expected.setResponseData(requestBody);
     return expected;
   }
