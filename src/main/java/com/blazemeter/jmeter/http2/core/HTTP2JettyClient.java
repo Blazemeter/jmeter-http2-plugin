@@ -82,9 +82,8 @@ public class HTTP2JettyClient {
   private final HttpClient httpClient;
 
   public HTTP2JettyClient() {
+    SslContextFactory.Client sslContextFactory = new JMeterJettySslContextFactory();
     ClientConnector clientConnector = new ClientConnector();
-    SslContextFactory.Client sslContextFactory = new SslContextFactory.Client();
-    sslContextFactory.setTrustAll(true);
     clientConnector.setSslContextFactory(sslContextFactory);
     HTTP2Client http2Client = new HTTP2Client(clientConnector);
     HttpClientTransport transport = new HttpClientTransportDynamic(clientConnector,
