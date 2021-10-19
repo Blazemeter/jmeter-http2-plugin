@@ -21,7 +21,6 @@ import java.util.regex.Pattern;
 import java.util.stream.StreamSupport;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.jmeter.protocol.http.control.AuthManager;
-import org.apache.jmeter.protocol.http.control.AuthManager.Mechanism;
 import org.apache.jmeter.protocol.http.control.Authorization;
 import org.apache.jmeter.protocol.http.control.CookieManager;
 import org.apache.jmeter.protocol.http.control.Header;
@@ -56,6 +55,7 @@ import org.eclipse.jetty.http.HttpHeader;
 import org.eclipse.jetty.http.HttpStatus;
 import org.eclipse.jetty.http2.client.HTTP2Client;
 import org.eclipse.jetty.http2.client.http.ClientConnectionFactoryOverHTTP2;
+import org.eclipse.jetty.io.ClientConnectionFactory;
 import org.eclipse.jetty.io.ClientConnector;
 import org.eclipse.jetty.util.Fields;
 import org.eclipse.jetty.util.ssl.SslContextFactory;
@@ -77,16 +77,26 @@ public class HTTP2JettyClient {
   private static final String LINE_SEPARATOR = "\r\n";
   private static final String DEFAULT_FILE_MIME_TYPE = "application/octet-stream";
   private final HttpClient httpClient;
+  private final boolean http1UpgradeEnabled;
+
+  public HTTP2JettyClient(boolean http1UpgradeEnabled) {
+    ClientConnector clientConnector = new ClientConnector();
+    SslContextFactory.Client sslContextFactory = new JMeterJettySslContextFactory();
+    clientConnector.setSslContextFactory(sslContextFactory);
+    ClientConnectionFactory.Info http11 = HttpClientConnectionFactory.HTTP11;
+    HTTP2Client http2Client = new HTTP2Client(clientConnector);
+    ClientConnectionFactoryOverHTTP2.HTTP2 http2 = new ClientConnectionFactoryOverHTTP2.HTTP2(
+        http2Client);
+    ClientConnectionFactory.Info[] protocols = http1UpgradeEnabled
+        ? new ClientConnectionFactory.Info[]{http11, http2}
+        : new ClientConnectionFactory.Info[]{http2, http11};
+    HttpClientTransport transport = new HttpClientTransportDynamic(clientConnector, protocols);
+    this.httpClient = new HttpClient(transport);
+    this.http1UpgradeEnabled = http1UpgradeEnabled;
+  }
 
   public HTTP2JettyClient() {
-    SslContextFactory.Client sslContextFactory = new JMeterJettySslContextFactory();
-    ClientConnector clientConnector = new ClientConnector();
-    clientConnector.setSslContextFactory(sslContextFactory);
-    HTTP2Client http2Client = new HTTP2Client(clientConnector);
-    HttpClientTransport transport = new HttpClientTransportDynamic(clientConnector,
-        new ClientConnectionFactoryOverHTTP2.HTTP2(http2Client),
-        HttpClientConnectionFactory.HTTP11);
-    this.httpClient = new HttpClient(transport);
+    this(false);
   }
 
   public void start() throws Exception {
@@ -160,20 +170,21 @@ public class HTTP2JettyClient {
 
   private boolean isSupportedMechanism(Authorization auth) {
     String authName = auth.getMechanism().name();
-    return authName.equals(Mechanism.BASIC.name()) || authName.equals(Mechanism.DIGEST.name());
+    return authName.equals(AuthManager.Mechanism.BASIC.name())
+        || authName.equals(AuthManager.Mechanism.DIGEST.name());
   }
 
   private void addAuthenticationToJettyClient(Authorization auth) {
     AuthenticationStore authenticationStore = httpClient.getAuthenticationStore();
     String authName = auth.getMechanism().name();
-    if (authName.equals(Mechanism.BASIC.name()) && JMeterUtils.getPropDefault(
+    if (authName.equals(AuthManager.Mechanism.BASIC.name()) && JMeterUtils.getPropDefault(
         "httpJettyClient.auth.preemptive", false)) {
       authenticationStore.addAuthenticationResult(
           new BasicAuthentication.BasicResult(URI.create(auth.getURL()), auth.getUser(),
               auth.getPass()));
     } else {
       AbstractAuthentication authentication =
-          authName.equals(Mechanism.BASIC.name()) ? new BasicAuthentication(
+          authName.equals(AuthManager.Mechanism.BASIC.name()) ? new BasicAuthentication(
               URI.create(auth.getURL()), auth.getRealm(), auth.getUser(), auth.getPass())
               : new DigestAuthentication(URI.create(auth.getURL()), auth.getRealm(), auth.getUser(),
                   auth.getPass());
@@ -211,6 +222,12 @@ public class HTTP2JettyClient {
           .filter(header -> (!header.getName().isEmpty()) && (!HTTPConstants.HEADER_CONTENT_LENGTH
               .equalsIgnoreCase(header.getName())))
           .forEach(header -> request.addHeader(createJettyHeader(header, url)));
+    }
+    if (http1UpgradeEnabled) {
+      ((HttpFields.Mutable) request.getHeaders())
+          .put(HttpHeader.UPGRADE, "h2c")
+          .put(HttpHeader.HTTP2_SETTINGS, "")
+          .put(HttpHeader.CONNECTION, "Upgrade, HTTP2-Settings");
     }
   }
 

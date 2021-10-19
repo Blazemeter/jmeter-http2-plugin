@@ -312,13 +312,12 @@ public class HTTP2JettyClientTest {
   }
 
   private void validateResponse(SampleResult result, SampleResult expected) {
+    softly.assertThat(result.getRequestHeaders()).isEqualTo(expected.getRequestHeaders());
     softly.assertThat(result.isSuccessful()).isEqualTo(expected.isSuccessful());
     softly.assertThat(result.getResponseCode()).isEqualTo(expected.getResponseCode());
     softly.assertThat(result.getResponseMessage()).isEqualTo(expected.getResponseMessage());
     softly.assertThat(result.getSentBytes()).isEqualTo(expected.getSentBytes());
-    softly.assertThat(result.getResponseDataAsString())
-        .isEqualTo(expected.getResponseDataAsString());
-    softly.assertThat(result.getRequestHeaders()).isEqualTo(expected.getRequestHeaders());
+    softly.assertThat(result.getResponseDataAsString()).isEqualTo(expected.getResponseDataAsString());
   }
 
   @Test

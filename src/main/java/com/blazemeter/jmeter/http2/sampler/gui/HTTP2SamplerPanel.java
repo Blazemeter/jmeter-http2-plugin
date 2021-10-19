@@ -1,7 +1,10 @@
 package com.blazemeter.jmeter.http2.sampler.gui;
 
 import java.awt.BorderLayout;
+import java.awt.Component;
+import java.awt.Container;
 import java.awt.Dimension;
+import java.util.Arrays;
 import javax.swing.BorderFactory;
 import javax.swing.JCheckBox;
 import javax.swing.JLabel;
@@ -34,6 +37,7 @@ public class HTTP2SamplerPanel extends JPanel {
   private final JTextField concurrentPoolField = new JTextField(2);
   private final JLabeledTextField embeddedResourcesRegexField = new JLabeledTextField(
       JMeterUtils.getResString("web_testing_embedded_url_pattern"), 20);
+  private final JCheckBox http1Upgrade = new JCheckBox("HTTP1 Upgrade");
 
   public HTTP2SamplerPanel(boolean isSampler) {
     setLayout(new BorderLayout(0, 5));
@@ -44,11 +48,40 @@ public class HTTP2SamplerPanel extends JPanel {
   private JTabbedPane createTabbedConfigPane(boolean isSampler) {
     final JTabbedPane tabbedPane = new JTabbedPane();
     urlConfigGui = new UrlConfigGui(isSampler, true, true);
+    replaceKeepAliveCheckWithHttp1Upgrade(urlConfigGui);
     tabbedPane.add(JMeterUtils.getResString("web_testing_basic"), urlConfigGui);
     final JPanel advancedPanel = createAdvancedConfigPanel();
     tabbedPane.add(JMeterUtils.getResString("web_testing_advanced"), advancedPanel);
-
     return tabbedPane;
+  }
+
+  private void replaceKeepAliveCheckWithHttp1Upgrade(UrlConfigGui urlConfigGui) {
+    JPanel optionPanel = findOptionPanel(urlConfigGui);
+    optionPanel.remove(2);
+
+    http1Upgrade.setFont(null);
+    http1Upgrade.setSelected(false);
+
+    optionPanel.add(http1Upgrade);
+  }
+
+  private JPanel findOptionPanel(Container c) {
+    if (c instanceof JPanel && c.getComponentCount() == 5 && Arrays.stream(c.getComponents())
+        .allMatch(ch -> ch instanceof JCheckBox)) {
+      return (JPanel) c;
+    } else {
+      JPanel ret = null;
+      int i = 0;
+      Component[] children = c.getComponents();
+      while (ret == null && i < c.getComponentCount()) {
+        Component child = children[i];
+        if (child instanceof Container) {
+          ret = findOptionPanel((Container) child);
+        }
+        i++;
+      }
+      return ret;
+    }
   }
 
   private Border makeBorder() {
@@ -131,6 +164,7 @@ public class HTTP2SamplerPanel extends JPanel {
 
   public void resetFields() {
     urlConfigGui.clear();
+    http1Upgrade.setSelected(false);
     retrieveEmbeddedResourcesCheckBox.setSelected(false);
     concurrentDownloadCheckBox.setSelected(false);
     concurrentPoolField.setText(String.valueOf(HTTPSamplerBase.CONCURRENT_POOL_SIZE));
@@ -146,6 +180,14 @@ public class HTTP2SamplerPanel extends JPanel {
 
   public UrlConfigGui getUrlConfigGui() {
     return urlConfigGui;
+  }
+
+  public boolean isHttp1UpgradeSelected() {
+    return http1Upgrade.isSelected();
+  }
+
+  public void setHttp1UpgradeSelected(boolean enabled) {
+    http1Upgrade.setSelected(enabled);
   }
 
   public String getConnectTimeOut() {

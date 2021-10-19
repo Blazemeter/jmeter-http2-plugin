@@ -62,6 +62,7 @@ public class HTTP2SamplerGui extends AbstractSamplerGui {
       http2Sampler.setProxyPass(http2SamplerPanel.getProxyPass());
       http2Sampler.setProperty("version", getPluginVersion());
       http2SamplerPanel.getUrlConfigGui().modifyTestElement(http2Sampler);
+      http2Sampler.setHttp1UpgradeEnabled(http2SamplerPanel.isHttp1UpgradeSelected());
     }
   }
 
@@ -93,6 +94,7 @@ public class HTTP2SamplerGui extends AbstractSamplerGui {
       http2SamplerPanel.setProxyUser(http2Sampler.getProxyUser());
       http2SamplerPanel.setProxyPass(http2Sampler.getProxyPass());
       http2SamplerPanel.getUrlConfigGui().configure(http2Sampler);
+      http2SamplerPanel.setHttp1UpgradeSelected(http2Sampler.isHttp1UpgradeEnabled());
     }
   }
 
