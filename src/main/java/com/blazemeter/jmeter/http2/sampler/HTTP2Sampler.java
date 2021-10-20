@@ -26,6 +26,7 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
   private static final ThreadLocal<Map<HTTP2ClientKey, HTTP2JettyClient>> CONNECTIONS =
       ThreadLocal
           .withInitial(HashMap::new);
+  private static final String HTTP1_UPGRADE_PROPERTY = "HTTP2Sampler.http1_upgrade";
   private transient Map<HTTP2ClientKey, HTTP2JettyClient> threadClonedConnections;
   private final transient Callable<HTTP2JettyClient> clientFactory;
 
@@ -38,6 +39,14 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
   @VisibleForTesting
   public HTTP2Sampler(Callable<HTTP2JettyClient> clientFactory) {
     this.clientFactory = clientFactory;
+  }
+
+  public void setHttp1UpgradeEnabled(boolean http1UpgradeSelected) {
+    setProperty(HTTP1_UPGRADE_PROPERTY, http1UpgradeSelected);
+  }
+
+  public boolean isHttp1UpgradeEnabled() {
+    return getPropertyAsBoolean(HTTP1_UPGRADE_PROPERTY);
   }
 
   @Override
@@ -81,15 +90,15 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
   }
 
   private HTTP2JettyClient buildClient() throws Exception {
-    HTTP2JettyClient client = new HTTP2JettyClient();
+    HTTP2JettyClient client = new HTTP2JettyClient(isHttp1UpgradeEnabled());
     client.start();
     CONNECTIONS.get().put(buildConnectionKey(), client);
     return client;
   }
 
   private HTTP2ClientKey buildConnectionKey() throws MalformedURLException {
-    return new HTTP2ClientKey(getUrl(), !getProxyHost().isEmpty(), getProxyScheme(), getProxyHost(),
-        getProxyPortInt());
+    return new HTTP2ClientKey(getUrl(), isHttp1UpgradeEnabled(), !getProxyHost().isEmpty(),
+        getProxyScheme(), getProxyHost(), getProxyPortInt());
   }
 
   private HTTP2JettyClient getClient() throws Exception {
@@ -140,14 +149,17 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
   private static final class HTTP2ClientKey {
 
     private final String target;
+    private final boolean http1Upgrade;
     private final boolean hasProxy;
     private final String proxyScheme;
     private final String proxyHost;
     private final int proxyPort;
 
-    private HTTP2ClientKey(URL url, boolean hasProxy, String proxyScheme, String proxyHost,
+    private HTTP2ClientKey(URL url, boolean http1Upgrade, boolean hasProxy, String proxyScheme,
+        String proxyHost,
         int proxyPort) {
       this.target = url.getProtocol() + "://" + url.getAuthority();
+      this.http1Upgrade = http1Upgrade;
       this.hasProxy = hasProxy;
       this.proxyScheme = proxyScheme;
       this.proxyHost = proxyHost;
@@ -163,7 +175,8 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
         return false;
       }
       HTTP2ClientKey that = (HTTP2ClientKey) o;
-      return hasProxy == that.hasProxy &&
+      return http1Upgrade == that.http1Upgrade &&
+          hasProxy == that.hasProxy &&
           proxyPort == that.proxyPort &&
           target.equals(that.target) &&
           proxyScheme.equals(that.proxyScheme) &&
@@ -172,7 +185,7 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
 
     @Override
     public int hashCode() {
-      return Objects.hash(target, hasProxy, proxyScheme, proxyHost, proxyPort);
+      return Objects.hash(target, http1Upgrade, hasProxy, proxyScheme, proxyHost, proxyPort);
     }
   }
 }
