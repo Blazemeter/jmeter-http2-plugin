@@ -50,8 +50,10 @@ import org.eclipse.jetty.client.util.PathRequestContent;
 import org.eclipse.jetty.client.util.StringRequestContent;
 import org.eclipse.jetty.http.HttpField;
 import org.eclipse.jetty.http.HttpFields;
+import org.eclipse.jetty.http.HttpFields.Mutable;
 import org.eclipse.jetty.http.HttpHeader;
 import org.eclipse.jetty.http.HttpStatus;
+import org.eclipse.jetty.http.HttpVersion;
 import org.eclipse.jetty.http2.client.HTTP2Client;
 import org.eclipse.jetty.http2.client.http.ClientConnectionFactoryOverHTTP2;
 import org.eclipse.jetty.io.ClientConnectionFactory;
@@ -76,9 +78,9 @@ public class HTTP2JettyClient {
   private static final String LINE_SEPARATOR = "\r\n";
   private static final String DEFAULT_FILE_MIME_TYPE = "application/octet-stream";
   private final HttpClient httpClient;
-  private final boolean http1UpgradeEnabled;
+  private boolean http1UpgradeRequired;
 
-  public HTTP2JettyClient(boolean http1UpgradeEnabled) {
+  public HTTP2JettyClient(boolean http1UpgradeRequired) {
     ClientConnector clientConnector = new ClientConnector();
     SslContextFactory.Client sslContextFactory = new JMeterJettySslContextFactory();
     clientConnector.setSslContextFactory(sslContextFactory);
@@ -86,12 +88,12 @@ public class HTTP2JettyClient {
     HTTP2Client http2Client = new HTTP2Client(clientConnector);
     ClientConnectionFactoryOverHTTP2.HTTP2 http2 = new ClientConnectionFactoryOverHTTP2.HTTP2(
         http2Client);
-    ClientConnectionFactory.Info[] protocols = http1UpgradeEnabled
+    ClientConnectionFactory.Info[] protocols = http1UpgradeRequired
         ? new ClientConnectionFactory.Info[]{http11, http2}
         : new ClientConnectionFactory.Info[]{http2, http11};
     HttpClientTransport transport = new HttpClientTransportDynamic(clientConnector, protocols);
     this.httpClient = new HttpClient(transport);
-    this.http1UpgradeEnabled = http1UpgradeEnabled;
+    this.http1UpgradeRequired = http1UpgradeRequired;
   }
 
   public HTTP2JettyClient() {
@@ -146,6 +148,7 @@ public class HTTP2JettyClient {
     }
 
     ContentResponse contentResponse = request.send();
+    http1UpgradeRequired = contentResponse.getVersion() != HttpVersion.HTTP_2;
     result.setRequestHeaders(buildHeadersString(request.getHeaders()));
     setResultContentResponse(result, contentResponse, sampler);
     saveCookiesInCookieManager(contentResponse, url, sampler.getCookieManager());
@@ -218,11 +221,19 @@ public class HTTP2JettyClient {
               .equalsIgnoreCase(header.getName())))
           .forEach(header -> request.addHeader(createJettyHeader(header, url)));
     }
-    if (http1UpgradeEnabled) {
-      ((HttpFields.Mutable) request.getHeaders())
-          .put(HttpHeader.UPGRADE, "h2c")
-          .put(HttpHeader.HTTP2_SETTINGS, "")
-          .put(HttpHeader.CONNECTION, "Upgrade, HTTP2-Settings");
+    if (http1UpgradeRequired) {
+      Mutable headers = ((Mutable) request.getHeaders());
+      addHeaderIfMissing(HttpHeader.UPGRADE, "h2c", headers);
+      addHeaderIfMissing(HttpHeader.HTTP2_SETTINGS, "", headers);
+      addHeaderIfMissing(HttpHeader.CONNECTION, "Upgrade, HTTP2-Settings", headers);
+    } else {
+      request.version(HttpVersion.HTTP_2);
+    }
+  }
+
+  private void addHeaderIfMissing(HttpHeader header, String value, Mutable headers) {
+    if (!headers.contains(header)) {
+      headers.put(header, value);
     }
   }
 
