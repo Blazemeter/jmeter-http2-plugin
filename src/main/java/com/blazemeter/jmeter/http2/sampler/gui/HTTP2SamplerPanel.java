@@ -69,19 +69,18 @@ public class HTTP2SamplerPanel extends JPanel {
     if (c instanceof JPanel && c.getComponentCount() == 5 && Arrays.stream(c.getComponents())
         .allMatch(ch -> ch instanceof JCheckBox)) {
       return (JPanel) c;
-    } else {
-      JPanel ret = null;
-      int i = 0;
-      Component[] children = c.getComponents();
-      while (ret == null && i < c.getComponentCount()) {
-        Component child = children[i];
-        if (child instanceof Container) {
-          ret = findOptionPanel((Container) child);
-        }
-        i++;
-      }
-      return ret;
     }
+    JPanel ret = null;
+    int i = 0;
+    Component[] children = c.getComponents();
+    while (ret == null && i < c.getComponentCount()) {
+      Component child = children[i];
+      if (child instanceof Container) {
+        ret = findOptionPanel((Container) child);
+      }
+      i++;
+    }
+    return ret;
   }
 
   private Border makeBorder() {
