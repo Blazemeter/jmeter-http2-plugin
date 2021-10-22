@@ -43,6 +43,9 @@ import org.apache.jmeter.protocol.http.util.HTTPFileArg;
 import org.apache.jmeter.samplers.SampleResult;
 import org.apache.jmeter.util.JMeterUtils;
 import org.assertj.core.api.JUnitSoftAssertions;
+import org.eclipse.jetty.http.HttpFields;
+import org.eclipse.jetty.http.HttpFields.Mutable;
+import org.eclipse.jetty.http.HttpHeader;
 import org.eclipse.jetty.http.HttpStatus;
 import org.eclipse.jetty.http.HttpStatus.Code;
 import org.eclipse.jetty.http2.server.HTTP2ServerConnectionFactory;
@@ -296,17 +299,29 @@ public class HTTP2JettyClientTest {
   }
 
   private HTTPSampleResult buildResult(boolean successful, HttpStatus.Code statusCode,
-      String headers, byte[] requestBody, String requestContentType) {
+      HttpFields headers, byte[] requestBody, String requestContentType) {
+
+    Mutable httpFields = HttpFields.build()
+        .add(HttpHeader.ACCEPT_ENCODING, "gzip")
+        .add(HttpHeader.USER_AGENT, "Jetty/11.0.6");
+
+    if (requestContentType != null) {
+      httpFields.add(HttpHeader.CONTENT_TYPE, requestContentType);
+    }
+    if (headers != null) {
+      httpFields.add(headers);
+    }
+    if (requestBody != null) {
+      String requestBodyLength = Integer.toString(requestBody.length);
+      httpFields.add(HttpHeader.CONTENT_LENGTH, requestBodyLength);
+    }
+
     HTTPSampleResult expected = new HTTPSampleResult();
     expected.setSuccessful(successful);
     expected.setResponseCode(String.valueOf(statusCode.getCode()));
     expected.setResponseMessage(statusCode.getMessage());
     expected.setSentBytes(requestBody != null ? requestBody.length : 0);
-    expected.setRequestHeaders("Accept-Encoding: gzip\n"
-        + "User-Agent: Jetty/11.0.6\n"
-        + (headers != null ? headers : "")
-        + (requestContentType != null ? "Content-Type: " + requestContentType + "\n" : "")
-        + (requestBody != null ? "Content-Length: " + requestBody.length + "\n" : ""));
+    expected.setRequestHeaders(httpFields.toString());
     expected.setResponseData(requestBody);
     return expected;
   }
@@ -438,10 +453,11 @@ public class HTTP2JettyClientTest {
     String headerValue2 = "value2";
     hm.add(new Header(headerName2, headerValue2));
     sampler.setHeaderManager(hm);
+    Mutable httpFields = HttpFields.build()
+        .add(headerName1, headerValue1)
+        .add(headerName2, headerValue2);
     HTTPSampleResult expected = buildResult(true, Code.OK,
-        headerName1 + ": " + headerValue1 + "\n"
-            + headerName2 + ": " + headerValue2 + "\n",
-        null, null);
+        httpFields, null, null);
     expected.setResponseData(SERVER_RESPONSE, StandardCharsets.UTF_8.name());
     validateResponse(sampleWithGet(), expected);
   }
@@ -521,14 +537,16 @@ public class HTTP2JettyClientTest {
 
   @Test
   public void shouldReturnSuccessBasicAuthSampleResultWhenHeaderIsSet() throws Exception {
+    Mutable httpFields = HttpFields.build()
+        .add(HttpHeader.AUTHORIZATION,
+            "Basic " + base64Encode(AUTH_USERNAME + ":" + AUTH_PASSWORD));
     Server server = buildServer();
     configureBasicAuth(server);
     server.start();
     JMeterUtils.setProperty("httpJettyClient.auth.preemptive", "true");
     configureAuthManager(Mechanism.BASIC);
     HTTPSampleResult expected = buildResult(true, Code.OK,
-        "Authorization: Basic " + base64Encode(AUTH_USERNAME + ":" + AUTH_PASSWORD) + "\n", null,
-        null);
+        httpFields, null,  null);
     expected.setResponseData(SERVER_RESPONSE, StandardCharsets.UTF_8.name());
     validateResponse(sampleWithGet(), expected);
   }
@@ -713,9 +731,9 @@ public class HTTP2JettyClientTest {
     // Get JettyHttpClientBoundary from result
     String boundary = result.getResponseDataAsString().split("\\r\\n")[0];
     HTTPSampleResult expected = buildOkResult(null, null);
-    expected.setRequestHeaders(expected.getRequestHeaders().concat("Content-Type: "
-        + "multipart/form-data; boundary="
-        + boundary.substring(2)));
+    Mutable httpFields = HttpFields.build()
+        .add(HttpHeader.CONTENT_TYPE, "multipart/form-data; boundary=" + boundary.substring(2));
+    expected.setRequestHeaders(expected.getRequestHeaders().concat(httpFields.toString()));
     expected.setResponseData(buildByteArrayFromFilesAndParams(expected, args, files, boundary));
     return expected;
   }
