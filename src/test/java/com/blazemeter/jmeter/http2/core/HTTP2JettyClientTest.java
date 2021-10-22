@@ -315,13 +315,15 @@ public class HTTP2JettyClientTest {
       String requestBodyLength = Integer.toString(requestBody.length);
       httpFields.add(HttpHeader.CONTENT_LENGTH, requestBodyLength);
     }
+    String headersString = httpFields.toString().replace("\r\n", "\n");
+    headersString = headersString.substring(0, headersString.length() -1); // remove last \n
 
     HTTPSampleResult expected = new HTTPSampleResult();
     expected.setSuccessful(successful);
     expected.setResponseCode(String.valueOf(statusCode.getCode()));
     expected.setResponseMessage(statusCode.getMessage());
     expected.setSentBytes(requestBody != null ? requestBody.length : 0);
-    expected.setRequestHeaders(httpFields.toString());
+    expected.setRequestHeaders(headersString);
     expected.setResponseData(requestBody);
     return expected;
   }
