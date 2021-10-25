@@ -121,11 +121,6 @@ public class HTTP2JettyClient {
     String method = result.getHTTPMethod();
     request.method(method);
     setHeaders(request, url, sampler.getHeaderManager());
-    ContentResponse contentResponse = request.send();
-
-    if (sampler.getAutoRedirects()) {
-      result.setURL(contentResponse.getRequest().getURI().toURL());
-    }
 
     CookieManager cookieManager = sampler.getCookieManager();
     if (cookieManager != null) {
@@ -152,9 +147,15 @@ public class HTTP2JettyClient {
       throw new UnsupportedOperationException(String.format("Method %s is not supported", method));
     }
 
+    ContentResponse contentResponse = request.send();
     http1UpgradeRequired = contentResponse.getVersion() != HttpVersion.HTTP_2;
     result.setRequestHeaders(buildHeadersString(request.getHeaders()));
     setResultContentResponse(result, contentResponse, sampler);
+
+    if (sampler.getAutoRedirects()) {
+      result.setURL(contentResponse.getRequest().getURI().toURL());
+    }
+
     saveCookiesInCookieManager(contentResponse, url, sampler.getCookieManager());
 
     if (cacheManager != null) {
