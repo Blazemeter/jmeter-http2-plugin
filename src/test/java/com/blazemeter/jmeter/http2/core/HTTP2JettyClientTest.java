@@ -750,11 +750,11 @@ public class HTTP2JettyClientTest {
     // Set body response for Arguments
     args.forEach(httpArgument -> {
       Mutable headerParam = HttpFields.build()
-          .add(boundary + "\r\n" + "Content-Disposition",
-              "form-data; name=\"" + httpArgument.getEncodedName() + "\"")
+          .add("Content-Disposition",  "form-data; name=\"" + httpArgument.getEncodedName() + "\"")
           .add(HttpHeader.CONTENT_TYPE, "null" + "\r\n\r\n" + httpArgument.getEncodedValue());
       try {
-        output.write(headerParam.toString().getBytes());
+        String headerParamWithBoundary = boundary + newLine + headerParam.toString();
+        output.write(headerParamWithBoundary.getBytes());
       } catch (IOException e) {
         e.printStackTrace();
       }
@@ -764,14 +764,15 @@ public class HTTP2JettyClientTest {
     files.forEach(file -> {
       String fileName = Paths.get((file.getPath())).getFileName().toString();
       Mutable headerFile = HttpFields.build()
-          .add( boundary + "\r\n" + "Content-Disposition","form-data; name=\"" + file.getParamName()
+          .add("Content-Disposition","form-data; name=\"" + file.getParamName()
               + "\"; " + "filename=\"" + fileName + "\"")
           .add(HttpHeader.CONTENT_TYPE, file.getMimeType());
       try {
         String filePath = file.getPath();
         InputStream inputStream = Files.newInputStream(Paths.get(filePath));
         byte[] data = sampler.readResponse(expected, inputStream, 0);
-        output.write(headerFile.toString().getBytes());
+        String headerFileWithBoundary = boundary + newLine + headerFile.toString();
+        output.write(headerFileWithBoundary.getBytes());
         output.write(data);
         output.write(newLine.getBytes());
       } catch (IOException e) {
