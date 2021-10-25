@@ -590,6 +590,7 @@ public class HTTP2JettyClientTest {
     HTTPSampleResult result = sampleWithGet(SERVER_PATH_302);
     softly.assertThat(result.getResponseCode()).isEqualTo("200");
     softly.assertThat(result.getSubResults().length).isEqualTo(0);
+    softly.assertThat(result.getUrlAsString()).isEqualTo("https://localhost:" + SERVER_PORT + SERVER_PATH_200);
   }
 
   @Test
