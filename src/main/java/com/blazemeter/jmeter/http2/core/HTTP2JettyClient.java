@@ -474,6 +474,10 @@ public class HTTP2JettyClient {
       result.setRedirectLocation(extractRedirectLocation(contentResponse));
     }
 
+    if (sampler.getAutoRedirects()) {
+      result.setURL(contentResponse.getRequest().getURI().toURL());
+    }
+
     long headerBytes =
         (long) result.getResponseHeaders().length()   // condensed length (without \r)
             + (long) contentResponse.getHeaders().asString().length() // Add \r for each header
