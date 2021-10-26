@@ -151,11 +151,6 @@ public class HTTP2JettyClient {
     http1UpgradeRequired = contentResponse.getVersion() != HttpVersion.HTTP_2;
     result.setRequestHeaders(buildHeadersString(request.getHeaders()));
     setResultContentResponse(result, contentResponse, sampler);
-
-    if (sampler.getAutoRedirects()) {
-      result.setURL(contentResponse.getRequest().getURI().toURL());
-    }
-
     saveCookiesInCookieManager(contentResponse, url, sampler.getCookieManager());
 
     if (cacheManager != null) {
@@ -477,6 +472,10 @@ public class HTTP2JettyClient {
     result.setResponseHeaders(extractResponseHeaders(contentResponse, responseMessage));
     if (result.isRedirect()) {
       result.setRedirectLocation(extractRedirectLocation(contentResponse));
+    }
+
+    if (sampler.getAutoRedirects()) {
+      result.setURL(contentResponse.getRequest().getURI().toURL());
     }
 
     long headerBytes =
