@@ -4,6 +4,7 @@ import com.blazemeter.jmeter.http2.sampler.HTTP2Sampler;
 import java.awt.BorderLayout;
 import java.io.IOException;
 import java.util.Properties;
+import org.apache.jmeter.protocol.http.sampler.HTTPSamplerBase;
 import org.apache.jmeter.samplers.gui.AbstractSamplerGui;
 import org.apache.jmeter.testelement.TestElement;
 import org.slf4j.Logger;
@@ -86,13 +87,16 @@ public class HTTP2SamplerGui extends AbstractSamplerGui {
       http2SamplerPanel.setConcurrentDownload(http2Sampler.isConcurrentDwn());
       http2SamplerPanel.setConcurrentPool(http2Sampler.getConcurrentPool());
       http2SamplerPanel.setEmbeddedResourcesRegex(http2Sampler.getEmbeddedUrlRE());
-      http2SamplerPanel.setConnectTimeOut(String.valueOf(http2Sampler.getConnectTimeout()));
-      http2SamplerPanel.setResponseTimeOut(String.valueOf(http2Sampler.getResponseTimeout()));
-      http2SamplerPanel.setProxyScheme(http2Sampler.getProxyScheme());
-      http2SamplerPanel.setProxyHost(http2Sampler.getProxyHost());
-      http2SamplerPanel.setProxyPort(String.valueOf(http2Sampler.getProxyPortInt()));
-      http2SamplerPanel.setProxyUser(http2Sampler.getProxyUser());
-      http2SamplerPanel.setProxyPass(http2Sampler.getProxyPass());
+      http2SamplerPanel
+          .setConnectTimeOut(http2Sampler.getPropertyAsString(HTTPSamplerBase.CONNECT_TIMEOUT));
+      http2SamplerPanel
+          .setResponseTimeOut(http2Sampler.getPropertyAsString(HTTPSamplerBase.RESPONSE_TIMEOUT));
+      http2SamplerPanel
+          .setProxyScheme(http2Sampler.getPropertyAsString(HTTPSamplerBase.PROXYSCHEME));
+      http2SamplerPanel.setProxyHost(http2Sampler.getPropertyAsString(HTTPSamplerBase.PROXYHOST));
+      http2SamplerPanel.setProxyPort(http2Sampler.getPropertyAsString(HTTPSamplerBase.PROXYPORT));
+      http2SamplerPanel.setProxyUser(http2Sampler.getPropertyAsString(HTTPSamplerBase.PROXYUSER));
+      http2SamplerPanel.setProxyPass(http2Sampler.getPropertyAsString(HTTPSamplerBase.PROXYPASS));
       http2SamplerPanel.getUrlConfigGui().configure(http2Sampler);
       http2SamplerPanel.setHttp1UpgradeSelected(http2Sampler.isHttp1UpgradeEnabled());
     }
