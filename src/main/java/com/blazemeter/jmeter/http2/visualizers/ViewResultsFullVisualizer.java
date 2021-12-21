@@ -67,7 +67,7 @@ public class ViewResultsFullVisualizer extends AbstractVisualizer
 
     private static final Logger LOG = LoggerFactory
             .getLogger(org.apache.jmeter.visualizers.ViewResultsFullVisualizer.class);
-    public static final String VIEW_RESULT_TREE_HTTP2_TITLE = "View Result Tree Http2";
+    public static final String VIEW_RESULT_TREE_HTTP2_TITLE = "DEPRECATED View Result Tree Http2";
     protected static final String COMBO_CHANGE_COMMAND = "change_combo";
     private static final Border RED_BORDER = BorderFactory.createLineBorder(Color.red);
     private static final Border BLUE_BORDER = BorderFactory.createLineBorder(Color.blue);
