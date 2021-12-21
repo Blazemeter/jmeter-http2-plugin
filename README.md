@@ -5,7 +5,7 @@
 This plugin provides an HTTP2 Sampler and a custom View Result Tree to work with HTTP/2 protocol.
 
 ---
-### *This plugin is deprecated and there will be no further support for it. Consider migrating to the [lastest version](https://github.com/Blazemeter/jmeter-http2-plugin/tree/HTTP2_V2.0) of the plugin.*
+### *This plugin is deprecated and there will be no further support for it. Consider migrating to the [latest version](https://github.com/Blazemeter/jmeter-http2-plugin/tree/master) of the plugin.*
 
 By migrating you will notice not only major improvements on performance but also the improved functionalities over this legacy version, like SSL, Auth, Cookie and Cache Manager support, improved redirect functionality and better error handling among others.
 
