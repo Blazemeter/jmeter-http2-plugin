@@ -1,9 +1,7 @@
 package com.blazemeter.jmeter.http2.visualizers;
 
-/**
- * Used to distinguish when the HTTP2Request has to send the HTTP2SampleResult without the
- * response.
- */
+//This class exist for backward compatibility purposes
+@Deprecated
 public class ResultCollector extends org.apache.jmeter.reporters.ResultCollector {
 
 }
