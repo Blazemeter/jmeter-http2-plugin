@@ -42,7 +42,7 @@ public class Installer {
         .filter(d -> OLD_DEPENDENCIES_PREFIXES
             .stream()
             .anyMatch(oldDeps -> {
-              Pattern pattern = Pattern.compile(oldDeps + "-(\\d)[.\\d]+(v\\d+)?.jar");
+              Pattern pattern = Pattern.compile(oldDeps + "-(\\d+)[.\\d]+(v\\d+)?.jar");
               Matcher matcher = pattern.matcher(d.getName());
               if (matcher.matches()) {
                 return Integer.parseInt(matcher.group(1))
