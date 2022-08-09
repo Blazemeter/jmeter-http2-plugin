@@ -62,3 +62,5 @@ Currently, we only give support to the Basic and Digest authentication mechanism
 To make use of Basic preemptive authentication results, make sure to create and set the property `httpJettyClient.auth.preemptive`
 to true in the jmeter.properties file.
 
+## Buffer capacity
+By default, the size of the downloaded resources is set to 2 MB (2097152 bytes) but, the limit can be increased by adding the `httpJettyClient.maxBufferSize` property on the jmeter.properties file in bytes.
