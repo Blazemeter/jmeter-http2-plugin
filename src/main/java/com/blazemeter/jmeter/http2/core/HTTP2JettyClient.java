@@ -1,24 +1,6 @@
 package com.blazemeter.jmeter.http2.core;
 
 import com.blazemeter.jmeter.http2.sampler.HTTP2Sampler;
-import java.io.ByteArrayInputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.UnsupportedEncodingException;
-import java.net.URI;
-import java.net.URISyntaxException;
-import java.net.URL;
-import java.net.URLDecoder;
-import java.nio.charset.Charset;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.util.Arrays;
-import java.util.HashSet;
-import java.util.Set;
-import java.util.concurrent.TimeUnit;
-import java.util.regex.Pattern;
-import java.util.stream.StreamSupport;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.jmeter.protocol.http.control.AuthManager;
 import org.apache.jmeter.protocol.http.control.Authorization;
@@ -45,6 +27,7 @@ import org.eclipse.jetty.client.util.AbstractAuthentication;
 import org.eclipse.jetty.client.util.BasicAuthentication;
 import org.eclipse.jetty.client.util.DigestAuthentication;
 import org.eclipse.jetty.client.util.FormRequestContent;
+import org.eclipse.jetty.client.util.FutureResponseListener;
 import org.eclipse.jetty.client.util.MultiPartRequestContent;
 import org.eclipse.jetty.client.util.PathRequestContent;
 import org.eclipse.jetty.client.util.StringRequestContent;
@@ -62,6 +45,27 @@ import org.eclipse.jetty.util.Fields;
 import org.eclipse.jetty.util.ssl.SslContextFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.UnsupportedEncodingException;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.net.URL;
+import java.net.URLDecoder;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Set;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.regex.Pattern;
+import java.util.stream.StreamSupport;
 
 public class HTTP2JettyClient {
 
@@ -147,7 +151,7 @@ public class HTTP2JettyClient {
       throw new UnsupportedOperationException(String.format("Method %s is not supported", method));
     }
 
-    ContentResponse contentResponse = request.send();
+    ContentResponse contentResponse = send(request);
     http1UpgradeRequired = contentResponse.getVersion() != HttpVersion.HTTP_2;
     result.setRequestHeaders(buildHeadersString(request.getHeaders()));
     setResultContentResponse(result, contentResponse, sampler);
@@ -158,6 +162,34 @@ public class HTTP2JettyClient {
     }
 
     return sampler.resultProcessing(areFollowingRedirect, depth, result);
+  }
+
+  public ContentResponse send(HttpRequest request) throws InterruptedException,
+      TimeoutException, ExecutionException {
+    String maxBufferSizeString = JMeterUtils.getPropDefault("httpJettyClient.maxBufferSize",
+        String.valueOf(2 * 1024 * 1024));
+
+    LOG.debug("Setting max buffer size to {}", maxBufferSizeString);
+    FutureResponseListener listener =
+        new FutureResponseListener(request, Integer.parseInt(maxBufferSizeString));
+    request.send(listener);
+
+    try {
+      return listener.get(JMeterUtils.getPropDefault(
+          "HTTPSampler.response_timeout", 2000), TimeUnit.MILLISECONDS);
+    } catch (TimeoutException | ExecutionException e) {
+      if (e instanceof TimeoutException || e.getCause() instanceof TimeoutException) {
+        throw (TimeoutException) e.getCause();
+      } else if (e.getMessage().matches(
+          "java.lang.IllegalArgumentException: Buffering capacity \\d+ exceeded")) {
+        throw new IllegalArgumentException("Buffer capacity " + maxBufferSizeString + " exceeded. "
+            + "To modify buffer size, set the property httpJettyClient.maxBufferSize "
+            + "in the jmeter.properties file");
+      } else if (e.getCause() instanceof TimeoutException) {
+        throw (TimeoutException) e.getCause();
+      }
+      throw e;
+    }
   }
 
   private void setAuthManager(HTTP2Sampler sampler) {
