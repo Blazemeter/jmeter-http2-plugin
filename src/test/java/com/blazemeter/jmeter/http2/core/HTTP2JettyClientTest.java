@@ -1,5 +1,8 @@
 package com.blazemeter.jmeter.http2.core;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.Assert.assertThrows;
+
 import com.blazemeter.jmeter.http2.sampler.HTTP2Sampler;
 import com.blazemeter.jmeter.http2.sampler.JMeterTestUtils;
 import com.google.common.base.Stopwatch;
@@ -7,6 +10,23 @@ import com.google.common.io.Resources;
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.net.MalformedURLException;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.util.Arrays;
+import java.util.Base64;
+import java.util.Collections;
+import java.util.List;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.stream.Collectors;
+import java.util.zip.GZIPOutputStream;
 import jodd.net.MimeTypes;
 import org.apache.jmeter.config.Arguments;
 import org.apache.jmeter.protocol.http.control.AuthManager;
@@ -54,27 +74,6 @@ import org.junit.Rule;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.junit.MockitoJUnitRunner;
-
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.net.MalformedURLException;
-import java.net.URL;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Paths;
-import java.util.Arrays;
-import java.util.Base64;
-import java.util.Collections;
-import java.util.List;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
-import java.util.stream.Collectors;
-import java.util.zip.GZIPOutputStream;
-
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.Assert.assertThrows;
 
 @RunWith(MockitoJUnitRunner.class)
 public class HTTP2JettyClientTest {
@@ -301,17 +300,17 @@ public class HTTP2JettyClientTest {
   }
 
   private HTTPSampleResult buildOkResult(String requestBody, String requestContentType) {
-    return buildResult(true, Code.OK, null,
+    return buildResult(true, HttpStatus.Code.OK, null,
         requestBody != null ? requestBody.getBytes(StandardCharsets.UTF_8) : null,
         requestContentType);
   }
 
-  private HTTPSampleResult buildResult(boolean successful, Code statusCode,
+  private HTTPSampleResult buildResult(boolean successful, HttpStatus.Code statusCode,
       HttpFields headers, byte[] requestBody, String requestContentType) {
 
     Mutable httpFields = HttpFields.build()
         .add(HttpHeader.ACCEPT_ENCODING, "gzip")
-        .add(HttpHeader.USER_AGENT, "Jetty/11.0.6");
+        .add(HttpHeader.USER_AGENT, "Jetty/11.0.10");
 
     if (requestContentType != null) {
       httpFields.add(HttpHeader.CONTENT_TYPE, requestContentType);
@@ -613,14 +612,12 @@ public class HTTP2JettyClientTest {
     validateResponse(result, expected);
   }
 
-  @Test
-  public void shouldReturnErrorMessageWhenResponseTimeIsOver() throws Exception {
+  @Test(expected = TimeoutException.class)
+  public void shouldThrowTimeoutExceptionWhenResponseBiggerThanTimeout() throws Exception {
     buildStartedServer();
     long timeout = 1000;
     sampler.setResponseTimeout(String.valueOf(timeout));
-    Stopwatch waitTime = Stopwatch.createStarted();
-    assertThrows(TimeoutException.class, () -> sampleWithGet(SERVER_PATH_SLOW));
-    softly.assertThat(waitTime.elapsed(TimeUnit.MILLISECONDS)).isGreaterThanOrEqualTo(timeout);
+    sampleWithGet(SERVER_PATH_SLOW);
   }
 
   @Test
@@ -869,7 +866,7 @@ public class HTTP2JettyClientTest {
     buildStartedServer();
     URL file = getClass().getResource("blazemeter-labs-logo.png");
     sampler.setHTTPFiles(new HTTPFileArg[]{new HTTPFileArg(file.getPath(), "", "image/png")});
-    HTTPSampleResult expected = buildResult(true, Code.OK, null,
+    HTTPSampleResult expected = buildResult(true, HttpStatus.Code.OK, null,
         Resources.toByteArray(file), "image/png");
     validateResponse(sample(SERVER_PATH_200_FILE_SENT, HTTPConstants.POST), expected);
   }
@@ -923,19 +920,12 @@ public class HTTP2JettyClientTest {
     sampleWithGet(SERVER_PATH_BIG_RESPONSE);
   }
 
-  @Test
+  @Test(expected = IllegalArgumentException.class)
   public void shouldNotGetAResponseWhenBufferSizeIsBiggerThanMaxBufferSize() throws Exception {
     buildStartedServer();
     JMeterUtils.setProperty("httpJettyClient.maxBufferSize", String.valueOf(BIG_BUFFER_SIZE - 1));
     //There is no response, since an exception is thrown in this case
-
-    Exception exception = assertThrows(IllegalArgumentException.class,
-        () -> sampleWithGet(SERVER_PATH_BIG_RESPONSE));
-
-    assertThat(exception.toString()).contains(
-        "java.lang.IllegalArgumentException: Buffer capacity 4194303 exceeded."
-            + " To modify buffer size, set the property httpJettyClient.maxBufferSize"
-            + " in the jmeter.properties file");
+    sampleWithGet(SERVER_PATH_BIG_RESPONSE);
   }
 
 }
