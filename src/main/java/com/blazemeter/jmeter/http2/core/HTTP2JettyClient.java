@@ -1,6 +1,26 @@
 package com.blazemeter.jmeter.http2.core;
 
 import com.blazemeter.jmeter.http2.sampler.HTTP2Sampler;
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.UnsupportedEncodingException;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.net.URL;
+import java.net.URLDecoder;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Set;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.regex.Pattern;
+import java.util.stream.StreamSupport;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.jmeter.protocol.http.control.AuthManager;
 import org.apache.jmeter.protocol.http.control.Authorization;
@@ -45,27 +65,6 @@ import org.eclipse.jetty.util.Fields;
 import org.eclipse.jetty.util.ssl.SslContextFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.io.ByteArrayInputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.UnsupportedEncodingException;
-import java.net.URI;
-import java.net.URISyntaxException;
-import java.net.URL;
-import java.net.URLDecoder;
-import java.nio.charset.Charset;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.util.Arrays;
-import java.util.HashSet;
-import java.util.Set;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
-import java.util.regex.Pattern;
-import java.util.stream.StreamSupport;
 
 public class HTTP2JettyClient {
 
@@ -169,24 +168,25 @@ public class HTTP2JettyClient {
     String maxBufferSizeString = JMeterUtils.getPropDefault("httpJettyClient.maxBufferSize",
         String.valueOf(2 * 1024 * 1024));
 
-    LOG.debug("Setting max buffer size to {}", maxBufferSizeString);
+    if (LOG.isDebugEnabled()) {
+      LOG.debug("Sending request: {}", request);
+      LOG.debug("Setting max buffer size to {}", maxBufferSizeString);
+    }
     FutureResponseListener listener =
         new FutureResponseListener(request, Integer.parseInt(maxBufferSizeString));
     request.send(listener);
+    int timeout = JMeterUtils.getPropDefault("HTTPSampler.response_timeout", 2000);
 
     try {
-      return listener.get(JMeterUtils.getPropDefault(
-          "HTTPSampler.response_timeout", 2000), TimeUnit.MILLISECONDS);
-    } catch (TimeoutException | ExecutionException e) {
-      if (e instanceof TimeoutException || e.getCause() instanceof TimeoutException) {
+      return listener.get(timeout, TimeUnit.MILLISECONDS);
+    } catch (TimeoutException e) {
+      throw new TimeoutException("The request took more than " + timeout
+          + " milliseconds to complete");
+    } catch (ExecutionException e) {
+      if (e.getCause() != null && e.getCause() instanceof TimeoutException) {
         throw (TimeoutException) e.getCause();
-      } else if (e.getMessage().matches(
-          "java.lang.IllegalArgumentException: Buffering capacity \\d+ exceeded")) {
-        throw new IllegalArgumentException("Buffer capacity " + maxBufferSizeString + " exceeded. "
-            + "To modify buffer size, set the property httpJettyClient.maxBufferSize "
-            + "in the jmeter.properties file");
-      } else if (e.getCause() instanceof TimeoutException) {
-        throw (TimeoutException) e.getCause();
+      } else if (e.getCause() != null && e.getCause() instanceof IllegalArgumentException) {
+        throw (IllegalArgumentException) e.getCause();
       }
       throw e;
     }
