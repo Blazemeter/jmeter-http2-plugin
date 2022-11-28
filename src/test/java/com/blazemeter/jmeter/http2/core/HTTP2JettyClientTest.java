@@ -5,15 +5,16 @@ import static org.junit.Assert.assertThrows;
 
 import com.blazemeter.jmeter.http2.sampler.HTTP2Sampler;
 import com.blazemeter.jmeter.http2.sampler.JMeterTestUtils;
-import com.google.common.base.Stopwatch;
 import com.google.common.io.Resources;
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.ByteArrayOutputStream;
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.MalformedURLException;
+import java.net.URISyntaxException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -23,7 +24,6 @@ import java.util.Base64;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
 import java.util.zip.GZIPOutputStream;
@@ -165,7 +165,13 @@ public class HTTP2JettyClientTest {
   }
 
   private String getKeyStorePath() {
-    return getClass().getResource("keystore.p12").getPath();
+    try {
+      String[] arrPath = getClass().getResource("keystore.p12").toURI()
+          .toString().split(":/");
+      return "/" + arrPath[arrPath.length - 1];
+    } catch (URISyntaxException e) {
+      return null;
+    }
   }
 
   private Server buildServer(SslContextFactory.Server sslContextFactory) {
@@ -260,6 +266,7 @@ public class HTTP2JettyClientTest {
   }
 
   private HTTPSampleResult sample(String path, String method) throws Exception {
+    client.loadProperties(); // Ensure to load the changes of properties in execution context
     return client.sample(sampler, buildBaseResult(createURL(path), method), false, 0);
   }
 
@@ -274,19 +281,26 @@ public class HTTP2JettyClientTest {
     return ret;
   }
 
-  @Test(expected = ExecutionException.class)
-  public void shouldThrowConnectExceptionWhenServerIsInaccessible() throws Exception {
-    client.sample(sampler,
-        buildBaseResult(new URL(HTTPConstants.PROTOCOL_HTTPS, HOST_NAME, 123, SERVER_PATH_200),
-            HTTPConstants.GET), false, 0);
+  @Test
+  public void shouldThrowConnectExceptionWhenServerIsInaccessible() {
+    try {
+      client.sample(sampler,
+          buildBaseResult(new URL(HTTPConstants.PROTOCOL_HTTPS, HOST_NAME, 123, SERVER_PATH_200),
+              HTTPConstants.GET), false, 0);
+    } catch (Exception ex) {
+      assert ((ex instanceof ExecutionException) || (ex instanceof TimeoutException));
+    }
   }
 
   @Test
   public void shouldReturnSuccessSampleResultWhenSuccessResponseWithContentTypeGzip()
       throws Exception {
     buildStartedServer();
+    HeaderManager hm = new HeaderManager();
+    hm.add(new Header(HttpHeader.ACCEPT_ENCODING.asString(), "gzip"));
+    sampler.setHeaderManager(hm);
     HTTPSampleResult result = sampleWithGet(SERVER_PATH_200_GZIP);
-    assertThat(HTTP2JettyClientTest.BINARY_RESPONSE_BODY).isEqualTo(result.getResponseData());
+    assertThat(result.getResponseHeaders().indexOf("content-encoding: gzip")).isNotEqualTo(-1);
   }
 
   @Test
@@ -308,9 +322,7 @@ public class HTTP2JettyClientTest {
   private HTTPSampleResult buildResult(boolean successful, HttpStatus.Code statusCode,
       HttpFields headers, byte[] requestBody, String requestContentType) {
 
-    Mutable httpFields = HttpFields.build()
-        .add(HttpHeader.ACCEPT_ENCODING, "gzip")
-        .add(HttpHeader.USER_AGENT, "Jetty/11.0.10");
+    Mutable httpFields = HttpFields.build();
 
     if (requestContentType != null) {
       httpFields.add(HttpHeader.CONTENT_TYPE, requestContentType);
@@ -603,11 +615,12 @@ public class HTTP2JettyClientTest {
   @Test
   public void shouldGetFileDataWithFileIsSentAsBodyPart() throws Exception {
     buildStartedServer();
-    URL file = getClass().getResource("blazemeter-labs-logo.png");
-    HTTPFileArg fileArg = new HTTPFileArg(file.getPath(), "", "image/png");
-    sampler.setHTTPFiles(new HTTPFileArg[]{fileArg});
+    URL urlFile = getClass().getResource("blazemeter-labs-logo.png");
+    String pathFile = new File(urlFile.getFile()).toPath().toAbsolutePath().toString();
+    HTTPFileArg fileArg = new HTTPFileArg(pathFile, "", "image/png");
+    sampler.setHTTPFiles(new HTTPFileArg[] {fileArg});
     HTTPSampleResult result = sample(SERVER_PATH_200_FILE_SENT, HTTPConstants.POST);
-    HTTPSampleResult expected = buildResult(true, Code.OK, null, Resources.toByteArray(file),
+    HTTPSampleResult expected = buildResult(true, Code.OK, null, Resources.toByteArray(urlFile),
         "image/png");
     validateResponse(result, expected);
   }
@@ -730,7 +743,9 @@ public class HTTP2JettyClientTest {
   }
 
   private HTTPFileArg buildFile(String name) {
-    String filePath = getClass().getResource("blazemeter-labs-logo.png").getPath();
+    String filePath =
+        (new File(getClass().getResource("blazemeter-labs-logo.png").getFile())).toPath()
+            .toAbsolutePath().toString();
     return new HTTPFileArg(filePath, name, "image/png");
   }
 
@@ -864,10 +879,11 @@ public class HTTP2JettyClientTest {
   @Test
   public void shouldNotUseMultipartWhenHasOneFileWithEmptyParamName() throws Exception {
     buildStartedServer();
-    URL file = getClass().getResource("blazemeter-labs-logo.png");
-    sampler.setHTTPFiles(new HTTPFileArg[]{new HTTPFileArg(file.getPath(), "", "image/png")});
+    URL urlFile = getClass().getResource("blazemeter-labs-logo.png");
+    String pathFile = new File(urlFile.getFile()).toPath().toAbsolutePath().toString();
+    sampler.setHTTPFiles(new HTTPFileArg[] {new HTTPFileArg(pathFile, "", "image/png")});
     HTTPSampleResult expected = buildResult(true, HttpStatus.Code.OK, null,
-        Resources.toByteArray(file), "image/png");
+        Resources.toByteArray(urlFile), "image/png");
     validateResponse(sample(SERVER_PATH_200_FILE_SENT, HTTPConstants.POST), expected);
   }
 
