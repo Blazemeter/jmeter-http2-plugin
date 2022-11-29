@@ -61,13 +61,16 @@ import org.eclipse.jetty.http2.client.HTTP2Client;
 import org.eclipse.jetty.http2.client.http.ClientConnectionFactoryOverHTTP2;
 import org.eclipse.jetty.io.ClientConnectionFactory;
 import org.eclipse.jetty.io.ClientConnector;
+import org.eclipse.jetty.io.MappedByteBufferPool;
 import org.eclipse.jetty.util.Fields;
 import org.eclipse.jetty.util.ssl.SslContextFactory;
+import org.eclipse.jetty.util.thread.QueuedThreadPool;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public class HTTP2JettyClient {
-
+  public static final MappedByteBufferPool BUFFER_POOL = new MappedByteBufferPool(
+      JMeterUtils.getPropDefault("httpJettyClient.byteBufferPoolFactor", 4));
   private static final Logger LOG = LoggerFactory.getLogger(HTTP2JettyClient.class);
   private static final Set<String> SUPPORTED_METHODS = new HashSet<>(Arrays
       .asList(HTTPConstants.GET, HTTPConstants.POST, HTTPConstants.PUT, HTTPConstants.PATCH,
@@ -80,13 +83,27 @@ public class HTTP2JettyClient {
   private static final String MULTI_PART_SEPARATOR = "--";
   private static final String LINE_SEPARATOR = "\r\n";
   private static final String DEFAULT_FILE_MIME_TYPE = "application/octet-stream";
+  private int requestTimeout = 0;
+  private int maxBufferSize = 2 * 1024 * 1024;
+  private int maxThreads = 5;
+  private int minThreads = 1;
+  private int maxRequestsQueuedPerDestination = Short.MAX_VALUE;
+  private int maxConnectionsPerDestination = 1;
+  private boolean strictEventOrdering = false;
+  private boolean removeIdleDestinations = true;
+  private int idleTimeout = 30000;
   private final HttpClient httpClient;
   private boolean http1UpgradeRequired;
 
   public HTTP2JettyClient(boolean http1UpgradeRequired) {
+    loadProperties();
     ClientConnector clientConnector = new ClientConnector();
     SslContextFactory.Client sslContextFactory = new JMeterJettySslContextFactory();
     clientConnector.setSslContextFactory(sslContextFactory);
+    QueuedThreadPool queuedThreadPool = new QueuedThreadPool(maxThreads);
+    queuedThreadPool.setMinThreads(minThreads);
+    queuedThreadPool.setName("HttpClient");
+    clientConnector.setExecutor(queuedThreadPool);
     ClientConnectionFactory.Info http11 = HttpClientConnectionFactory.HTTP11;
     HTTP2Client http2Client = new HTTP2Client(clientConnector);
     ClientConnectionFactoryOverHTTP2.HTTP2 http2 = new ClientConnectionFactoryOverHTTP2.HTTP2(
@@ -96,6 +113,13 @@ public class HTTP2JettyClient {
         : new ClientConnectionFactory.Info[]{http2, http11};
     HttpClientTransport transport = new HttpClientTransportDynamic(clientConnector, protocols);
     this.httpClient = new HttpClient(transport);
+    this.httpClient.setUserAgentField(null); // No set UA header
+    this.httpClient.setByteBufferPool(HTTP2JettyClient.BUFFER_POOL);
+    this.httpClient.setMaxRequestsQueuedPerDestination(maxRequestsQueuedPerDestination);
+    this.httpClient.setMaxConnectionsPerDestination(maxConnectionsPerDestination);
+    this.httpClient.setStrictEventOrdering(strictEventOrdering);
+    this.httpClient.setRemoveIdleDestinations(removeIdleDestinations);
+    this.httpClient.setIdleTimeout(idleTimeout);
     this.http1UpgradeRequired = http1UpgradeRequired;
   }
 
@@ -103,9 +127,42 @@ public class HTTP2JettyClient {
     this(false);
   }
 
+  public static void clearBufferPool() {
+    HTTP2JettyClient.BUFFER_POOL.clear();
+  }
+
+  public void loadProperties() {
+    requestTimeout = JMeterUtils.getPropDefault("HTTPSampler.response_timeout", 0);
+    maxBufferSize =
+        Integer.parseInt(JMeterUtils.getPropDefault("httpJettyClient.maxBufferSize",
+            String.valueOf(2 * 1024 * 1024)));
+    minThreads = Integer
+        .parseInt(JMeterUtils.getPropDefault("httpJettyClient.minThreads",
+            String.valueOf(minThreads)));
+    maxThreads = Integer
+        .parseInt(JMeterUtils.getPropDefault("httpJettyClient.maxThreads",
+            String.valueOf(maxThreads)));
+    maxRequestsQueuedPerDestination = Integer
+        .parseInt(JMeterUtils.getPropDefault("httpJettyClient.maxRequestsQueuedPerDestination",
+            String.valueOf(maxRequestsQueuedPerDestination)));
+    maxConnectionsPerDestination =
+        Integer.parseInt(JMeterUtils.getPropDefault("httpJettyClient.maxConnectionsPerDestination",
+            String.valueOf(maxConnectionsPerDestination)));
+    strictEventOrdering =
+        Boolean.parseBoolean(JMeterUtils.getPropDefault("httpJettyClient.strictEventOrdering",
+            String.valueOf(strictEventOrdering)));
+    removeIdleDestinations =
+        Boolean.parseBoolean(JMeterUtils.getPropDefault("httpJettyClient.removeIdleDestinations",
+            String.valueOf(removeIdleDestinations)));
+    idleTimeout =
+        Integer.parseInt(JMeterUtils.getPropDefault("httpJettyClient.idleTimeout",
+            String.valueOf(idleTimeout)));
+  }
+
   public void start() throws Exception {
     if (!httpClient.isStarted()) {
       httpClient.start();
+      httpClient.getContentDecoderFactories().clear(); // Clear default headers
     }
   }
 
@@ -165,22 +222,24 @@ public class HTTP2JettyClient {
 
   public ContentResponse send(HttpRequest request) throws InterruptedException,
       TimeoutException, ExecutionException {
-    String maxBufferSizeString = JMeterUtils.getPropDefault("httpJettyClient.maxBufferSize",
-        String.valueOf(2 * 1024 * 1024));
-
     if (LOG.isDebugEnabled()) {
       LOG.debug("Sending request: {}", request);
-      LOG.debug("Setting max buffer size to {}", maxBufferSizeString);
+      LOG.debug("Setting max buffer size to {}", maxBufferSize);
     }
     FutureResponseListener listener =
-        new FutureResponseListener(request, Integer.parseInt(maxBufferSizeString));
+        new FutureResponseListener(request, maxBufferSize);
     request.send(listener);
-    int timeout = JMeterUtils.getPropDefault("HTTPSampler.response_timeout", 2000);
-
+    long getStart = System.currentTimeMillis();
     try {
-      return listener.get(timeout, TimeUnit.MILLISECONDS);
+      if (requestTimeout > 0) {
+        int extraTime = 2000;
+        return listener.get(requestTimeout + extraTime, TimeUnit.MILLISECONDS);
+      } else {
+        return listener.get();
+      }
     } catch (TimeoutException e) {
-      throw new TimeoutException("The request took more than " + timeout
+      long endGet = System.currentTimeMillis();
+      throw new TimeoutException("The request took more than " + (endGet - getStart)
           + " milliseconds to complete");
     } catch (ExecutionException e) {
       if (e.getCause() != null && e.getCause() instanceof TimeoutException) {
@@ -242,6 +301,8 @@ public class HTTP2JettyClient {
     }
     if (sampler.getResponseTimeout() > 0) {
       request.timeout(sampler.getResponseTimeout(), TimeUnit.MILLISECONDS);
+    } else if (requestTimeout > 0) {
+      request.timeout(requestTimeout, TimeUnit.MILLISECONDS);
     }
   }
 
@@ -540,6 +601,18 @@ public class HTTP2JettyClient {
     if (cookieHeader != null && cookieManager != null) {
       cookieManager.addCookieFromHeader(cookieHeader, url);
     }
+  }
+
+  public void clearCookies() {
+    httpClient.getCookieStore().removeAll();
+  }
+
+  public void clearAuthenticationResults() {
+    httpClient.getAuthenticationStore().clearAuthenticationResults();
+  }
+
+  public String dump() {
+    return httpClient.dump();
   }
 
 }

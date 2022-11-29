@@ -17,6 +17,7 @@ import org.apache.jmeter.samplers.SampleResult;
 import org.apache.jmeter.testelement.ThreadListener;
 import org.apache.jmeter.threads.JMeterContextService;
 import org.apache.jmeter.threads.JMeterVariables;
+import org.apache.jmeter.util.JMeterUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -28,6 +29,8 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
           .withInitial(HashMap::new);
   private static final String HTTP1_UPGRADE_PROPERTY = "HTTP2Sampler.http1_upgrade";
   private final transient Callable<HTTP2JettyClient> clientFactory;
+  private final boolean dumpAtThreadEnd = JMeterUtils.getPropDefault(
+      "httpJettyClient.DumpAtThreadEnd", false);
 
   public HTTP2Sampler() {
     setName("HTTP2 Sampler");
@@ -109,7 +112,7 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
   public void iterationStart(LoopIterationEvent iterEvent) {
     JMeterVariables jMeterVariables = JMeterContextService.getContext().getVariables();
     if (!jMeterVariables.isSameUserOnNextIteration()) {
-      closeConnections();
+      clearUserStores();
     }
   }
 
@@ -125,9 +128,42 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
     clients.clear();
   }
 
+  private void dump() {
+    Map<HTTP2ClientKey, HTTP2JettyClient> clients = CONNECTIONS.get();
+    for (HTTP2JettyClient client : clients.values()) {
+      try {
+        LOG.debug(client.dump());
+      } catch (Exception e) {
+        LOG.error("Error while dump HTTP2JettyClient", e);
+      }
+    }
+  }
+
+  @Override
+  public void testEnded() {
+    super.testEnded();
+    HTTP2JettyClient.clearBufferPool();
+    System.gc(); // Force free memory
+  }
+
   @Override
   public void threadFinished() {
+    if (dumpAtThreadEnd) {
+      dump();
+    }
     closeConnections();
+  }
+
+  private void clearUserStores() {
+    Map<HTTP2ClientKey, HTTP2JettyClient> clients = CONNECTIONS.get();
+    for (HTTP2JettyClient client : clients.values()) {
+      try {
+        client.clearCookies();
+        client.clearAuthenticationResults();
+      } catch (Exception e) {
+        LOG.error("Error while cleaning user store", e);
+      }
+    }
   }
 
   private static final class HTTP2ClientKey {

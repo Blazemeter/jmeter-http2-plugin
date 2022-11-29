@@ -64,3 +64,21 @@ to true in the jmeter.properties file.
 
 ## Buffer capacity
 By default, the size of the downloaded resources is set to 2 MB (2097152 bytes) but, the limit can be increased by adding the `httpJettyClient.maxBufferSize` property on the jmeter.properties file in bytes.
+
+## Properties
+This document describes JMeter properties. The properties present in jmeter.properties also should be set in the user.properties file. These properties are only taken into account after restarting JMeter as they are usually resolved when the class is loaded.
+
+| **Attribute**                                       | **Description**                                                                  | **Default** |
+|-----------------------------------------------------|----------------------------------------------------------------------------------|-------------|
+| **httpJettyClient.maxBufferSize**                   | Maximum size of the downloaded resources in bytes                                | 2097152     |
+| **httpJettyClient.minThreads**                      | Minimum number of threads per http client                                        | 1           |
+| **httpJettyClient.maxThreads**                      | Maximum number of threads per http client                                        | 5           |
+| **httpJettyClient.maxRequestsQueuedPerDestination** | Maximum number of requests that may be queued to a destination                   | 32767       |
+| **httpJettyClient.maxConnectionsPerDestination**    | Sets the max number of connections to open to each destinations                  | 1           |
+| **httpJettyClient.byteBufferPoolFactor**            | Factor number used in the allocation of memory in the buffer of http client      | 4           |
+| **httpJettyClient.strictEventOrdering**             | Force request events ordering                                                    | false       |
+| **httpJettyClient.removeIdleDestinations**          | Whether destinations that have no connections should be removed                  | true        |
+| **httpJettyClient.idleTimeout**                     | the max time, in milliseconds, a connection can be idle                          | 30000       |
+| **httpJettyClient.auth.preemptive**                 | Use of Basic preemptive authentication results                                   | false       |
+| **HTTPSampler.response_timeout**                    | Maximum waiting time of request without timeout defined, in milliseconds         | 0           |
+| **http.post_add_content_type_if_missing**           | Add to POST a Header Content-type: application/x-www-form-urlencoded if missing? | false       | 
