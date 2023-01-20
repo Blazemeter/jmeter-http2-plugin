@@ -8,6 +8,7 @@ This plugin provides an HTTP2 Sampler.
 ## To create your test:
 
 1. Install the HTTP/2 plugin from the [plugins manager](https://www.blazemeter.com/blog/how-install-jmeter-plugins-manager).
+> Please note that you need to install OpenJDK version 11 as older versions won't work.
 
 2. Create a Thread Group.
 
