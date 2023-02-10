@@ -5,6 +5,7 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UnsupportedEncodingException;
+import java.net.MalformedURLException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
@@ -47,7 +48,6 @@ import org.eclipse.jetty.client.util.AbstractAuthentication;
 import org.eclipse.jetty.client.util.BasicAuthentication;
 import org.eclipse.jetty.client.util.DigestAuthentication;
 import org.eclipse.jetty.client.util.FormRequestContent;
-import org.eclipse.jetty.client.util.FutureResponseListener;
 import org.eclipse.jetty.client.util.MultiPartRequestContent;
 import org.eclipse.jetty.client.util.PathRequestContent;
 import org.eclipse.jetty.client.util.StringRequestContent;
@@ -109,8 +109,8 @@ public class HTTP2JettyClient {
     ClientConnectionFactoryOverHTTP2.HTTP2 http2 = new ClientConnectionFactoryOverHTTP2.HTTP2(
         http2Client);
     ClientConnectionFactory.Info[] protocols = http1UpgradeRequired
-        ? new ClientConnectionFactory.Info[]{http11, http2}
-        : new ClientConnectionFactory.Info[]{http2, http11};
+        ? new ClientConnectionFactory.Info[] {http11, http2}
+        : new ClientConnectionFactory.Info[] {http2, http11};
     HttpClientTransport transport = new HttpClientTransportDynamic(clientConnector, protocols);
     this.httpClient = new HttpClient(transport);
     this.httpClient.setUserAgentField(null); // No set UA header
@@ -121,6 +121,10 @@ public class HTTP2JettyClient {
     this.httpClient.setRemoveIdleDestinations(removeIdleDestinations);
     this.httpClient.setIdleTimeout(idleTimeout);
     this.http1UpgradeRequired = http1UpgradeRequired;
+
+    // TODO: Research
+    //this.httpClient.setRequestBufferSize();
+    //clientConnector.setByteBufferPool();
   }
 
   public HTTP2JettyClient() {
@@ -129,6 +133,14 @@ public class HTTP2JettyClient {
 
   public static void clearBufferPool() {
     HTTP2JettyClient.BUFFER_POOL.clear();
+  }
+
+  public int getMaxBufferSize() {
+    return maxBufferSize;
+  }
+
+  public int getRequestTimeout() {
+    return requestTimeout;
   }
 
   public void loadProperties() {
@@ -170,12 +182,11 @@ public class HTTP2JettyClient {
     httpClient.stop();
   }
 
-  public HTTPSampleResult sample(HTTP2Sampler sampler, HTTPSampleResult result,
-      boolean areFollowingRedirect, int depth) throws Exception {
-    setAuthManager(sampler);
+  private void samplePrepareRequest(HttpRequest request,
+                                    HTTP2Sampler sampler,
+                                    HTTPSampleResult result) throws IOException {
 
     URL url = result.getURL();
-    HttpRequest request = buildRequest(url, result);
     setTimeouts(sampler, request);
     request.followRedirects(sampler.getAutoRedirects());
     String method = result.getHTTPMethod();
@@ -190,45 +201,109 @@ public class HTTP2JettyClient {
     if (!sampler.getProxyHost().isEmpty()) {
       setProxy(sampler.getProxyHost(), sampler.getProxyPortInt(), sampler.getProxyScheme());
     }
-
     result.sampleStart();
 
-    JettyCacheManager cacheManager = JettyCacheManager.fromCacheManager(sampler.getCacheManager());
+    setBody(request, sampler, result);
+
+  }
+
+  private boolean requestInCache(JettyCacheManager cacheManager,
+                                 HttpRequest request)
+      throws URISyntaxException, MalformedURLException {
+    URL url = request.getURI().toURL();
+    String method = request.getMethod();
     if (cacheManager != null) {
       cacheManager.setHeaders(url, request);
       if (HTTPConstants.GET.equalsIgnoreCase(method) && cacheManager.inCache(url,
           request.getHeaders())) {
-        return cacheManager.buildCachedSampleResult(result);
+        return true;
       }
     }
+    return false;
+  }
 
-    setBody(request, sampler, result);
-    if (!isSupportedMethod(method)) {
-      throw new UnsupportedOperationException(String.format("Method %s is not supported", method));
-    }
-
-    ContentResponse contentResponse = send(request);
+  private void postContentResponse(HTTP2Sampler sampler, HttpRequest request,
+                                   HTTPSampleResult result,
+                                   ContentResponse contentResponse, JettyCacheManager cacheManager)
+      throws IOException {
     http1UpgradeRequired = contentResponse.getVersion() != HttpVersion.HTTP_2;
     result.setRequestHeaders(buildHeadersString(request.getHeaders()));
     setResultContentResponse(result, contentResponse, sampler);
-    saveCookiesInCookieManager(contentResponse, url, sampler.getCookieManager());
+    saveCookiesInCookieManager(contentResponse, request.getURI().toURL(),
+        sampler.getCookieManager());
 
     if (cacheManager != null) {
       cacheManager.saveDetails(contentResponse, result);
     }
+  }
+
+  public HttpRequest sampleAsync(HTTP2Sampler sampler,
+                                 HTTPSampleResult result,
+                                 HTTP2FutureResponseListener listener)
+      throws Exception {
+    errorWhenNotSupportedMethod(result.getHTTPMethod());
+    setAuthManager(sampler);
+    HttpRequest request = buildRequest(result);
+    samplePrepareRequest(request, sampler, result);
+    listener.setRequest(request);
+    return request;
+
+  }
+
+  private void errorWhenNotSupportedMethod(String method) throws UnsupportedOperationException {
+    if (!isSupportedMethod(method)) {
+      LOG.error(String.format("Method %s is not supported",
+          method));
+      throw new UnsupportedOperationException(String.format("Method %s is not supported",
+          method));
+    }
+  }
+
+  public HTTPSampleResult sample(HTTP2Sampler sampler, HTTPSampleResult result,
+                                 boolean areFollowingRedirect, int depth) throws Exception {
+
+    errorWhenNotSupportedMethod(result.getHTTPMethod());
+    setAuthManager(sampler);
+    HttpRequest request = buildRequest(result);
+
+    samplePrepareRequest(request, sampler, result);
+
+    JettyCacheManager cacheManager = JettyCacheManager.fromCacheManager(sampler.getCacheManager());
+    if (requestInCache(cacheManager, request)) {
+      return cacheManager.buildCachedSampleResult(result);
+    }
+    HTTP2FutureResponseListener listener = new HTTP2FutureResponseListener(maxBufferSize);
+    ContentResponse contentResponse = send(request, listener);
+
+    postContentResponse(sampler, request, result, contentResponse, cacheManager);
+    result.setEndTime(listener.getResponseEnd());
 
     return sampler.resultProcessing(areFollowingRedirect, depth, result);
   }
 
-  public ContentResponse send(HttpRequest request) throws InterruptedException,
+  public HTTPSampleResult sampleFromListener(HTTP2Sampler sampler, HTTPSampleResult result,
+                                             boolean areFollowingRedirect, int depth,
+                                             HTTP2FutureResponseListener listener
+  ) throws Exception {
+
+    ContentResponse contentResponse = getContent(listener);
+    JettyCacheManager cacheManager = JettyCacheManager.fromCacheManager(sampler.getCacheManager());
+    HttpRequest request = listener.getRequest();
+    postContentResponse(sampler, request, result, contentResponse, cacheManager);
+    result.setEndTime(listener.getResponseEnd());
+
+    return sampler.resultProcessing(areFollowingRedirect, depth, result);
+  }
+
+  public ContentResponse send(HttpRequest request, HTTP2FutureResponseListener listener)
+      throws InterruptedException,
       TimeoutException, ExecutionException {
-    if (LOG.isDebugEnabled()) {
-      LOG.debug("Sending request: {}", request);
-      LOG.debug("Setting max buffer size to {}", maxBufferSize);
-    }
-    FutureResponseListener listener =
-        new FutureResponseListener(request, maxBufferSize);
     request.send(listener);
+    return getContent(listener);
+  }
+
+  public ContentResponse getContent(HTTP2FutureResponseListener listener)
+      throws InterruptedException, TimeoutException, ExecutionException {
     long getStart = System.currentTimeMillis();
     try {
       if (requestTimeout > 0) {
@@ -280,13 +355,14 @@ public class HTTP2JettyClient {
           authName.equals(AuthManager.Mechanism.BASIC.name()) ? new BasicAuthentication(
               URI.create(auth.getURL()), auth.getRealm(), auth.getUser(), auth.getPass())
               : new DigestAuthentication(URI.create(auth.getURL()), auth.getRealm(), auth.getUser(),
-                  auth.getPass());
+              auth.getPass());
       authenticationStore.addAuthentication(authentication);
     }
   }
 
-  private HttpRequest buildRequest(URL url, HTTPSampleResult result) throws URISyntaxException,
+  private HttpRequest buildRequest(HTTPSampleResult result) throws URISyntaxException,
       IllegalArgumentException {
+    URL url = result.getURL();
     HttpRequest request = (HttpRequest) httpClient.newRequest(url.toURI());
     request.onRequestBegin(r -> result.connectEnd());
     request.onRequestContent(
@@ -484,7 +560,8 @@ public class HTTP2JettyClient {
   }
 
   private String buildArgumentPartRequestBody(HTTPArgument arg, Charset contentCharset,
-      String contentEncoding, String boundary) throws UnsupportedEncodingException {
+                                              String contentEncoding, String boundary)
+      throws UnsupportedEncodingException {
     String disposition = "name=\"" + arg.getEncodedName() + "\"";
     String contentType = arg.getContentType() + "; charset=" + contentCharset.name();
     String encoding = StringUtils.isNotBlank(contentEncoding) ? contentEncoding : "8bit";
@@ -493,7 +570,7 @@ public class HTTP2JettyClient {
   }
 
   private String buildPartBody(String boundary, String disposition, String contentType,
-      String encoding, String value) {
+                               String encoding, String value) {
     return MULTI_PART_SEPARATOR + boundary + LINE_SEPARATOR +
         HttpFields.build()
             .add("Content-Disposition", "form-data; " + disposition)
@@ -541,7 +618,7 @@ public class HTTP2JettyClient {
   }
 
   private void setResultContentResponse(HTTPSampleResult result, ContentResponse contentResponse,
-      HTTP2Sampler sampler) throws IOException {
+                                        HTTP2Sampler sampler) throws IOException {
     String contentType = contentResponse.getHeaders() != null
         ? contentResponse.getHeaders().get(HTTPConstants.HEADER_CONTENT_TYPE)
         : null;
@@ -555,7 +632,11 @@ public class HTTP2JettyClient {
     result.setResponseData(sampler.readResponse(result, inputStream,
         contentResponse.getContent().length));
 
-    result.sampleEnd();
+    if (result.getEndTime() == 0) {
+      result.sampleEnd();
+    } else {
+      result.setEndTime(result.currentTimeInMillis());
+    }
 
     result.setResponseCode(String.valueOf(contentResponse.getStatus()));
     String responseMessage = contentResponse.getReason() != null ? contentResponse.getReason()
@@ -580,7 +661,7 @@ public class HTTP2JettyClient {
   }
 
   private String extractResponseHeaders(ContentResponse contentResponse,
-      String message) {
+                                        String message) {
     return contentResponse.getVersion() + " " + contentResponse.getStatus() + " " + message + "\n"
         + buildHeadersString(contentResponse.getHeaders());
   }
@@ -596,7 +677,7 @@ public class HTTP2JettyClient {
   }
 
   private void saveCookiesInCookieManager(ContentResponse response, URL url,
-      CookieManager cookieManager) {
+                                          CookieManager cookieManager) {
     String cookieHeader = response.getHeaders().get(HTTPConstants.HEADER_SET_COOKIE);
     if (cookieHeader != null && cookieManager != null) {
       cookieManager.addCookieFromHeader(cookieHeader, url);
@@ -616,3 +697,5 @@ public class HTTP2JettyClient {
   }
 
 }
+
+
