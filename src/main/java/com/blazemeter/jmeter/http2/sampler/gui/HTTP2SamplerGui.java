@@ -50,7 +50,7 @@ public class HTTP2SamplerGui extends AbstractSamplerGui {
 
   @Override
   public String getLabelResource() {
-    throw new IllegalStateException("This shouldn't be called");
+    return null;
   }
 
   @Override

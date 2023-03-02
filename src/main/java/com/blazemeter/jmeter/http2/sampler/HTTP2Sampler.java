@@ -47,11 +47,29 @@ import org.slf4j.LoggerFactory;
 
 public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListener, ThreadListener {
 
+  private static class OwnInheritableThreadLocal
+      extends InheritableThreadLocal<Map<HTTP2ClientKey, HTTP2JettyClient>> {
+    @Override
+    protected Map<HTTP2ClientKey, HTTP2JettyClient> initialValue() {
+      return new HashMap<>();
+    }
+
+    @Override
+    protected Map<HTTP2ClientKey, HTTP2JettyClient> childValue(
+        Map<HTTP2ClientKey, HTTP2JettyClient> parentValue) {
+      return parentValue;
+    }
+  }
+
   public static final String SYNC_REQUEST = "HTTP2Sampler.sync_request";
   private static final Logger LOG = LoggerFactory.getLogger(HTTP2Sampler.class);
+  /*
   private static final ThreadLocal<Map<HTTP2ClientKey, HTTP2JettyClient>> CONNECTIONS =
       ThreadLocal
           .withInitial(HashMap::new);
+  */
+  private static final OwnInheritableThreadLocal CONNECTIONS = new OwnInheritableThreadLocal();
+
   private static final boolean IGNORE_FAILED_EMBEDDED_RESOURCES =
       getPropDefault(
           "httpsampler.ignore_failed_embedded_resources", false); // $NON-NLS-1$
@@ -211,9 +229,11 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
   }
 
   private HTTP2JettyClient buildClient() throws Exception {
-    HTTP2JettyClient client = new HTTP2JettyClient(isHttp1UpgradeEnabled());
+    HTTP2ClientKey connectionKey = buildConnectionKey();
+    HTTP2JettyClient client = new HTTP2JettyClient(isHttp1UpgradeEnabled(),
+        "http2[" + connectionKey.target + ":" + Thread.currentThread().getId() + "]");
     client.start();
-    CONNECTIONS.get().put(buildConnectionKey(), client);
+    CONNECTIONS.get().put(connectionKey, client);
     return client;
   }
 

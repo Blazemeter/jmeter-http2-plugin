@@ -34,6 +34,7 @@ import org.apache.jmeter.protocol.http.util.HTTPConstants;
 import org.apache.jmeter.protocol.http.util.HTTPFileArg;
 import org.apache.jmeter.testelement.property.JMeterProperty;
 import org.apache.jmeter.util.JMeterUtils;
+import org.eclipse.jetty.client.GZIPContentDecoder;
 import org.eclipse.jetty.client.HttpClient;
 import org.eclipse.jetty.client.HttpClientTransport;
 import org.eclipse.jetty.client.HttpProxy;
@@ -95,23 +96,30 @@ public class HTTP2JettyClient {
   private final HttpClient httpClient;
   private boolean http1UpgradeRequired;
 
-  public HTTP2JettyClient(boolean http1UpgradeRequired) {
+  public HTTP2JettyClient(boolean http1UpgradeRequired, String name) {
     loadProperties();
     ClientConnector clientConnector = new ClientConnector();
+    clientConnector.setSelectors(1);
+
     SslContextFactory.Client sslContextFactory = new JMeterJettySslContextFactory();
     clientConnector.setSslContextFactory(sslContextFactory);
+
     QueuedThreadPool queuedThreadPool = new QueuedThreadPool(maxThreads);
     queuedThreadPool.setMinThreads(minThreads);
-    queuedThreadPool.setName("HttpClient");
+    queuedThreadPool.setName(name);
     clientConnector.setExecutor(queuedThreadPool);
     ClientConnectionFactory.Info http11 = HttpClientConnectionFactory.HTTP11;
+
     HTTP2Client http2Client = new HTTP2Client(clientConnector);
     ClientConnectionFactoryOverHTTP2.HTTP2 http2 = new ClientConnectionFactoryOverHTTP2.HTTP2(
         http2Client);
-    ClientConnectionFactory.Info[] protocols = http1UpgradeRequired
-        ? new ClientConnectionFactory.Info[] {http11, http2}
-        : new ClientConnectionFactory.Info[] {http2, http11};
-    HttpClientTransport transport = new HttpClientTransportDynamic(clientConnector, protocols);
+
+    http2Client.setUseALPN(true);
+
+    // If ALPN could not negotiate HTTP2, it tries in the order of protocols indicated
+    HttpClientTransport transport = new HttpClientTransportDynamic(
+        clientConnector, http11, http2);
+
     this.httpClient = new HttpClient(transport);
     this.httpClient.setUserAgentField(null); // No set UA header
     this.httpClient.setByteBufferPool(HTTP2JettyClient.BUFFER_POOL);
@@ -121,6 +129,7 @@ public class HTTP2JettyClient {
     this.httpClient.setRemoveIdleDestinations(removeIdleDestinations);
     this.httpClient.setIdleTimeout(idleTimeout);
     this.http1UpgradeRequired = http1UpgradeRequired;
+    this.httpClient.setName(name);
 
     // TODO: Research
     //this.httpClient.setRequestBufferSize();
@@ -128,7 +137,7 @@ public class HTTP2JettyClient {
   }
 
   public HTTP2JettyClient() {
-    this(false);
+    this(false, "HttpClient");
   }
 
   public static void clearBufferPool() {
@@ -298,6 +307,25 @@ public class HTTP2JettyClient {
   public ContentResponse send(HttpRequest request, HTTP2FutureResponseListener listener)
       throws InterruptedException,
       TimeoutException, ExecutionException {
+    if (request.getHeaders().contains("Accept-Encoding") &&
+        request.getHeaders().get("Accept-Encoding").contains("gzip")) {
+      httpClient.getContentDecoderFactories()
+          .add(new GZIPContentDecoder.Factory(httpClient.getByteBufferPool()));
+    } else {
+      httpClient.getContentDecoderFactories().clear();
+    }
+    if (request.getHeaders() != null) {
+      HttpFields hm = request.getHeaders();
+      String ae = hm.get("Accept-Encoding");
+      if (ae != null && ae.contains("br")) {
+        Mutable headers = ((Mutable) request.getHeaders());
+        headers.remove("Accept-Encoding");
+        String acceptEncoding = ae;
+        acceptEncoding = acceptEncoding.replace(", br", "").replace("br", "");
+        HttpField aef = new HttpField("Accept-Encoding", acceptEncoding);
+        request.addHeader(aef);
+      }
+    }
     request.send(listener);
     return getContent(listener);
   }
@@ -395,8 +423,6 @@ public class HTTP2JettyClient {
       addHeaderIfMissing(HttpHeader.UPGRADE, "h2c", headers);
       addHeaderIfMissing(HttpHeader.HTTP2_SETTINGS, "", headers);
       addHeaderIfMissing(HttpHeader.CONNECTION, "Upgrade, HTTP2-Settings", headers);
-    } else {
-      request.version(HttpVersion.HTTP_2);
     }
   }
 
@@ -440,8 +466,10 @@ public class HTTP2JettyClient {
       return null;
     }
     String cookieString = cookieManager.getCookieHeaderForURL(url);
-    HttpField cookieHeader = new HttpField(HTTPConstants.HEADER_COOKIE, cookieString);
-    request.addHeader(cookieHeader);
+    if (cookieString != null) {
+      HttpField cookieHeader = new HttpField(HTTPConstants.HEADER_COOKIE, cookieString);
+      request.addHeader(cookieHeader);
+    }
     return cookieString;
   }
 
@@ -678,9 +706,16 @@ public class HTTP2JettyClient {
 
   private void saveCookiesInCookieManager(ContentResponse response, URL url,
                                           CookieManager cookieManager) {
-    String cookieHeader = response.getHeaders().get(HTTPConstants.HEADER_SET_COOKIE);
-    if (cookieHeader != null && cookieManager != null) {
-      cookieManager.addCookieFromHeader(cookieHeader, url);
+    if (cookieManager == null) {
+      return;
+    }
+    for (HttpField field : response.getHeaders()) {
+      if (field.is(HTTPConstants.HEADER_SET_COOKIE)) {
+        String cookieHeader = field.getValue();
+        if (cookieHeader != null) {
+          cookieManager.addCookieFromHeader(cookieHeader, url);
+        }
+      }
     }
   }
 

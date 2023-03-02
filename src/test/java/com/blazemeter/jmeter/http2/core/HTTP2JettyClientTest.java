@@ -43,11 +43,13 @@ import org.apache.jmeter.protocol.http.util.HTTPFileArg;
 import org.apache.jmeter.samplers.SampleResult;
 import org.apache.jmeter.util.JMeterUtils;
 import org.assertj.core.api.JUnitSoftAssertions;
+import org.eclipse.jetty.alpn.server.ALPNServerConnectionFactory;
 import org.eclipse.jetty.http.HttpFields;
 import org.eclipse.jetty.http.HttpFields.Mutable;
 import org.eclipse.jetty.http.HttpHeader;
 import org.eclipse.jetty.http.HttpStatus;
 import org.eclipse.jetty.http.HttpStatus.Code;
+import org.eclipse.jetty.http2.server.HTTP2CServerConnectionFactory;
 import org.eclipse.jetty.http2.server.HTTP2ServerConnectionFactory;
 import org.eclipse.jetty.security.Authenticator;
 import org.eclipse.jetty.security.ConstraintMapping;
@@ -58,6 +60,7 @@ import org.eclipse.jetty.security.authentication.BasicAuthenticator;
 import org.eclipse.jetty.security.authentication.DigestAuthenticator;
 import org.eclipse.jetty.server.ConnectionFactory;
 import org.eclipse.jetty.server.HttpConfiguration;
+import org.eclipse.jetty.server.HttpConnectionFactory;
 import org.eclipse.jetty.server.SecureRequestCustomizer;
 import org.eclipse.jetty.server.Server;
 import org.eclipse.jetty.server.ServerConnector;
@@ -86,6 +89,7 @@ public class HTTP2JettyClientTest {
   private static final String SERVER_PATH_SET_COOKIES = "/test/set-cookies";
   private static final String SERVER_PATH_USE_COOKIES = "/test/use-cookies";
   private static final String RESPONSE_DATA_COOKIES = "testCookie=test";
+  private static final String RESPONSE_DATA_COOKIES2 = "testCookie2=test";
   private static final String SERVER_PATH_200 = "/test/200";
   private static final String SERVER_PATH_SLOW = "/test/slow";
   private static final String SERVER_PATH_200_GZIP = "/test/gzip";
@@ -177,14 +181,31 @@ public class HTTP2JettyClientTest {
   private Server buildServer(SslContextFactory.Server sslContextFactory) {
     HttpConfiguration httpsConfig = new HttpConfiguration();
     httpsConfig.addCustomizer(new SecureRequestCustomizer());
-    ConnectionFactory h2 = new HTTP2ServerConnectionFactory(httpsConfig);
-    ConnectionFactory ssl = new SslConnectionFactory(sslContextFactory, h2.getProtocol());
+
     Server server = new Server();
-    connector = new ServerConnector(server, 1, 1, ssl, h2);
+
+    // HTTP Connector
+    ServerConnector http = new ServerConnector(server, new HttpConnectionFactory(httpsConfig),
+        new HTTP2CServerConnectionFactory(httpsConfig));
+    http.setReusePort(false);
+    server.addConnector(http);
+
+    HttpConnectionFactory h1 = new HttpConnectionFactory(httpsConfig);
+
+    ConnectionFactory h2 = new HTTP2ServerConnectionFactory(httpsConfig);
+    ALPNServerConnectionFactory alpn = new ALPNServerConnectionFactory();
+    alpn.setDefaultProtocol(http.getDefaultProtocol());
+
+    ConnectionFactory ssl = new SslConnectionFactory(sslContextFactory, alpn.getProtocol());
+    connector =
+        new ServerConnector(server, 1, 1, ssl, alpn, h2, h1);
     connector.setPort(SERVER_PORT);
+    connector.setReusePort(false);
     server.addConnector(connector);
+
     ServletContextHandler context = new ServletContextHandler(server, "/", true, false);
     context.addServlet(new ServletHolder(buildServlet()), SERVER_PATH + "/*");
+
     return server;
   }
 
@@ -221,6 +242,8 @@ public class HTTP2JettyClientTest {
           case SERVER_PATH_SET_COOKIES:
             resp.addHeader(HTTPConstants.HEADER_SET_COOKIE,
                 RESPONSE_DATA_COOKIES);
+            resp.addHeader(HTTPConstants.HEADER_SET_COOKIE,
+                RESPONSE_DATA_COOKIES2);
             break;
           case SERVER_PATH_USE_COOKIES:
             String cookie = req.getHeader(HTTPConstants.HEADER_COOKIE);
@@ -233,7 +256,7 @@ public class HTTP2JettyClientTest {
                 "Sat, 25 Sep 2041 00:00:00 GMT");
             break;
           case SERVER_IMAGE:
-            resp.getOutputStream().write(new byte[]{1, 2, 3, 4, 5});
+            resp.getOutputStream().write(new byte[] {1, 2, 3, 4, 5});
           case SERVER_PATH_200_FILE_SENT:
             resp.setContentType("image/png");
             byte[] requestBody = req.getInputStream().readAllBytes();
@@ -320,7 +343,8 @@ public class HTTP2JettyClientTest {
   }
 
   private HTTPSampleResult buildResult(boolean successful, HttpStatus.Code statusCode,
-      HttpFields headers, byte[] requestBody, String requestContentType) {
+                                       HttpFields headers, byte[] requestBody,
+                                       String requestContentType) {
 
     Mutable httpFields = HttpFields.build();
 
@@ -335,7 +359,7 @@ public class HTTP2JettyClientTest {
       httpFields.add(HttpHeader.CONTENT_LENGTH, requestBodyLength);
     }
     String headersString = httpFields.toString().replace("\r\n", "\n");
-    headersString = headersString.substring(0, headersString.length() -1); // remove last \n
+    headersString = headersString.substring(0, headersString.length() - 1); // remove last \n
 
     HTTPSampleResult expected = new HTTPSampleResult();
     expected.setSuccessful(successful);
@@ -353,7 +377,8 @@ public class HTTP2JettyClientTest {
     softly.assertThat(result.getResponseCode()).isEqualTo(expected.getResponseCode());
     softly.assertThat(result.getResponseMessage()).isEqualTo(expected.getResponseMessage());
     softly.assertThat(result.getSentBytes()).isEqualTo(expected.getSentBytes());
-    softly.assertThat(result.getResponseDataAsString()).isEqualTo(expected.getResponseDataAsString());
+    softly.assertThat(result.getResponseDataAsString())
+        .isEqualTo(expected.getResponseDataAsString());
   }
 
   @Test
@@ -441,7 +466,7 @@ public class HTTP2JettyClientTest {
   }
 
   private void validateEmbeddedResourcesWithUrlFilter(HTTPSampleResult result,
-      HTTPSampleResult expected) {
+                                                      HTTPSampleResult expected) {
     SampleResult[] results = result.getSubResults();
     validateResponse(result, expected);
     softly.assertThat(result.getSubResults().length).isEqualTo(1);
@@ -458,7 +483,7 @@ public class HTTP2JettyClientTest {
     sampleWithGet(SERVER_PATH_SET_COOKIES);
     HTTPSampleResult result = sampleWithGet(SERVER_PATH_SET_COOKIES);
     HTTPSampleResult expected = buildOkResult(null, null);
-    expected.setCookies(RESPONSE_DATA_COOKIES);
+    expected.setCookies(RESPONSE_DATA_COOKIES + "; " + RESPONSE_DATA_COOKIES2);
     validateResponse(result, expected);
     softly.assertThat(result.getCookies()).isEqualTo(expected.getCookies());
   }
@@ -498,7 +523,7 @@ public class HTTP2JettyClientTest {
 
   private void configureAuthHandler(Server server, Authenticator authenticator, String mechanism) {
     ConstraintSecurityHandler securityHandler = new ConstraintSecurityHandler();
-    String[] roles = new String[]{"can-access"};
+    String[] roles = new String[] {"can-access"};
     securityHandler.setAuthenticator(authenticator);
     securityHandler.setConstraintMappings(
         Collections.singletonList(buildConstraintMapping(mechanism, roles)));
@@ -567,7 +592,7 @@ public class HTTP2JettyClientTest {
     JMeterUtils.setProperty("httpJettyClient.auth.preemptive", "true");
     configureAuthManager(Mechanism.BASIC);
     HTTPSampleResult expected = buildResult(true, Code.OK,
-        httpFields, null,  null);
+        httpFields, null, null);
     expected.setResponseData(SERVER_RESPONSE, StandardCharsets.UTF_8.name());
     validateResponse(sampleWithGet(), expected);
   }
@@ -609,7 +634,8 @@ public class HTTP2JettyClientTest {
     HTTPSampleResult result = sampleWithGet(SERVER_PATH_302);
     softly.assertThat(result.getResponseCode()).isEqualTo("200");
     softly.assertThat(result.getSubResults().length).isEqualTo(0);
-    softly.assertThat(result.getUrlAsString()).isEqualTo("https://localhost:" + SERVER_PORT + SERVER_PATH_200);
+    softly.assertThat(result.getUrlAsString())
+        .isEqualTo("https://localhost:" + SERVER_PORT + SERVER_PATH_200);
   }
 
   @Test
@@ -750,7 +776,7 @@ public class HTTP2JettyClientTest {
   }
 
   private HTTPSampleResult buildMultipartResult(List<HTTPArgument> args, List<HTTPFileArg> files,
-      HTTPSampleResult result) throws IOException {
+                                                HTTPSampleResult result) throws IOException {
     // Get JettyHttpClientBoundary from result
     String boundary = result.getResponseDataAsString().split("\\r\\n")[0];
     HTTPSampleResult expected = buildOkResult(null, null);
@@ -762,8 +788,9 @@ public class HTTP2JettyClientTest {
   }
 
   private byte[] buildByteArrayFromFilesAndParams(HTTPSampleResult expected,
-      List<HTTPArgument> args,
-      List<HTTPFileArg> files, String boundary) throws IOException {
+                                                  List<HTTPArgument> args,
+                                                  List<HTTPFileArg> files, String boundary)
+      throws IOException {
 
     ByteArrayOutputStream output = new ByteArrayOutputStream();
     String newLine = "\r\n";
@@ -771,7 +798,7 @@ public class HTTP2JettyClientTest {
     // Set body response for Arguments
     args.forEach(httpArgument -> {
       Mutable headerParam = HttpFields.build()
-          .add("Content-Disposition",  "form-data; name=\"" + httpArgument.getEncodedName() + "\"")
+          .add("Content-Disposition", "form-data; name=\"" + httpArgument.getEncodedName() + "\"")
           .add(HttpHeader.CONTENT_TYPE, "null" + "\r\n\r\n" + httpArgument.getEncodedValue());
       try {
         String headerParamWithBoundary = boundary + newLine + headerParam.toString();
@@ -785,7 +812,7 @@ public class HTTP2JettyClientTest {
     files.forEach(file -> {
       String fileName = Paths.get((file.getPath())).getFileName().toString();
       Mutable headerFile = HttpFields.build()
-          .add("Content-Disposition","form-data; name=\"" + file.getParamName()
+          .add("Content-Disposition", "form-data; name=\"" + file.getParamName()
               + "\"; " + "filename=\"" + fileName + "\"")
           .add(HttpHeader.CONTENT_TYPE, file.getMimeType());
       try {

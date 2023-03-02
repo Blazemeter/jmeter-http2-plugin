@@ -31,7 +31,7 @@ public class HTTP2ControllerGUI extends AbstractControllerGui {
 
   @Override
   public String getLabelResource() {
-    throw new IllegalStateException("This shouldn't be called");
+    return null;
   }
 
   private void init() {
