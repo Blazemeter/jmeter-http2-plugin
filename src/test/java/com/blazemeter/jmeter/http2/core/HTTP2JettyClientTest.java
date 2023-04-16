@@ -14,7 +14,6 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.MalformedURLException;
-import java.net.URISyntaxException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -169,13 +168,10 @@ public class HTTP2JettyClientTest {
   }
 
   private String getKeyStorePath() {
-    try {
-      String[] arrPath = getClass().getResource("keystore.p12").toURI()
-          .toString().split(":/");
-      return "/" + arrPath[arrPath.length - 1];
-    } catch (URISyntaxException e) {
-      return null;
-    }
+    return (
+        new File(getClass().getResource("keystore.p12").getFile())
+    ).toPath().toUri().toString().split("file:///")[1];
+
   }
 
   private Server buildServer(SslContextFactory.Server sslContextFactory) {

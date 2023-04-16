@@ -16,6 +16,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -39,6 +40,7 @@ import org.eclipse.jetty.client.HttpClient;
 import org.eclipse.jetty.client.HttpClientTransport;
 import org.eclipse.jetty.client.HttpProxy;
 import org.eclipse.jetty.client.HttpRequest;
+import org.eclipse.jetty.client.MultiplexConnectionPool;
 import org.eclipse.jetty.client.Origin.Address;
 import org.eclipse.jetty.client.api.AuthenticationStore;
 import org.eclipse.jetty.client.api.ContentResponse;
@@ -90,6 +92,10 @@ public class HTTP2JettyClient {
   private int minThreads = 1;
   private int maxRequestsQueuedPerDestination = Short.MAX_VALUE;
   private int maxConnectionsPerDestination = 1;
+
+  private int maxConcurrentPushedStreams = 100;
+  private int maxRequestsPerConnection = 100;
+
   private boolean strictEventOrdering = false;
   private boolean removeIdleDestinations = true;
   private int idleTimeout = 30000;
@@ -107,18 +113,29 @@ public class HTTP2JettyClient {
     QueuedThreadPool queuedThreadPool = new QueuedThreadPool(maxThreads);
     queuedThreadPool.setMinThreads(minThreads);
     queuedThreadPool.setName(name);
+
     clientConnector.setExecutor(queuedThreadPool);
+
     ClientConnectionFactory.Info http11 = HttpClientConnectionFactory.HTTP11;
 
     HTTP2Client http2Client = new HTTP2Client(clientConnector);
     ClientConnectionFactoryOverHTTP2.HTTP2 http2 = new ClientConnectionFactoryOverHTTP2.HTTP2(
         http2Client);
-
+    http2Client.setMaxConcurrentPushedStreams(maxConcurrentPushedStreams);
     http2Client.setUseALPN(true);
+    http2Client.setProtocols(List.of("h2", "h2c", "http/1.1"));
 
     // If ALPN could not negotiate HTTP2, it tries in the order of protocols indicated
     HttpClientTransport transport = new HttpClientTransportDynamic(
         clientConnector, http11, http2);
+
+    transport.setConnectionPoolFactory((destination) -> {
+      MultiplexConnectionPool mcp = new MultiplexConnectionPool(destination,
+          destination.getHttpClient().getMaxConnectionsPerDestination(), destination, 1);
+      mcp.setMaxUsageCount(maxRequestsPerConnection);
+      mcp.setMaxMultiplex(maxRequestsPerConnection);
+      return mcp;
+    });
 
     this.httpClient = new HttpClient(transport);
     this.httpClient.setUserAgentField(null); // No set UA header
@@ -166,6 +183,12 @@ public class HTTP2JettyClient {
     maxRequestsQueuedPerDestination = Integer
         .parseInt(JMeterUtils.getPropDefault("httpJettyClient.maxRequestsQueuedPerDestination",
             String.valueOf(maxRequestsQueuedPerDestination)));
+    maxRequestsPerConnection = Integer
+        .parseInt(JMeterUtils.getPropDefault("httpJettyClient.maxRequestsPerConnection",
+            String.valueOf(maxRequestsPerConnection)));
+    maxConcurrentPushedStreams = Integer
+        .parseInt(JMeterUtils.getPropDefault("httpJettyClient.maxConcurrentPushedStreams",
+            String.valueOf(maxConcurrentPushedStreams)));
     maxConnectionsPerDestination =
         Integer.parseInt(JMeterUtils.getPropDefault("httpJettyClient.maxConnectionsPerDestination",
             String.valueOf(maxConnectionsPerDestination)));
@@ -732,5 +755,6 @@ public class HTTP2JettyClient {
   }
 
 }
+
 
 

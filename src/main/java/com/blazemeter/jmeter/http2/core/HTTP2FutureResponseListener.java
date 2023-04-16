@@ -11,9 +11,12 @@ import org.eclipse.jetty.client.HttpRequest;
 import org.eclipse.jetty.client.api.ContentResponse;
 import org.eclipse.jetty.client.api.Result;
 import org.eclipse.jetty.client.util.BufferingResponseListener;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class HTTP2FutureResponseListener extends BufferingResponseListener
     implements Future<ContentResponse> {
+  private static final Logger LOG = LoggerFactory.getLogger(HTTP2FutureResponseListener.class);
   private final CountDownLatch latch = new CountDownLatch(1);
   private HttpRequest request;
   private ContentResponse response;
@@ -105,9 +108,17 @@ public class HTTP2FutureResponseListener extends BufferingResponseListener
     if (isCancelled()) {
       throw (CancellationException) new CancellationException().initCause(failure);
     }
-    if (failure != null) {
-      throw new ExecutionException(failure);
+    if (failure != null) { // Failure and Response can coexist.
+      if (response == null) { // Only generate exception response when an response not exist
+        throw new ExecutionException(failure);
+      } else {
+        // It is a failure caused after obtaining the response,
+        // analyzing what type of failure it is, and incorporating mechanisms to manage it.
+        // Log as debug, because not is a critical exception.
+        LOG.debug("Unexpected failure on response", failure);
+      }
     }
+
     return response;
   }
 

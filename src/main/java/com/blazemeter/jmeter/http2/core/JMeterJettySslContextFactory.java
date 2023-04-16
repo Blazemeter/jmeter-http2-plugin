@@ -19,6 +19,7 @@ import org.eclipse.jetty.util.ssl.SslContextFactory;
 public class JMeterJettySslContextFactory extends SslContextFactory.Client {
 
   private final JmeterKeyStore keys;
+  private final KeyStore tustStoreKeys;
 
   public JMeterJettySslContextFactory() {
     setTrustAll(true);
@@ -34,6 +35,19 @@ public class JMeterJettySslContextFactory extends SslContextFactory.Client {
     } else {
       keys = null;
     }
+
+    String truststore = System.getProperty("javax.net.ssl.trustStore");
+    if (truststore != null && !truststore.isEmpty()) {
+      setTrustStorePath("file://" + truststore);
+      tustStoreKeys = getTrustStore((JsseSSLManager) SSLManager.getInstance());
+      /*
+       we need to set password after getting truststore since getTrustStore may ask the user for the
+       password.
+      */
+      setTrustStorePassword(System.getProperty("javax.net.ssl.trustStorePassword"));
+    } else {
+      tustStoreKeys = null;
+    }
   }
 
   private JmeterKeyStore getKeyStore(JsseSSLManager sslManager) {
@@ -41,6 +55,16 @@ public class JMeterJettySslContextFactory extends SslContextFactory.Client {
       Method keystoreMethod = SSLManager.class.getDeclaredMethod("getKeyStore");
       keystoreMethod.setAccessible(true);
       return (JmeterKeyStore) keystoreMethod.invoke(sslManager);
+    } catch (InvocationTargetException | IllegalAccessException | NoSuchMethodException e) {
+      throw new RuntimeException(e);
+    }
+  }
+
+  private KeyStore getTrustStore(JsseSSLManager sslManager) {
+    try {
+      Method trustStoreMethod = SSLManager.class.getDeclaredMethod("getTrustStore");
+      trustStoreMethod.setAccessible(true);
+      return (KeyStore) trustStoreMethod.invoke(sslManager);
     } catch (InvocationTargetException | IllegalAccessException | NoSuchMethodException e) {
       throw new RuntimeException(e);
     }
@@ -109,7 +133,7 @@ public class JMeterJettySslContextFactory extends SslContextFactory.Client {
     }
 
     public String chooseEngineClientAlias(String[] keyType, Principal[] issuers,
-        SSLEngine engine) {
+                                          SSLEngine engine) {
       return store.getAlias();
     }
 
