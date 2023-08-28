@@ -10,6 +10,7 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
 import java.net.URLDecoder;
+import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
@@ -72,8 +73,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public class HTTP2JettyClient {
-  public static final MappedByteBufferPool BUFFER_POOL = new MappedByteBufferPool(
-      JMeterUtils.getPropDefault("httpJettyClient.byteBufferPoolFactor", 4));
+
   private static final Logger LOG = LoggerFactory.getLogger(HTTP2JettyClient.class);
   private static final Set<String> SUPPORTED_METHODS = new HashSet<>(Arrays
       .asList(HTTPConstants.GET, HTTPConstants.POST, HTTPConstants.PUT, HTTPConstants.PATCH,
@@ -93,6 +93,7 @@ public class HTTP2JettyClient {
   private int maxRequestsQueuedPerDestination = Short.MAX_VALUE;
   private int maxConnectionsPerDestination = 1;
 
+  private int byteBufferPoolFactor = 4;
   private int maxConcurrentPushedStreams = 100;
   private int maxRequestsPerConnection = 100;
 
@@ -102,10 +103,40 @@ public class HTTP2JettyClient {
   private final HttpClient httpClient;
   private boolean http1UpgradeRequired;
 
+  private MappedByteBufferPool bufferPool;
+
+  private class CustomMappedByteBufferPool extends MappedByteBufferPool {
+
+    CustomMappedByteBufferPool(int byteBufferPoolFactor) {
+      super(byteBufferPoolFactor, -1);
+    }
+
+    @Override
+    public ByteBuffer acquire(int size, boolean direct) {
+      try {
+        return super.acquire(size, direct);
+      } catch (java.lang.OutOfMemoryError e) {
+        return super.acquire(size, false);
+      }
+    }
+
+    @Override
+    protected void releaseMemory(boolean direct) {
+      super.releaseMemory(direct);
+      if (direct) {
+        super.releaseMemory(false); // Force to free also the no direct
+      }
+    }
+  }
+
   public HTTP2JettyClient(boolean http1UpgradeRequired, String name) {
     loadProperties();
+
+    bufferPool = new CustomMappedByteBufferPool(byteBufferPoolFactor);
+
     ClientConnector clientConnector = new ClientConnector();
     clientConnector.setSelectors(1);
+    clientConnector.setConnectBlocking(false);
 
     SslContextFactory.Client sslContextFactory = new JMeterJettySslContextFactory();
     clientConnector.setSslContextFactory(sslContextFactory);
@@ -121,6 +152,7 @@ public class HTTP2JettyClient {
     HTTP2Client http2Client = new HTTP2Client(clientConnector);
     ClientConnectionFactoryOverHTTP2.HTTP2 http2 = new ClientConnectionFactoryOverHTTP2.HTTP2(
         http2Client);
+
     http2Client.setMaxConcurrentPushedStreams(maxConcurrentPushedStreams);
     http2Client.setUseALPN(true);
     http2Client.setProtocols(List.of("h2", "h2c", "http/1.1"));
@@ -139,7 +171,7 @@ public class HTTP2JettyClient {
 
     this.httpClient = new HttpClient(transport);
     this.httpClient.setUserAgentField(null); // No set UA header
-    this.httpClient.setByteBufferPool(HTTP2JettyClient.BUFFER_POOL);
+    this.httpClient.setByteBufferPool(this.bufferPool);
     this.httpClient.setMaxRequestsQueuedPerDestination(maxRequestsQueuedPerDestination);
     this.httpClient.setMaxConnectionsPerDestination(maxConnectionsPerDestination);
     this.httpClient.setStrictEventOrdering(strictEventOrdering);
@@ -157,8 +189,16 @@ public class HTTP2JettyClient {
     this(false, "HttpClient");
   }
 
-  public static void clearBufferPool() {
-    HTTP2JettyClient.BUFFER_POOL.clear();
+  public void clearBufferPool() {
+    bufferPool.clear();
+  }
+
+  public MappedByteBufferPool getBufferPool() {
+    return bufferPool;
+  }
+
+  public HttpClient getHttpClient() {
+    return httpClient;
   }
 
   public int getMaxBufferSize() {
@@ -171,6 +211,8 @@ public class HTTP2JettyClient {
 
   public void loadProperties() {
     requestTimeout = JMeterUtils.getPropDefault("HTTPSampler.response_timeout", 0);
+    byteBufferPoolFactor =
+        JMeterUtils.getPropDefault("httpJettyClient.byteBufferPoolFactor", byteBufferPoolFactor);
     maxBufferSize =
         Integer.parseInt(JMeterUtils.getPropDefault("httpJettyClient.maxBufferSize",
             String.valueOf(2 * 1024 * 1024)));
@@ -190,8 +232,9 @@ public class HTTP2JettyClient {
         .parseInt(JMeterUtils.getPropDefault("httpJettyClient.maxConcurrentPushedStreams",
             String.valueOf(maxConcurrentPushedStreams)));
     maxConnectionsPerDestination =
-        Integer.parseInt(JMeterUtils.getPropDefault("httpJettyClient.maxConnectionsPerDestination",
-            String.valueOf(maxConnectionsPerDestination)));
+        Integer.parseInt(
+            JMeterUtils.getPropDefault("httpJettyClient.maxConnectionsPerDestination",
+                String.valueOf(maxConnectionsPerDestination)));
     strictEventOrdering =
         Boolean.parseBoolean(JMeterUtils.getPropDefault("httpJettyClient.strictEventOrdering",
             String.valueOf(strictEventOrdering)));
@@ -212,11 +255,12 @@ public class HTTP2JettyClient {
 
   public void stop() throws Exception {
     httpClient.stop();
+    clearBufferPool();
   }
 
   private void samplePrepareRequest(HttpRequest request,
-                                    HTTP2Sampler sampler,
-                                    HTTPSampleResult result) throws IOException {
+      HTTP2Sampler sampler,
+      HTTPSampleResult result) throws IOException {
 
     URL url = result.getURL();
     setTimeouts(sampler, request);
@@ -240,7 +284,7 @@ public class HTTP2JettyClient {
   }
 
   private boolean requestInCache(JettyCacheManager cacheManager,
-                                 HttpRequest request)
+      HttpRequest request)
       throws URISyntaxException, MalformedURLException {
     URL url = request.getURI().toURL();
     String method = request.getMethod();
@@ -255,8 +299,9 @@ public class HTTP2JettyClient {
   }
 
   private void postContentResponse(HTTP2Sampler sampler, HttpRequest request,
-                                   HTTPSampleResult result,
-                                   ContentResponse contentResponse, JettyCacheManager cacheManager)
+      HTTPSampleResult result,
+      ContentResponse contentResponse,
+      JettyCacheManager cacheManager)
       throws IOException {
     http1UpgradeRequired = contentResponse.getVersion() != HttpVersion.HTTP_2;
     result.setRequestHeaders(buildHeadersString(request.getHeaders()));
@@ -270,8 +315,8 @@ public class HTTP2JettyClient {
   }
 
   public HttpRequest sampleAsync(HTTP2Sampler sampler,
-                                 HTTPSampleResult result,
-                                 HTTP2FutureResponseListener listener)
+      HTTPSampleResult result,
+      HTTP2FutureResponseListener listener)
       throws Exception {
     errorWhenNotSupportedMethod(result.getHTTPMethod());
     setAuthManager(sampler);
@@ -292,7 +337,7 @@ public class HTTP2JettyClient {
   }
 
   public HTTPSampleResult sample(HTTP2Sampler sampler, HTTPSampleResult result,
-                                 boolean areFollowingRedirect, int depth) throws Exception {
+      boolean areFollowingRedirect, int depth) throws Exception {
 
     errorWhenNotSupportedMethod(result.getHTTPMethod());
     setAuthManager(sampler);
@@ -300,7 +345,8 @@ public class HTTP2JettyClient {
 
     samplePrepareRequest(request, sampler, result);
 
-    JettyCacheManager cacheManager = JettyCacheManager.fromCacheManager(sampler.getCacheManager());
+    JettyCacheManager cacheManager =
+        JettyCacheManager.fromCacheManager(sampler.getCacheManager());
     if (requestInCache(cacheManager, request)) {
       return cacheManager.buildCachedSampleResult(result);
     }
@@ -314,12 +360,13 @@ public class HTTP2JettyClient {
   }
 
   public HTTPSampleResult sampleFromListener(HTTP2Sampler sampler, HTTPSampleResult result,
-                                             boolean areFollowingRedirect, int depth,
-                                             HTTP2FutureResponseListener listener
+      boolean areFollowingRedirect, int depth,
+      HTTP2FutureResponseListener listener
   ) throws Exception {
 
     ContentResponse contentResponse = getContent(listener);
-    JettyCacheManager cacheManager = JettyCacheManager.fromCacheManager(sampler.getCacheManager());
+    JettyCacheManager cacheManager =
+        JettyCacheManager.fromCacheManager(sampler.getCacheManager());
     HttpRequest request = listener.getRequest();
     postContentResponse(sampler, request, result, contentResponse, cacheManager);
     result.setEndTime(listener.getResponseEnd());
@@ -405,8 +452,10 @@ public class HTTP2JettyClient {
       AbstractAuthentication authentication =
           authName.equals(AuthManager.Mechanism.BASIC.name()) ? new BasicAuthentication(
               URI.create(auth.getURL()), auth.getRealm(), auth.getUser(), auth.getPass())
-              : new DigestAuthentication(URI.create(auth.getURL()), auth.getRealm(), auth.getUser(),
-              auth.getPass());
+              :
+                  new DigestAuthentication(URI.create(auth.getURL()), auth.getRealm(),
+                      auth.getUser(),
+                      auth.getPass());
       authenticationStore.addAuthentication(authentication);
     }
   }
@@ -441,6 +490,8 @@ public class HTTP2JettyClient {
               .equalsIgnoreCase(header.getName())))
           .forEach(header -> request.addHeader(createJettyHeader(header, url)));
     }
+    //Should review this implementation for solely HTTP1 connections.
+    //Everytime a HTTP1 request is sent it will include headers for upgrade.
     if (http1UpgradeRequired) {
       Mutable headers = ((Mutable) request.getHeaders());
       addHeaderIfMissing(HttpHeader.UPGRADE, "h2c", headers);
@@ -499,7 +550,11 @@ public class HTTP2JettyClient {
   private void setProxy(String host, int port, String protocol) {
     HttpProxy proxy =
         new HttpProxy(new Address(host, port), HTTPConstants.PROTOCOL_HTTPS.equals(protocol));
-    httpClient.getProxyConfiguration().getProxies().add(proxy);
+    // It is not allowed to change the running proxy.
+    // Only the first assigned is used.
+    if (httpClient.getProxyConfiguration().getProxies().isEmpty()) {
+      httpClient.getProxyConfiguration().getProxies().add(proxy);
+    }
   }
 
   private void setBody(HttpRequest request, HTTP2Sampler sampler, HTTPSampleResult result)
@@ -571,8 +626,9 @@ public class HTTP2JettyClient {
             HTTPArgument arg = (HTTPArgument) jMeterProperty.getObjectValue();
             postBody.append(arg.getEncodedValue(contentCharset.name()));
           }
-          Content requestContent = new StringRequestContent(contentTypeHeader, postBody.toString(),
-              contentCharset);
+          Content requestContent =
+              new StringRequestContent(contentTypeHeader, postBody.toString(),
+                  contentCharset);
           request.body(requestContent);
         } else if (isMethodWithBody(sampler.getMethod())) {
           Fields fields = new Fields();
@@ -611,7 +667,7 @@ public class HTTP2JettyClient {
   }
 
   private String buildArgumentPartRequestBody(HTTPArgument arg, Charset contentCharset,
-                                              String contentEncoding, String boundary)
+      String contentEncoding, String boundary)
       throws UnsupportedEncodingException {
     String disposition = "name=\"" + arg.getEncodedName() + "\"";
     String contentType = arg.getContentType() + "; charset=" + contentCharset.name();
@@ -621,7 +677,7 @@ public class HTTP2JettyClient {
   }
 
   private String buildPartBody(String boundary, String disposition, String contentType,
-                               String encoding, String value) {
+      String encoding, String value) {
     return MULTI_PART_SEPARATOR + boundary + LINE_SEPARATOR +
         HttpFields.build()
             .add("Content-Disposition", "form-data; " + disposition)
@@ -669,7 +725,7 @@ public class HTTP2JettyClient {
   }
 
   private void setResultContentResponse(HTTPSampleResult result, ContentResponse contentResponse,
-                                        HTTP2Sampler sampler) throws IOException {
+      HTTP2Sampler sampler) throws IOException {
     String contentType = contentResponse.getHeaders() != null
         ? contentResponse.getHeaders().get(HTTPConstants.HEADER_CONTENT_TYPE)
         : null;
@@ -693,7 +749,8 @@ public class HTTP2JettyClient {
     String responseMessage = contentResponse.getReason() != null ? contentResponse.getReason()
         : HttpStatus.getMessage(contentResponse.getStatus());
     result.setResponseMessage(responseMessage);
-    result.setSuccessful(contentResponse.getStatus() >= 200 && contentResponse.getStatus() <= 399);
+    result.setSuccessful(
+        contentResponse.getStatus() >= 200 && contentResponse.getStatus() <= 399);
     result.setResponseHeaders(extractResponseHeaders(contentResponse, responseMessage));
     if (result.isRedirect()) {
       result.setRedirectLocation(extractRedirectLocation(contentResponse));
@@ -712,7 +769,7 @@ public class HTTP2JettyClient {
   }
 
   private String extractResponseHeaders(ContentResponse contentResponse,
-                                        String message) {
+      String message) {
     return contentResponse.getVersion() + " " + contentResponse.getStatus() + " " + message + "\n"
         + buildHeadersString(contentResponse.getHeaders());
   }
@@ -728,7 +785,7 @@ public class HTTP2JettyClient {
   }
 
   private void saveCookiesInCookieManager(ContentResponse response, URL url,
-                                          CookieManager cookieManager) {
+      CookieManager cookieManager) {
     if (cookieManager == null) {
       return;
     }

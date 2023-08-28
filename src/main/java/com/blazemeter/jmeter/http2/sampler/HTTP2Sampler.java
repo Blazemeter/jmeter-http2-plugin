@@ -133,12 +133,18 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
     this.syncRequest = sync;
   }
 
-  private boolean isSyncRequest() {
+  @VisibleForTesting
+  public boolean isSyncRequest() {
     return this.syncRequest;
   }
 
   public HTTP2FutureResponseListener geFutureResponseListener() {
     return asyncListener;
+  }
+
+  @VisibleForTesting
+  public void setFutureResponseListener(HTTP2FutureResponseListener listener) {
+    this.asyncListener = listener;
   }
 
   public void setHttp1UpgradeEnabled(boolean http1UpgradeSelected) {
@@ -634,7 +640,6 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
   @Override
   public void testEnded() {
     super.testEnded();
-    HTTP2JettyClient.clearBufferPool();
     System.gc(); // Force free memory
   }
 

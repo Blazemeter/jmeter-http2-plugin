@@ -9,6 +9,7 @@ import java.util.Objects;
 import org.apache.jmeter.control.GenericController;
 import org.apache.jmeter.control.NextIsNullException;
 import org.apache.jmeter.testelement.TestElement;
+import org.apache.jmeter.util.JMeterUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -16,11 +17,16 @@ public class HTTP2Controller extends GenericController implements Serializable {
 
   private static final Logger LOG = LoggerFactory.getLogger(HTTP2Controller.class);
 
+  private int maxConcurrentAsyncInController = 1000;
+
   private transient List<HTTP2Sampler> http2SamplesSync = new ArrayList<>();
   private transient List<TestElement> subControllersAndSamplersBackup = new ArrayList();
 
   public HTTP2Controller() {
     super();
+    maxConcurrentAsyncInController = Integer
+        .parseInt(JMeterUtils.getPropDefault("httpJettyClient.maxConcurrentAsyncInController",
+            String.valueOf(maxConcurrentAsyncInController)));
   }
 
   private HTTP2Sampler waitForDoneHTTP2() {
@@ -30,7 +36,7 @@ public class HTTP2Controller extends GenericController implements Serializable {
       HTTP2Sampler http2Sam = http2SamplesSync.get(0);
       HTTP2FutureResponseListener http2FListener =
           http2Sam.geFutureResponseListener();
-      while (!interrupted) {
+      while (!interrupted && (http2FListener != null)) {
         if (http2FListener.isDone() || http2FListener.isCancelled()) {
           String urlProcesed = http2FListener.getRequest().getURI().toString();
           LOG.debug("HTTP2 Future Finished, retrying the sample with that data {}", urlProcesed);
@@ -80,6 +86,14 @@ public class HTTP2Controller extends GenericController implements Serializable {
       }
     }
 
+    if (http2SamplesSync.size() > maxConcurrentAsyncInController) {
+      HTTP2Sampler http2samDone = waitForDoneHTTP2();
+      if (!Objects.isNull(http2samDone)) {
+        subControllersAndSamplers.add(current, http2samDone);
+        return http2samDone;
+      }
+    }
+
     if (current < subControllersAndSamplers.size()) {
       TestElement sam = subControllersAndSamplers.get(current);
       if (sam instanceof HTTP2Sampler) {
@@ -88,7 +102,7 @@ public class HTTP2Controller extends GenericController implements Serializable {
         LOG.debug("Convert http2 sample to Async and add to wait list");
         http2SamplesSync.add(http2Sam);
         return http2Sam;
-      } else { // Is a other type of element, use that for checkpoint mark
+      } else { // Another type of element, use that for checkpoint mark
         HTTP2Sampler http2sam = waitForDoneHTTP2();
         if (Objects.isNull(http2sam)) {
           return sam;
@@ -105,10 +119,10 @@ public class HTTP2Controller extends GenericController implements Serializable {
         subControllersAndSamplers.add(current, http2samDone);
         return http2samDone;
       }
-    }
-    if (subControllersAndSamplers.isEmpty()) {
-      setDone(true);
-      throw new NextIsNullException();
+      if (http2SamplesSync.isEmpty()) {
+        setDone(true);
+        throw new NextIsNullException();
+      }
     }
     return null;
   }
