@@ -5,6 +5,7 @@ import java.awt.Component;
 import java.awt.Container;
 import java.awt.Dimension;
 import java.util.Arrays;
+import java.util.function.Predicate;
 import javax.swing.BorderFactory;
 import javax.swing.JCheckBox;
 import javax.swing.JLabel;
@@ -22,6 +23,8 @@ import org.apache.jorphan.gui.JLabeledTextField;
 
 public class HTTP2SamplerPanel extends JPanel {
 
+  private static final String JBOOLEAN_PROPERTY_EDITOR_CLASS_NAME = "org.apache.jmeter.gui"
+      + ".JBooleanPropertyEditor";
   private UrlConfigGui urlConfigGui;
   private final JTextField connectTimeOutField = new JTextField(10);
   private final JTextField responseTimeOutField = new JTextField(10);
@@ -66,8 +69,7 @@ public class HTTP2SamplerPanel extends JPanel {
   }
 
   private JPanel findOptionPanel(Container c) {
-    if (c instanceof JPanel && c.getComponentCount() == 5 && Arrays.stream(c.getComponents())
-        .allMatch(ch -> ch instanceof JCheckBox)) {
+    if (isContainingKeepAliveCheck(c)) {
       return (JPanel) c;
     }
     JPanel ret = null;
@@ -81,6 +83,30 @@ public class HTTP2SamplerPanel extends JPanel {
       i++;
     }
     return ret;
+  }
+
+  private boolean isContainingKeepAliveCheck(Container c) {
+    if (!(c instanceof JPanel) || c.getComponentCount() != 5) {
+      return false;
+    }
+    Predicate<Predicate<? super Component>> existsInPanel =
+        (p) -> Arrays.stream(c.getComponents()).allMatch(p);
+    boolean isJMeterV56 = JMeterUtils.getJMeterVersion().startsWith("5.6");
+
+    if (isJMeterV56 && existsInPanel.test((component -> component.getClass().getName().equals(
+        JBOOLEAN_PROPERTY_EDITOR_CLASS_NAME) || component instanceof JCheckBox))) {
+      /*
+        Since JMeter v5.6.2 the UrlConfigGUI changed to:
+          autoRedirects: JCheckBox
+          followRedirects: JCheckBox
+          useKeepAlive: JBooleanPropertyEditor  <--
+          useMultipart: JBooleanPropertyEditor
+          useCompatibleMultiPartMode: JBooleanPropertyEditor
+       */
+      return true;
+    }
+
+    return !isJMeterV56 && existsInPanel.test((checkBox) -> checkBox instanceof JCheckBox);
   }
 
   private Border makeBorder() {
