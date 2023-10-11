@@ -120,8 +120,7 @@ public class HTTP2Controller extends GenericController implements Serializable {
         return http2samDone;
       }
       if (http2SamplesSync.isEmpty()) {
-        setDone(true);
-        throw new NextIsNullException();
+        LOG.debug("No more elements!");
       }
     }
     return null;
