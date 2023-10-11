@@ -32,6 +32,7 @@ import org.apache.jmeter.protocol.http.sampler.HTTPSamplerBase;
 import org.apache.jmeter.protocol.http.util.ConversionUtils;
 import org.apache.jmeter.protocol.http.util.HTTPConstants;
 import org.apache.jmeter.samplers.SampleResult;
+import org.apache.jmeter.testelement.TestElement;
 import org.apache.jmeter.testelement.ThreadListener;
 import org.apache.jmeter.threads.JMeterContextService;
 import org.apache.jmeter.threads.JMeterVariables;
@@ -41,7 +42,6 @@ import org.apache.oro.text.MalformedCachePatternException;
 import org.apache.oro.text.regex.Pattern;
 import org.apache.oro.text.regex.Perl5Matcher;
 import org.eclipse.jetty.client.HttpRequest;
-import org.eclipse.jetty.client.api.Result;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -391,6 +391,8 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
     boolean interrupted = false;
     HTTPSampleResult res = pRes;
     Iterator<URL> urls = null;
+    List<TestElement> samplers = new ArrayList();
+
     try {
       final byte[] responseData = res.getResponseData();
       if (responseData.length > 0) {  // Bug 39205
@@ -434,8 +436,6 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
         throw ex;
       }
       // For concurrent get resources
-      final List<URL> urlList = new ArrayList<>();
-
       int maxConcurrentDownloads = CONCURRENT_POOL_SIZE; // init with default value
       boolean isConcurrentDwn = isConcurrentDwn();
 
@@ -489,14 +489,40 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
               continue;
             }
 
+            HTTP2Sampler h2s = new HTTP2Sampler();
+            h2s.setMethod("GET");
+            h2s.setSyncRequest(!isConcurrentDwn);
+            h2s.setProtocol(url.getProtocol());
+            h2s.setDomain(url.getHost());
+            h2s.setPort(url.getPort());
+            h2s.setHttp1UpgradeEnabled(isHttp1UpgradeEnabled());
+            h2s.setFollowRedirects(true);
+            h2s.setAutoRedirects(true);
+            if (url.getQuery() == null) {
+              h2s.setPath(url.getPath());
+            } else {
+              h2s.setPath(url.getPath() + url.getQuery());
+            }
+
+            // Set proxy
+            h2s.setProxyHost(this.getProxyHost());
+            h2s.setProxyPortInt(String.valueOf(this.getProxyPortInt()));
+            h2s.setProxyScheme(this.getProxyScheme());
+            h2s.setProxyUser(this.getProxyUser());
+            h2s.setProxyPass(this.getProxyPass());
+            // Set Managers
+            h2s.setHeaderManager(getHeaderManager());
+            h2s.setAuthManager(this.getAuthManager());
+            h2s.setCookieManager(this.getCookieManager());
+
+            HTTPSampleResult binRes = h2s.sample(
+                url, HTTPConstants.GET, false, frameDepth + 1);
+
             if (isConcurrentDwn) {
               // if concurrent download emb. resources, add to a list for async gets later
-              urlList.add(url);
-
+              samplers.add(h2s);
             } else {
               // default: serial download embedded resources
-              HTTPSampleResult binRes = sample(
-                  url, HTTPConstants.GET, false, frameDepth + 1);
               subres.addSubResult(binRes);
               setParentSampleSuccess(subres,
                   subres.isSuccessful() && (binRes == null || binRes.isSuccessful()));
@@ -516,87 +542,58 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
           break;
         }
       }
+      int embeddedTimeout = 0; // Use the same timeout for response
+      if (this.getResponseTimeout() > 0) {
+        embeddedTimeout = this.getResponseTimeout();
+      } else {
+        embeddedTimeout = this.requestTimeout;
+      }
+      long start = System.currentTimeMillis();
 
       // IF for download concurrent embedded resources
-      if (isConcurrentDwn && !urlList.isEmpty()) {
-        final int[] processedUrls = {0};
+      if (isConcurrentDwn && !samplers.isEmpty()) {
 
-        for (URL url : urlList) {
-          try {
-            String method = HTTPConstants.GET;
-            HTTPSampleResult result = buildResult(url, method);
+        while (!samplers.isEmpty()) {
 
-            HTTP2FutureResponseListener listener =
-                new HTTP2FutureResponseListener(this.maxBufferSize) {
-                  @Override
-                  public void onComplete(Result compResult) {
-                    super.onComplete(compResult);
+          HTTP2Sampler http2Sam = (HTTP2Sampler) samplers.get(0);
 
-                    String urlProcessing = this.getRequest().getURI().toString();
+          HTTP2FutureResponseListener http2FListener =
+              http2Sam.geFutureResponseListener();
+          while (!interrupted && (http2FListener != null)) {
+            if (http2FListener.isDone() || http2FListener.isCancelled()) {
+              String urlProcesed = http2FListener.getRequest().getURI().toString();
+              LOG.debug("HTTP2 Future Finished, retrying the sample with that data {}",
+                  urlProcesed);
 
-                    if (this.isDone() || this.isCancelled()) {
-                      try {
-                        HTTPSampleResult binRes = sampleFromListener(
-                            result, false, frameDepth + 1, this);
-                        subres.addSubResult(binRes);
-                        setParentSampleSuccess(subres,
-                            subres.isSuccessful() && (binRes == null
-                                || binRes.isSuccessful()));
+              HTTPSampleResult binRes = (HTTPSampleResult) http2Sam.sample();
+              samplers.remove(0); // Remove the sample
+              LOG.debug("OnComplete " + urlProcesed);
 
-                      } catch (Exception e) {
-                        subres.addSubResult(errorResult(new Exception(
-                                "Error downloading URI:" + urlProcessing, e),
-                            new HTTPSampleResult(subres)));
-                        setParentSampleSuccess(subres, false);
-                      }
-                    }
-                    processedUrls[0] += 1;
-                  }
-                };
-
-            HttpRequest req = sampleAsync(result, listener);
-            listener.setRequest(req);
-            req.send(listener); // Execute the get in async way
-
-          } catch (Exception ex) {
-            subres.addSubResult(errorResult(new Exception(
-                    "Error downloading URI:" + url, ex),
-                new HTTPSampleResult(subres)));
-            setParentSampleSuccess(subres, false);
-          }
-        }
-
-        // Wait to finish the process of all urls
-        int totUrls = urlList.size();
-        // TODO: We need to implement a timeout for all the embedded resource process?
-        int embeddedTimeout = 0; // Use the same timeout for response
-        if (this.getResponseTimeout() > 0) {
-          embeddedTimeout = this.getResponseTimeout();
-        } else {
-          embeddedTimeout = this.requestTimeout;
-        }
-        long start = System.currentTimeMillis();
-        while (!interrupted) {
-          if (processedUrls[0] >= totUrls) {
-            break;
-          }
-          try {
-            Thread.sleep(10);
-          } catch (InterruptedException e) {
-            interrupted = true;
-          }
-          if (embeddedTimeout > 0 && (System.currentTimeMillis() - start) >= embeddedTimeout) {
-            // TODO: This doesn't stop the async execution, only allow to don't lock execution
-            subres.addSubResult(errorResult(new Exception(
-                    "Error downloading embedded resources, execution timeout"),
-                new HTTPSampleResult(subres)));
-            setParentSampleSuccess(subres, false);
-            break;
+              subres.addSubResult(binRes);
+              setParentSampleSuccess(subres,
+                  subres.isSuccessful() && (binRes == null
+                      || binRes.isSuccessful()));
+              break;
+            }
+            try {
+              Thread.sleep(10);
+            } catch (InterruptedException e) {
+              samplers.clear();
+              interrupted = true;
+            }
+            if (embeddedTimeout > 0 && (System.currentTimeMillis() - start) >= embeddedTimeout) {
+              // TODO: This doesn't stop the async execution, only allow to don't lock execution
+              LOG.debug("Timeout on Wait!");
+              subres.addSubResult(errorResult(new Exception(
+                      "Error downloading embedded resources, execution timeout"),
+                  new HTTPSampleResult(subres)));
+              setParentSampleSuccess(subres, false);
+              break;
+            }
           }
         }
       }
     }
-
     setSyncRequest(orgSyncRequest); // Restore the default setting to main request
 
     if (interrupted) {

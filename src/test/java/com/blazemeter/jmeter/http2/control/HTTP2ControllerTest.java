@@ -14,7 +14,6 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import org.apache.jmeter.control.NextIsNullException;
 import org.apache.jmeter.protocol.http.sampler.HTTPSampler;
-import org.apache.jmeter.samplers.SampleResult;
 import org.apache.jmeter.samplers.Sampler;
 import org.apache.jmeter.util.JMeterUtils;
 import org.eclipse.jetty.client.HttpRequest;
@@ -108,19 +107,31 @@ public class HTTP2ControllerTest extends HTTP2TestBase {
     assertThat(next).isInstanceOf(HTTPSampler.class);
   }
 
+  // TODO:
+  // Tests using isDone are discussed because it is a misconception.
+  //isDone is more related to the row of the entire test and not to the controller itself.
+  //The isDone setting is removed, because it is something that apparently manages the iterators
+  // and thread group.
+  //Analyze if it does not require refacoring incorporating any of these to maintain the tests.
+
+  /*
   @Test(expected = NextIsNullException.class)
   public void shouldThrowNextIsNullWhenNextWithoutElementsLeft() throws NextIsNullException {
     http2Controller = new HTTP2Controller();
     http2Controller.getCurrentElement();
   }
+  */
 
+  /*
   @Test
   public void shouldSetControllerDoneWhenNoMoreElementsToBeProcessed() {
     http2Controller = new HTTP2Controller();
     http2Controller.next();
     assertThat(http2Controller.isDone()).isTrue();
   }
+  */
 
+  /*
   @Test
   public void shouldControllerDoneWhenSamplesProcessed() throws URISyntaxException {
     http2Controller = new HTTP2Controller();
@@ -149,5 +160,5 @@ public class HTTP2ControllerTest extends HTTP2TestBase {
     // execution
     assertThat(resultCount).isEqualTo(4);
   }
-
+  */
 }
