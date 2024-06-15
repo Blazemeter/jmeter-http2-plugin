@@ -5,6 +5,7 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UnsupportedEncodingException;
+import java.net.HttpCookie;
 import java.net.MalformedURLException;
 import java.net.URI;
 import java.net.URISyntaxException;
@@ -15,14 +16,17 @@ import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.jmeter.protocol.http.control.AuthManager;
@@ -541,11 +545,42 @@ public class HTTP2JettyClient {
     if (cookieManager == null) {
       return null;
     }
+    
+    if (cookieManager.getCookieCount() == 0 && 
+        httpClient.getCookieStore().getCookies().size() > 0) {
+      httpClient.getCookieStore().removeAll();
+      LOG.debug("Clean Jetty cookie manager as Jmeter's one is empty");
+    }
+    Map<String, HttpCookie> jettyCookieMap =
+            httpClient.getCookieStore().get(request.getURI()).stream()
+            .collect(Collectors.toMap(HttpCookie::getName, httpCookie -> httpCookie));
+
+    //Iterate over Jmeter's cookies and remove such from Jetty's cookie if is present there
+    cookieManager.getCookies().forEach(e -> {
+      HttpCookie jettyCookie = jettyCookieMap.get(e.getName());
+      if (jettyCookie != null) {
+        LOG.debug("Remove cookie '{}' from Jetty cookie manager as it exist in a Jmeter one",
+            jettyCookie.getName());
+        httpClient.getCookieStore().remove(request.getURI(), jettyCookie);
+      }
+    });
+
     String cookieString = cookieManager.getCookieHeaderForURL(url);
+    LOG.trace("Jmeter's cookieString: "+cookieString);
     if (cookieString != null) {
       HttpField cookieHeader = new HttpField(HTTPConstants.HEADER_COOKIE, cookieString);
       request.addHeader(cookieHeader);
     }
+    
+    //Didn't expect any cookie here but better to have this check. Iterate over Jetty's cookies and add to cookieString if something remain.
+    List<String> cookieStringFull = new ArrayList<>();
+    cookieStringFull.add(cookieString);
+    httpClient.getCookieStore().get(request.getURI()).forEach(e -> {
+      cookieStringFull.add(e.toString());
+      LOG.info("Cookie exists in Jetty's Cookie manager but absent in Jmeter's one: "+e.toString());
+    });
+    cookieString = String.join("; ", cookieStringFull);
+    LOG.trace("Updated cookieString: "+cookieString);
     return cookieString;
   }
 
