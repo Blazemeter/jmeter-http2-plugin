@@ -11,8 +11,8 @@ import javax.swing.JOptionPane;
 public class Installer {
 
   private static final List<String> OLD_DEPENDENCIES_PREFIXES = Arrays.asList(
-      "jmeter-plugins-cmn-jmeter", "jetty-client", "jetty-util", "jetty-http", "jetty-io",
-      "jetty-alpn-client", "http2-client", "http2-common", "http2-hpack", "jetty-osgi-alpn");
+      "jetty-client", "jetty-util", "jetty-http", "jetty-io", "jetty-alpn-client",
+      "http2-client", "http2-common", "http2-hpack", "jetty-osgi-alpn");
   private static final int JAVA_VERSION_REQUIRED = 11;
   private static final int NEW_DEPENDENCY_MAJOR_VERSION = 11;
 

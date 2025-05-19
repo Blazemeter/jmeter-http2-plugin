@@ -1,5 +1,6 @@
 package com.blazemeter.jmeter.http2.sampler.gui;
 
+import com.blazemeter.jmeter.commons.BlazemeterLabsLogo;
 import com.blazemeter.jmeter.http2.sampler.HTTP2Sampler;
 import com.blazemeter.jmeter.http2.sampler.HTTP2SamplerConverter;
 import com.thoughtworks.xstream.XStream;
@@ -17,6 +18,8 @@ import org.slf4j.LoggerFactory;
 public class HTTP2SamplerGui extends AbstractSamplerGui {
 
   private static final Logger LOG = LoggerFactory.getLogger(HTTP2SamplerGui.class);
+  private static final String PLUGIN_REPOSITORY_URL = "https://github.com/Blazemeter/jmeter-http2"
+      + "-plugin";
   private final HTTP2SamplerPanel http2SamplerPanel;
 
   static {
@@ -40,7 +43,7 @@ public class HTTP2SamplerGui extends AbstractSamplerGui {
 
     add(makeTitlePanel(), BorderLayout.NORTH);
     add(http2SamplerPanel, BorderLayout.CENTER);
-    add(new BlazemeterLabsLogo(), BorderLayout.PAGE_END);
+    add(new BlazemeterLabsLogo(PLUGIN_REPOSITORY_URL), BorderLayout.PAGE_END);
   }
 
   @Override
@@ -57,6 +60,7 @@ public class HTTP2SamplerGui extends AbstractSamplerGui {
   public TestElement createTestElement() {
     HTTP2Sampler http2Sampler = new HTTP2Sampler();
     configureTestElement(http2Sampler);
+    http2Sampler.setConcurrentDwn(true);
     return http2Sampler;
   }
 
