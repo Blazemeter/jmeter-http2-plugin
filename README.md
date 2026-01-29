@@ -8,7 +8,7 @@
 
 This plugin provides an HTTP2 Sampler and a HTTP2 Controller in order to test you HTTP/2 endpoint.
 
-_**IMPORTANT:** Java 11 required_
+_**IMPORTANT:** Java 17 required_
 
 ## To create your test:
 
@@ -116,6 +116,58 @@ If you would like to download embedded resources in a synchronous way choose "Pa
 ## Properties
 This document describes JMeter properties. The properties present in jmeter.properties also should be set in the user.properties file. These properties are only taken into account after restarting JMeter as they are usually resolved when the class is loaded.
 
+### Protocol Profiles
+You can select a profile that controls default protocol behavior. Per-property overrides always
+take precedence over the profile defaults.
+
+- **browser-like** (default)
+- **browser-like-custom**
+- **browser-compatible**
+- **legacy**
+
+Profile selection:
+
+| **Attribute**                       | **Description**                                       | **Default**     |
+|-------------------------------------|-------------------------------------------------------|-----------------|
+| **httpJettyClient.profile**         | Protocol behavior profile                             | browser-like    |
+
+Profile defaults summary:
+
+| **Profile**            | **HTTP/3** | **HTTP/2** | **HTTP/1.1** | **ALPN** | **Happy Eyeballs** |
+|------------------------|-----------|-----------|-------------|---------|--------------------|
+| browser-like           | on        | on        | on          | on      | 250 ms             |
+| browser-like-custom    | on        | on        | on          | on      | 250 ms             |
+| browser-compatible     | on        | on        | on          | on      | off (0 ms)         |
+| legacy                 | off       | off       | on          | off     | off (0 ms)         |
+
+Notes:
+- HTTP/3 is discovered via Alt-Svc, not ALPN.
+- Happy Eyeballs is only used for HTTP/3 (H3 + H2).
+
+### UI to Sampler Mapping
+The HTTP/2 Sampler UI stores settings as per-sampler properties. These values override profile
+defaults at runtime. Only **Browser-like (Custom)** persists individual toggles; other profiles
+store only the selected profile and use defaults.
+
+| **UI Control**                                   | **Sampler Property**                      |
+|--------------------------------------------------|-------------------------------------------|
+| Client Behavior → Profile                        | `HTTP2Sampler.profile`                    |
+| Protocols → Enable HTTP/3                        | `HTTP2Sampler.enableHttp3`                |
+| Protocols → Enable HTTP/2                        | `HTTP2Sampler.enableHttp2`                |
+| Protocols → Enable HTTP/1.1                      | `HTTP2Sampler.enableHttp1`                |
+| Protocols → Enable ALPN                          | `HTTP2Sampler.alpnEnabled`                |
+| Fallback → Automatic fallback                    | `HTTP2Sampler.fallbackEnabled`            |
+| Fallback → protocol_error fallback               | `HTTP2Sampler.protocolErrorFallbackEnabled` |
+| Cache → Alt-Svc cache                             | `HTTP2Sampler.altSvcCacheEnabled`         |
+| Cache → HTTP/1.1-only cache                       | `HTTP2Sampler.http1OnlyCacheEnabled`      |
+| Cache → H2C cache                                 | `HTTP2Sampler.h2cCacheEnabled`            |
+| Cache → HTTP/2 prior knowledge (cleartext)        | `HTTP2Sampler.http2PriorKnowledge`        |
+| Timing → Happy Eyeballs delay (ms)                | `HTTP2Sampler.happyEyeballsDelayMs`       |
+| Timing → HTTP/3 broken cooldown (ms)              | `HTTP2Sampler.http3BrokenCooldownMs`      |
+| Timing → HTTP/1.1-only cache TTL (ms)             | `HTTP2Sampler.http1OnlyCooldownMs`        |
+| Timing → H2C cache TTL (ms)                       | `HTTP2Sampler.h2cCacheTtlMs`              |
+| H2C Upgrade (HTTP/1.1 Upgrade)                    | `HTTP2Sampler.http1_upgrade`              |
+
 | **Attribute**                                       | **Description**                                                                  | **Default** |
 |-----------------------------------------------------|----------------------------------------------------------------------------------|-------------|
 | **httpJettyClient.maxBufferSize**                   | Maximum size of the downloaded resources in bytes                                | 2097152     |
@@ -132,3 +184,25 @@ This document describes JMeter properties. The properties present in jmeter.prop
 | **httpJettyClient.maxConcurrentAsyncInController**  | Maximum number of concurrent http2 samplers inside a HTTP2 Async Controller      | 1000        |
 | **HTTPSampler.response_timeout**                    | Maximum waiting time of request without timeout defined, in milliseconds         | 0           |
 | **http.post_add_content_type_if_missing**           | Add to POST a Header Content-type: application/x-www-form-urlencoded if missing? | false       | 
+| **httpJettyClient.enableHttp3**                     | Enable HTTP/3 support (Alt-Svc + QUIC)                                          | profile      |
+| **httpJettyClient.enableHttp2**                     | Enable HTTP/2 support                                                           | profile      |
+| **httpJettyClient.enableHttp1**                     | Enable HTTP/1.1 support                                                         | profile      |
+| **httpJettyClient.alpnEnabled**                     | Enable ALPN (TLS negotiation for HTTP/2/1.1)                                    | profile      |
+| **httpJettyClient.fallbackEnabled**                 | Enable automatic fallback between protocols                                    | profile      |
+| **httpJettyClient.protocolErrorFallbackEnabled**    | Enable fallback to HTTP/1.1 for HTTP/2 protocol_error                           | profile      |
+| **httpJettyClient.disableFallback**                 | Legacy flag (inverse of protocolErrorFallbackEnabled)                           | false        |
+| **httpJettyClient.goawayRetryEnabled**              | Enable retry on HTTP/2 GOAWAY (RetryableRequestException)                        | true         |
+| **httpJettyClient.maxGoawayRetries**                | Max retries on GOAWAY before fallback                                            | 1            |
+| **httpJettyClient.altSvcCacheEnabled**              | Enable Alt-Svc cache for HTTP/3 discovery                                       | profile      |
+| **httpJettyClient.http1OnlyCacheEnabled**           | Enable HTTP/1.1-only cache for HTTPS origins                                    | profile      |
+| **httpJettyClient.h2cCacheEnabled**                 | Enable H2C cache for cleartext origins                                          | profile      |
+| **httpJettyClient.h2cUpgradeEnabled**               | Default value for HTTP2Sampler.http1_upgrade (per-sampler override)             | false        |
+| **httpJettyClient.h2cCacheTtlMs**                   | H2C cache TTL in milliseconds                                                   | profile      |
+| **httpJettyClient.http1OnlyCooldownMs**             | HTTP/1.1-only cache TTL in milliseconds                                         | profile      |
+| **httpJettyClient.http3BrokenCooldownMs**           | Cooldown before retrying HTTP/3 after failures (ms)                             | profile      |
+| **httpJettyClient.happyEyeballsDelayMs**            | Delay before starting HTTP/2 fallback for HTTP/3 (ms)                           | profile      |
+| **httpJettyClient.http2PriorKnowledge**             | Force HTTP/2 prior knowledge for cleartext origins (h2c)                        | false        |
+| **httpJettyClient.quicMaxIdleTimeout**              | QUIC max idle timeout in milliseconds                                           | 30000        |
+| **httpJettyClient.quicMaxBidirectionalStreams**     | QUIC max bidirectional streams                                                  | 100          |
+| **httpJettyClient.quicMaxUnidirectionalStreams**    | QUIC max unidirectional streams                                                 | 100          |
+| **httpJettyClient.settingsMaxHeaderListSize**       | HTTP/2 SETTINGS_MAX_HEADER_LIST_SIZE                                            | 4096         |

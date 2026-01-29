@@ -9,7 +9,6 @@ import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.List;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
@@ -21,12 +20,13 @@ import org.eclipse.jetty.http.HttpStatus;
 import org.eclipse.jetty.http2.server.HTTP2CServerConnectionFactory;
 import org.eclipse.jetty.http2.server.HTTP2ServerConnectionFactory;
 import org.eclipse.jetty.security.Authenticator;
-import org.eclipse.jetty.security.ConstraintMapping;
-import org.eclipse.jetty.security.ConstraintSecurityHandler;
+import org.eclipse.jetty.security.Constraint;
+import org.eclipse.jetty.security.SecurityHandler;
 import org.eclipse.jetty.security.HashLoginService;
 import org.eclipse.jetty.security.UserStore;
 import org.eclipse.jetty.security.authentication.BasicAuthenticator;
 import org.eclipse.jetty.security.authentication.DigestAuthenticator;
+import org.eclipse.jetty.util.security.Credential;
 import org.eclipse.jetty.server.ConnectionFactory;
 import org.eclipse.jetty.server.HttpConfiguration;
 import org.eclipse.jetty.server.HttpConnectionFactory;
@@ -34,11 +34,10 @@ import org.eclipse.jetty.server.SecureRequestCustomizer;
 import org.eclipse.jetty.server.Server;
 import org.eclipse.jetty.server.ServerConnector;
 import org.eclipse.jetty.server.SslConnectionFactory;
-import org.eclipse.jetty.servlet.ServletContextHandler;
-import org.eclipse.jetty.servlet.ServletHolder;
+import org.eclipse.jetty.ee10.servlet.ServletContextHandler;
+import org.eclipse.jetty.ee10.servlet.ServletHolder;
 import org.eclipse.jetty.util.component.LifeCycle;
-import org.eclipse.jetty.util.security.Constraint;
-import org.eclipse.jetty.util.security.Password;
+import org.eclipse.jetty.http.pathmap.PathSpec;
 import org.eclipse.jetty.util.ssl.SslContextFactory;
 
 public class ServerBuilder {
@@ -55,6 +54,7 @@ public class ServerBuilder {
   public static final String SERVER_PATH_200 = "/test/200";
   public static final String SERVER_PATH_SLOW = "/test/slow";
   public static final String SERVER_PATH_200_GZIP = "/test/gzip";
+  public static final String SERVER_PATH_200_BROTLI = "/test/brotli";
   public static final String SERVER_PATH_200_EMBEDDED = "/test/embedded";
   public static final String SERVER_PATH_200_FILE_SENT = "/test/file";
   public static final String SERVER_PATH_BIG_RESPONSE = "/test/big-response";
@@ -150,15 +150,20 @@ public class ServerBuilder {
 
     server.addConnector(connector);
 
-    ServletContextHandler context = new ServletContextHandler(server, "/", true, false);
+    // In Jetty 12, ServletContextHandler constructor changed
+    ServletContextHandler context = new ServletContextHandler(ServletContextHandler.SESSIONS);
+    context.setContextPath("/");
+    server.setHandler(context);
     context.addServlet(new ServletHolder(buildServlet()), SERVER_PATH + "/*");
 
     if (isBasicAuth) {
-      configureAuthHandler(server, new BasicAuthenticator(), Constraint.__BASIC_AUTH);
+      // In Jetty 12, Constraint.__BASIC_AUTH is replaced by using BasicAuthenticator directly
+      configureAuthHandler(server, new BasicAuthenticator(), "BASIC");
       return server;
     }
     if (isDigestAuth) {
-      configureAuthHandler(server, new DigestAuthenticator(), Constraint.__DIGEST_AUTH);
+      // In Jetty 12, Constraint.__DIGEST_AUTH is replaced by using DigestAuthenticator directly
+      configureAuthHandler(server, new DigestAuthenticator(), "DIGEST");
     }
     return server;
   }
@@ -177,7 +182,7 @@ public class ServerBuilder {
     ServerConnector connector =
         new ServerConnector(server, 1, 1,
             connectionFactories.toArray(new ConnectionFactory[0]));
-    connector.setPort(SERVER_PORT);
+    connector.setPort(0);
     connector.setReusePort(false);
     return connector;
   }
@@ -238,7 +243,7 @@ public class ServerBuilder {
             break;
           case SERVER_PATH_302:
             resp.addHeader(HTTPConstants.HEADER_LOCATION,
-                "https://localhost:" + SERVER_PORT + SERVER_PATH_200);
+                "https://localhost:" + req.getLocalPort() + SERVER_PATH_200);
             resp.setStatus(HttpStatus.FOUND_302);
             break;
           case SERVER_PATH_200_WITH_BODY:
@@ -274,6 +279,17 @@ public class ServerBuilder {
             gzipOutputStream.write(BINARY_RESPONSE_BODY);
             gzipOutputStream.close();
             break;
+          case SERVER_PATH_200_BROTLI:
+            // Note: org.brotli:dec only provides decoder, not encoder
+            // For testing decoder registration, we send uncompressed data
+            // but don't set Content-Encoding header to avoid decompression errors
+            // The test verifies that the decoder is registered when "br" is in Accept-Encoding
+            // In a real scenario with actual Brotli compression, you'd:
+            // 1. Compress the data using org.brotli:enc or similar
+            // 2. Set Content-Encoding: br header
+            // 3. Send compressed data
+            resp.getOutputStream().write(BINARY_RESPONSE_BODY);
+            break;
           case SERVER_PATH_DELETE_DATA:
             resp.setStatus(HttpStatus.OK_200);
             break;
@@ -287,39 +303,46 @@ public class ServerBuilder {
   }
 
 
+  // In Jetty 12, security APIs changed:
+  // - ConstraintSecurityHandler → SecurityHandler.PathMapped
+  // - ConstraintMapping → Use PathMapped.put() with PathSpec and Constraint
+  // - Constraint is now an interface with static factory methods from()
+  // - Password → Credential.getCredential()
   private void configureAuthHandler(Server server, Authenticator authenticator,
                                     String mechanism) {
-    ConstraintSecurityHandler securityHandler = new ConstraintSecurityHandler();
+    SecurityHandler.PathMapped securityHandler = new SecurityHandler.PathMapped();
     String[] roles = new String[] {"can-access"};
+    
+    // Create constraint using Constraint.from() with roles
+    // In Jetty 12, when roles are specified, must use SPECIFIC_ROLE, not KNOWN_ROLE
+    Constraint constraint = Constraint.from(Constraint.Transport.ANY, 
+        Constraint.Authorization.SPECIFIC_ROLE, 
+        java.util.Set.of(roles));
+    
+    // Use PathSpec to map constraint to all paths
+    PathSpec pathSpec = PathSpec.from("/*");
+    securityHandler.put(pathSpec, constraint);
+    
     securityHandler.setAuthenticator(authenticator);
-    securityHandler.setConstraintMappings(
-        Collections.singletonList(buildConstraintMapping(mechanism, roles)));
     securityHandler.setRealmName(AUTH_REALM);
     securityHandler.setLoginService(buildLoginService(roles));
-    securityHandler.setHandler(server.getHandler());
+    
+    // Get the current handler and wrap it with security
+    org.eclipse.jetty.server.Handler currentHandler = server.getHandler();
+    securityHandler.setHandler(currentHandler);
     server.setHandler(securityHandler);
-  }
-
-  private ConstraintMapping buildConstraintMapping(String mechanism, String[] roles) {
-    Constraint constraint = new Constraint();
-    constraint.setName(mechanism);
-    constraint.setAuthenticate(true);
-    constraint.setRoles(roles);
-
-    ConstraintMapping ret = new ConstraintMapping();
-    ret.setPathSpec("/*");
-    ret.setConstraint(constraint);
-    return ret;
   }
 
   private HashLoginService buildLoginService(String[] roles) {
     UserStore userStore = new UserStore();
-    userStore.addUser(AUTH_USERNAME, new Password(AUTH_PASSWORD), roles);
+    // In Jetty 12, Password is replaced by Credential.getCredential()
+    Credential credential = Credential.getCredential(AUTH_PASSWORD);
+    userStore.addUser(AUTH_USERNAME, credential, roles);
 
-    HashLoginService ret = new HashLoginService();
-    ret.setName(AUTH_REALM);
-    ret.setUserStore(userStore);
-    return ret;
+    HashLoginService loginService = new HashLoginService();
+    loginService.setName(AUTH_REALM);
+    loginService.setUserStore(userStore);
+    return loginService;
   }
 
   public static class TeardownableServer extends Server {
@@ -352,7 +375,3 @@ public class ServerBuilder {
     }
   }
 }
-
-
-
-

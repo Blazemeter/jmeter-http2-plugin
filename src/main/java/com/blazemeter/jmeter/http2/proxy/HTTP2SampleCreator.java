@@ -8,8 +8,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Map;
 import org.apache.commons.lang3.ArrayUtils;
-import org.apache.jmeter.protocol.http.control.Header;
-import org.apache.jmeter.protocol.http.control.HeaderManager;
 import org.apache.jmeter.protocol.http.proxy.AbstractSamplerCreator;
 import org.apache.jmeter.protocol.http.proxy.DefaultSamplerCreator;
 import org.apache.jmeter.protocol.http.proxy.HttpRequestHdr;
@@ -90,20 +88,10 @@ public class HTTP2SampleCreator extends AbstractSamplerCreator {
     LOG.debug(httpRequestHdr.getUrl());
     LOG.debug(httpRequestHdr.getRawPostData().toString());
 
-    if (httpRequestHdr.getHeaderManager() != null) {
-      HeaderManager hm = httpRequestHdr.getHeaderManager();
-
-      Header ae = hm.getFirstHeaderNamed("Accept-Encoding");
-      if (ae != null) {
-        String acceptEncoding = ae.getValue();
-        acceptEncoding = acceptEncoding.replace(", br", "").replace("br", "");
-        hm.getHeaders().remove("Accept-Encoding");
-        Header h = new Header();
-        h.setName("Accept-Encoding");
-        h.setValue(acceptEncoding);
-        hm.add(h);
-      }
-    }
+    // In Jetty 12, Brotli compression is now supported
+    // We no longer need to remove "br" from Accept-Encoding header
+    // The HTTP2JettyClient will handle Brotli decoding automatically
+    // when the server responds with Content-Encoding: br
 
     DEFAULT_SAMPLER_CREATOR.populateSampler(httpSamplerBase, httpRequestHdr, map, map1);
 

@@ -16,7 +16,7 @@ import org.apache.jmeter.control.NextIsNullException;
 import org.apache.jmeter.protocol.http.sampler.HTTPSampler;
 import org.apache.jmeter.samplers.Sampler;
 import org.apache.jmeter.util.JMeterUtils;
-import org.eclipse.jetty.client.HttpRequest;
+import org.eclipse.jetty.client.Request;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -34,7 +34,7 @@ public class HTTP2ControllerTest extends HTTP2TestBase {
   private HTTP2Sampler secondSampler;
   private final HTTPSampler otherSamplerType = new HTTPSampler();
   @Mock
-  private HttpRequest request;
+  private Request request;
   @Mock
   private HTTP2FutureResponseListener firstSamplerListener;
   @Mock

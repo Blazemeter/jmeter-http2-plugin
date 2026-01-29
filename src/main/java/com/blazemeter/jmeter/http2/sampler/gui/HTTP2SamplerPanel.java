@@ -1,19 +1,17 @@
 package com.blazemeter.jmeter.http2.sampler.gui;
 
 import java.awt.BorderLayout;
-import java.awt.Component;
-import java.awt.Container;
 import java.awt.Dimension;
-import java.util.Arrays;
-import java.util.function.Predicate;
 import javax.swing.BorderFactory;
 import javax.swing.JCheckBox;
+import javax.swing.JComboBox;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JPasswordField;
 import javax.swing.JTabbedPane;
 import javax.swing.JTextField;
 import javax.swing.border.Border;
+import javax.swing.event.ChangeListener;
 import org.apache.jmeter.gui.util.HorizontalPanel;
 import org.apache.jmeter.gui.util.VerticalPanel;
 import org.apache.jmeter.protocol.http.config.gui.UrlConfigGui;
@@ -23,8 +21,28 @@ import org.apache.jorphan.gui.JLabeledTextField;
 
 public class HTTP2SamplerPanel extends JPanel {
 
-  private static final String JBOOLEAN_PROPERTY_EDITOR_CLASS_NAME = "org.apache.jmeter.gui"
-      + ".JBooleanPropertyEditor";
+  private static final String PROFILE_BROWSER_LIKE = "browser-like";
+  private static final String PROFILE_BROWSER_LIKE_CUSTOM = "browser-like-custom";
+  private static final String PROFILE_BROWSER_COMPATIBLE = "browser-compatible";
+  private static final String PROFILE_LEGACY = "legacy";
+  private static final long DEFAULT_HTTP3_BROKEN_COOLDOWN_MS = 300000;
+  private static final long DEFAULT_HTTP1_ONLY_COOLDOWN_MS = 300000;
+  private static final long DEFAULT_H2C_CACHE_TTL_MS = 300000;
+  private static final long DEFAULT_HAPPY_EYEBALLS_DELAY_MS = 250;
+  private static final String[] PROFILE_LABELS = new String[] {
+      "Browser-like (Most Browsers)",
+      "Browser-compatible (Other Browsers)",
+      "Legacy / Older Systems",
+      "Browser-like (Custom)"
+  };
+  private static final String[] PROFILE_VALUES = new String[] {
+      PROFILE_BROWSER_LIKE,
+      PROFILE_BROWSER_COMPATIBLE,
+      PROFILE_LEGACY,
+      PROFILE_BROWSER_LIKE_CUSTOM
+  };
+  private JTabbedPane tabbedPane;
+  private int selectedTabIndex = 0;
   private UrlConfigGui urlConfigGui;
   private final JTextField connectTimeOutField = new JTextField(10);
   private final JTextField responseTimeOutField = new JTextField(10);
@@ -40,7 +58,28 @@ public class HTTP2SamplerPanel extends JPanel {
   private final JTextField concurrentPoolField = new JTextField(2);
   private final JLabeledTextField embeddedResourcesRegexField = new JLabeledTextField(
       JMeterUtils.getResString("web_testing_embedded_url_pattern"), 20);
-  private final JCheckBox http1Upgrade = new JCheckBox("HTTP1 Upgrade");
+  private final JCheckBox http1Upgrade = new JCheckBox("H2C Upgrade (HTTP/1.1 Upgrade)");
+  private final JComboBox<String> profileSelector = new JComboBox<>(PROFILE_LABELS);
+  private final JCheckBox enableHttp3Check = new JCheckBox("Enable HTTP/3 (Alt-Svc + QUIC)");
+  private final JCheckBox enableHttp2Check = new JCheckBox("Enable HTTP/2");
+  private final JCheckBox enableHttp1Check = new JCheckBox("Enable HTTP/1.1");
+  private final JCheckBox alpnEnabledCheck = new JCheckBox("Enable ALPN");
+  private final JCheckBox fallbackEnabledCheck = new JCheckBox("Automatic fallback");
+  private final JCheckBox protocolErrorFallbackCheck =
+      new JCheckBox("Fallback on HTTP/2 protocol_error");
+  private final JCheckBox altSvcCacheCheck = new JCheckBox("Alt-Svc cache");
+  private final JCheckBox http1OnlyCacheCheck = new JCheckBox("HTTP/1.1-only cache (HTTPS)");
+  private final JCheckBox h2cCacheCheck = new JCheckBox("H2C cache (HTTP)");
+  private final JCheckBox http2PriorKnowledgeCheck =
+      new JCheckBox("HTTP/2 prior knowledge for cleartext (h2c)");
+  private final JLabeledTextField happyEyeballsDelayField =
+      new JLabeledTextField("Happy Eyeballs delay (ms)", 8);
+  private final JLabeledTextField http3BrokenCooldownField =
+      new JLabeledTextField("HTTP/3 broken cooldown (ms)", 8);
+  private final JLabeledTextField http1OnlyCooldownField =
+      new JLabeledTextField("HTTP/1.1-only cache TTL (ms)", 8);
+  private final JLabeledTextField h2cCacheTtlField =
+      new JLabeledTextField("H2C cache TTL (ms)", 8);
 
   public HTTP2SamplerPanel(boolean isSampler) {
     setLayout(new BorderLayout(0, 5));
@@ -49,64 +88,14 @@ public class HTTP2SamplerPanel extends JPanel {
   }
 
   private JTabbedPane createTabbedConfigPane(boolean isSampler) {
-    final JTabbedPane tabbedPane = new JTabbedPane();
+    tabbedPane = new JTabbedPane();
+    ChangeListener tabChangeListener = e -> selectedTabIndex = tabbedPane.getSelectedIndex();
+    tabbedPane.addChangeListener(tabChangeListener);
     urlConfigGui = new UrlConfigGui(isSampler, true, true);
-    replaceKeepAliveCheckWithHttp1Upgrade(urlConfigGui);
     tabbedPane.add(JMeterUtils.getResString("web_testing_basic"), urlConfigGui);
     final JPanel advancedPanel = createAdvancedConfigPanel();
     tabbedPane.add(JMeterUtils.getResString("web_testing_advanced"), advancedPanel);
     return tabbedPane;
-  }
-
-  private void replaceKeepAliveCheckWithHttp1Upgrade(UrlConfigGui urlConfigGui) {
-    JPanel optionPanel = findOptionPanel(urlConfigGui);
-    optionPanel.remove(2);
-
-    http1Upgrade.setFont(null);
-    http1Upgrade.setSelected(false);
-
-    optionPanel.add(http1Upgrade);
-  }
-
-  private JPanel findOptionPanel(Container c) {
-    if (isContainingKeepAliveCheck(c)) {
-      return (JPanel) c;
-    }
-    JPanel ret = null;
-    int i = 0;
-    Component[] children = c.getComponents();
-    while (ret == null && i < c.getComponentCount()) {
-      Component child = children[i];
-      if (child instanceof Container) {
-        ret = findOptionPanel((Container) child);
-      }
-      i++;
-    }
-    return ret;
-  }
-
-  private boolean isContainingKeepAliveCheck(Container c) {
-    if (!(c instanceof JPanel) || c.getComponentCount() != 5) {
-      return false;
-    }
-    Predicate<Predicate<? super Component>> existsInPanel =
-        (p) -> Arrays.stream(c.getComponents()).allMatch(p);
-    boolean isJMeterV56 = JMeterUtils.getJMeterVersion().startsWith("5.6");
-
-    if (isJMeterV56 && existsInPanel.test((component -> component.getClass().getName().equals(
-        JBOOLEAN_PROPERTY_EDITOR_CLASS_NAME) || component instanceof JCheckBox))) {
-      /*
-        Since JMeter v5.6.2 the UrlConfigGUI changed to:
-          autoRedirects: JCheckBox
-          followRedirects: JCheckBox
-          useKeepAlive: JBooleanPropertyEditor  <--
-          useMultipart: JBooleanPropertyEditor
-          useCompatibleMultiPartMode: JBooleanPropertyEditor
-       */
-      return true;
-    }
-
-    return !isJMeterV56 && existsInPanel.test((checkBox) -> checkBox instanceof JCheckBox);
   }
 
   private Border makeBorder() {
@@ -116,10 +105,61 @@ public class HTTP2SamplerPanel extends JPanel {
   private JPanel createAdvancedConfigPanel() {
     JPanel advancedPanel = new VerticalPanel();
     advancedPanel.setBorder(makeBorder());
+    advancedPanel.add(createClientBehaviorPanel());
     advancedPanel.add(createTimeOutPanel());
     advancedPanel.add(createProxyPanel());
     advancedPanel.add(createEmbeddedResourcesPanel());
     return advancedPanel;
+  }
+
+  private JPanel createClientBehaviorPanel() {
+    JPanel behaviorPanel = new VerticalPanel();
+    behaviorPanel.setBorder(BorderFactory.createTitledBorder("Client Behavior"));
+
+    JPanel profilePanel = new HorizontalPanel();
+    profilePanel.add(new JLabel("Profile"));
+    profilePanel.add(profileSelector);
+    behaviorPanel.add(profilePanel);
+
+    JPanel protocolPanel = new VerticalPanel();
+    protocolPanel.setBorder(BorderFactory.createTitledBorder("Protocols"));
+    protocolPanel.add(enableHttp3Check);
+    protocolPanel.add(enableHttp2Check);
+    protocolPanel.add(enableHttp1Check);
+    protocolPanel.add(http1Upgrade);
+    protocolPanel.add(alpnEnabledCheck);
+    behaviorPanel.add(protocolPanel);
+
+    JPanel fallbackPanel = new VerticalPanel();
+    fallbackPanel.setBorder(BorderFactory.createTitledBorder("Fallback"));
+    fallbackPanel.add(fallbackEnabledCheck);
+    fallbackPanel.add(protocolErrorFallbackCheck);
+    behaviorPanel.add(fallbackPanel);
+
+    JPanel cachePanel = new VerticalPanel();
+    cachePanel.setBorder(BorderFactory.createTitledBorder("Cache"));
+    cachePanel.add(altSvcCacheCheck);
+    cachePanel.add(http1OnlyCacheCheck);
+    cachePanel.add(h2cCacheCheck);
+    cachePanel.add(http2PriorKnowledgeCheck);
+    behaviorPanel.add(cachePanel);
+
+    JPanel timingPanel = new VerticalPanel();
+    timingPanel.setBorder(BorderFactory.createTitledBorder("Timing"));
+    timingPanel.add(happyEyeballsDelayField);
+    timingPanel.add(http3BrokenCooldownField);
+    timingPanel.add(http1OnlyCooldownField);
+    timingPanel.add(h2cCacheTtlField);
+    behaviorPanel.add(timingPanel);
+
+    profileSelector.addActionListener(e -> updateProfileControls());
+    enableHttp1Check.addActionListener(e -> handleProtocolToggle(enableHttp1Check));
+    enableHttp2Check.addActionListener(e -> handleProtocolToggle(enableHttp2Check));
+    enableHttp3Check.addActionListener(e -> handleProtocolToggle(enableHttp3Check));
+    fallbackEnabledCheck.addActionListener(e -> updateConditionalVisibility());
+    updateProfileControls();
+
+    return behaviorPanel;
   }
 
   private JPanel createTimeOutPanel() {
@@ -187,9 +227,141 @@ public class HTTP2SamplerPanel extends JPanel {
             .isSelected());
   }
 
+  private void updateProfileControls() {
+    applyProfileDefaults(getProfile());
+    updateConditionalVisibility();
+  }
+
+  private void handleProtocolToggle(JCheckBox checkbox) {
+    if (checkbox.isSelected()) {
+      applyRelatedDefaults(checkbox);
+    }
+    updateConditionalVisibility();
+  }
+
+  private void applyRelatedDefaults(JCheckBox checkbox) {
+    if (checkbox == enableHttp3Check) {
+      altSvcCacheCheck.setSelected(true);
+    } else if (checkbox == enableHttp2Check) {
+      fallbackEnabledCheck.setSelected(true);
+      protocolErrorFallbackCheck.setSelected(true);
+      if (enableHttp1Check.isSelected()) {
+        h2cCacheCheck.setSelected(true);
+      }
+    } else if (checkbox == enableHttp1Check) {
+      http1OnlyCacheCheck.setSelected(true);
+      if (enableHttp2Check.isSelected()) {
+        h2cCacheCheck.setSelected(true);
+      }
+    }
+  }
+
+  private void updateConditionalVisibility() {
+    boolean customProfile = PROFILE_BROWSER_LIKE_CUSTOM.equals(getProfile());
+    boolean http1Enabled = enableHttp1Check.isSelected();
+    boolean http2Enabled = enableHttp2Check.isSelected();
+    boolean http3Enabled = enableHttp3Check.isSelected();
+    boolean fallbackEnabled = fallbackEnabledCheck.isSelected();
+
+    if (customProfile) {
+      setHttp1Visibility(true);
+      setHttp2Visibility(true, true);
+      setHttp3Visibility(true);
+      setH2cVisibility(true, true);
+    } else {
+      setHttp1Visibility(http1Enabled);
+      setHttp2Visibility(http2Enabled, fallbackEnabled);
+      setHttp3Visibility(http3Enabled);
+      setH2cVisibility(http1Enabled && http2Enabled, http2Enabled);
+    }
+
+    revalidate();
+    repaint();
+  }
+
+  private void setHttp1Visibility(boolean visible) {
+    enableHttp1Check.setVisible(true);
+    http1OnlyCacheCheck.setVisible(visible);
+    http1OnlyCooldownField.setVisible(visible);
+  }
+
+  private void setHttp2Visibility(boolean http2Enabled, boolean fallbackEnabled) {
+    enableHttp2Check.setVisible(true);
+    alpnEnabledCheck.setVisible(http2Enabled);
+    protocolErrorFallbackCheck.setVisible(http2Enabled && fallbackEnabled);
+  }
+
+  private void setHttp3Visibility(boolean http3Enabled) {
+    enableHttp3Check.setVisible(true);
+    altSvcCacheCheck.setVisible(http3Enabled);
+    happyEyeballsDelayField.setVisible(http3Enabled);
+    http3BrokenCooldownField.setVisible(http3Enabled);
+  }
+
+  private void setH2cVisibility(boolean upgradeVisible, boolean cacheVisible) {
+    http1Upgrade.setVisible(upgradeVisible);
+    h2cCacheCheck.setVisible(cacheVisible);
+    h2cCacheTtlField.setVisible(cacheVisible);
+    http2PriorKnowledgeCheck.setVisible(cacheVisible);
+  }
+
+  private void applyProfileDefaults(String profile) {
+    if (PROFILE_BROWSER_COMPATIBLE.equals(profile)) {
+      setProtocolDefaults(true, true, true, true);
+      setFallbackDefaults(true, true);
+      setCacheDefaults(true, true, true, false);
+      http1Upgrade.setSelected(false);
+      setTimingDefaults(0L, DEFAULT_HTTP3_BROKEN_COOLDOWN_MS, DEFAULT_HTTP1_ONLY_COOLDOWN_MS,
+          DEFAULT_H2C_CACHE_TTL_MS);
+    } else if (PROFILE_LEGACY.equals(profile)) {
+      setProtocolDefaults(false, false, true, false);
+      setFallbackDefaults(false, false);
+      setCacheDefaults(false, false, true, false);
+      http1Upgrade.setSelected(true);
+      setTimingDefaults(0L, 0L, 0L, DEFAULT_H2C_CACHE_TTL_MS);
+    } else {
+      setProtocolDefaults(true, true, true, true);
+      setFallbackDefaults(true, true);
+      setCacheDefaults(true, true, true, false);
+      http1Upgrade.setSelected(false);
+      setTimingDefaults(DEFAULT_HAPPY_EYEBALLS_DELAY_MS, DEFAULT_HTTP3_BROKEN_COOLDOWN_MS,
+          DEFAULT_HTTP1_ONLY_COOLDOWN_MS, DEFAULT_H2C_CACHE_TTL_MS);
+    }
+  }
+
+  private void setProtocolDefaults(boolean http3, boolean http2, boolean http1, boolean alpn) {
+    enableHttp3Check.setSelected(http3);
+    enableHttp2Check.setSelected(http2);
+    enableHttp1Check.setSelected(http1);
+    alpnEnabledCheck.setSelected(alpn);
+  }
+
+  private void setFallbackDefaults(boolean fallbackEnabled, boolean protocolErrorFallback) {
+    fallbackEnabledCheck.setSelected(fallbackEnabled);
+    protocolErrorFallbackCheck.setSelected(protocolErrorFallback);
+  }
+
+  private void setCacheDefaults(boolean altSvc, boolean http1Only, boolean h2cCache,
+                                boolean http2PriorKnowledge) {
+    altSvcCacheCheck.setSelected(altSvc);
+    http1OnlyCacheCheck.setSelected(http1Only);
+    h2cCacheCheck.setSelected(h2cCache);
+    http2PriorKnowledgeCheck.setSelected(http2PriorKnowledge);
+  }
+
+  private void setTimingDefaults(long happyEyeballs, long http3BrokenCooldown,
+                                 long http1OnlyCooldown, long h2cCacheTtl) {
+    happyEyeballsDelayField.setText(String.valueOf(happyEyeballs));
+    http3BrokenCooldownField.setText(String.valueOf(http3BrokenCooldown));
+    http1OnlyCooldownField.setText(String.valueOf(http1OnlyCooldown));
+    h2cCacheTtlField.setText(String.valueOf(h2cCacheTtl));
+  }
+
   public void resetFields() {
     urlConfigGui.clear();
     http1Upgrade.setSelected(false);
+    setProfile(PROFILE_BROWSER_LIKE);
+    setSelectedTabIndex(0);
     retrieveEmbeddedResourcesCheckBox.setSelected(false);
     concurrentDownloadCheckBox.setSelected(false);
     concurrentPoolField.setText(String.valueOf(HTTPSamplerBase.CONCURRENT_POOL_SIZE));
@@ -203,6 +375,22 @@ public class HTTP2SamplerPanel extends JPanel {
     proxyPassField.setText("");
   }
 
+  public int getSelectedTabIndex() {
+    if (tabbedPane != null) {
+      selectedTabIndex = tabbedPane.getSelectedIndex();
+    }
+    return selectedTabIndex;
+  }
+
+  public void setSelectedTabIndex(int index) {
+    int target = index;
+    if (tabbedPane != null) {
+      target = index >= 0 && index < tabbedPane.getTabCount() ? index : 0;
+      tabbedPane.setSelectedIndex(target);
+    }
+    selectedTabIndex = target >= 0 ? target : 0;
+  }
+
   public UrlConfigGui getUrlConfigGui() {
     return urlConfigGui;
   }
@@ -213,6 +401,177 @@ public class HTTP2SamplerPanel extends JPanel {
 
   public void setHttp1UpgradeSelected(boolean enabled) {
     http1Upgrade.setSelected(enabled);
+  }
+
+  public String getProfile() {
+    int index = profileSelector.getSelectedIndex();
+    if (index >= 0 && index < PROFILE_VALUES.length) {
+      return PROFILE_VALUES[index];
+    }
+    return PROFILE_BROWSER_LIKE;
+  }
+
+  public void setProfile(String profile) {
+    int index = 0;
+    for (int i = 0; i < PROFILE_VALUES.length; i++) {
+      if (PROFILE_VALUES[i].equals(profile)) {
+        index = i;
+        break;
+      }
+    }
+    profileSelector.setSelectedIndex(index);
+    updateProfileControls();
+  }
+
+  public void applyProfileDefaultsFor(String profile) {
+    applyProfileDefaults(profile);
+  }
+
+  public boolean isEnableHttp3Selected() {
+    return enableHttp3Check.isSelected();
+  }
+
+  public void setEnableHttp3Selected(Boolean enabled) {
+    if (enabled != null) {
+      enableHttp3Check.setSelected(enabled);
+    }
+  }
+
+  public boolean isEnableHttp2Selected() {
+    return enableHttp2Check.isSelected();
+  }
+
+  public void setEnableHttp2Selected(Boolean enabled) {
+    if (enabled != null) {
+      enableHttp2Check.setSelected(enabled);
+    }
+  }
+
+  public boolean isEnableHttp1Selected() {
+    return enableHttp1Check.isSelected();
+  }
+
+  public void setEnableHttp1Selected(Boolean enabled) {
+    if (enabled != null) {
+      enableHttp1Check.setSelected(enabled);
+    }
+  }
+
+  public boolean isAlpnEnabledSelected() {
+    return alpnEnabledCheck.isSelected();
+  }
+
+  public void setAlpnEnabledSelected(Boolean enabled) {
+    if (enabled != null) {
+      alpnEnabledCheck.setSelected(enabled);
+    }
+  }
+
+  public boolean isFallbackEnabledSelected() {
+    return fallbackEnabledCheck.isSelected();
+  }
+
+  public void setFallbackEnabledSelected(Boolean enabled) {
+    if (enabled != null) {
+      fallbackEnabledCheck.setSelected(enabled);
+    }
+  }
+
+  public boolean isProtocolErrorFallbackSelected() {
+    return protocolErrorFallbackCheck.isSelected();
+  }
+
+  public void setProtocolErrorFallbackSelected(Boolean enabled) {
+    if (enabled != null) {
+      protocolErrorFallbackCheck.setSelected(enabled);
+    }
+  }
+
+  public boolean isAltSvcCacheSelected() {
+    return altSvcCacheCheck.isSelected();
+  }
+
+  public void setAltSvcCacheSelected(Boolean enabled) {
+    if (enabled != null) {
+      altSvcCacheCheck.setSelected(enabled);
+    }
+  }
+
+  public boolean isHttp1OnlyCacheSelected() {
+    return http1OnlyCacheCheck.isSelected();
+  }
+
+  public void setHttp1OnlyCacheSelected(Boolean enabled) {
+    if (enabled != null) {
+      http1OnlyCacheCheck.setSelected(enabled);
+    }
+  }
+
+  public boolean isH2cCacheSelected() {
+    return h2cCacheCheck.isSelected();
+  }
+
+  public void setH2cCacheSelected(Boolean enabled) {
+    if (enabled != null) {
+      h2cCacheCheck.setSelected(enabled);
+    }
+  }
+
+  public boolean isHttp2PriorKnowledgeSelected() {
+    return http2PriorKnowledgeCheck.isSelected();
+  }
+
+  public void setHttp2PriorKnowledgeSelected(Boolean enabled) {
+    if (enabled != null) {
+      http2PriorKnowledgeCheck.setSelected(enabled);
+    }
+  }
+
+  public Long getHappyEyeballsDelayMs() {
+    return parseLong(happyEyeballsDelayField.getText());
+  }
+
+  public void setHappyEyeballsDelayMs(Long value) {
+    happyEyeballsDelayField.setText(value == null ? "" : String.valueOf(value));
+  }
+
+  public Long getHttp3BrokenCooldownMs() {
+    return parseLong(http3BrokenCooldownField.getText());
+  }
+
+  public void setHttp3BrokenCooldownMs(Long value) {
+    http3BrokenCooldownField.setText(value == null ? "" : String.valueOf(value));
+  }
+
+  public Long getHttp1OnlyCooldownMs() {
+    return parseLong(http1OnlyCooldownField.getText());
+  }
+
+  public void setHttp1OnlyCooldownMs(Long value) {
+    http1OnlyCooldownField.setText(value == null ? "" : String.valueOf(value));
+  }
+
+  public Long getH2cCacheTtlMs() {
+    return parseLong(h2cCacheTtlField.getText());
+  }
+
+  public void setH2cCacheTtlMs(Long value) {
+    h2cCacheTtlField.setText(value == null ? "" : String.valueOf(value));
+  }
+
+  private Long parseLong(String value) {
+    if (value == null) {
+      return null;
+    }
+    String trimmed = value.trim();
+    if (trimmed.isEmpty()) {
+      return null;
+    }
+    try {
+      return Long.parseLong(trimmed);
+    } catch (NumberFormatException ignored) {
+      return null;
+    }
   }
 
   public String getConnectTimeOut() {

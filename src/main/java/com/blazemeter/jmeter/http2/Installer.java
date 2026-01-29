@@ -1,5 +1,6 @@
 package com.blazemeter.jmeter.http2;
 
+import java.awt.GraphicsEnvironment;
 import java.io.File;
 import java.util.Arrays;
 import java.util.List;
@@ -13,15 +14,37 @@ public class Installer {
   private static final List<String> OLD_DEPENDENCIES_PREFIXES = Arrays.asList(
       "jetty-client", "jetty-util", "jetty-http", "jetty-io", "jetty-alpn-client",
       "http2-client", "http2-common", "http2-hpack", "jetty-osgi-alpn");
-  private static final int JAVA_VERSION_REQUIRED = 11;
-  private static final int NEW_DEPENDENCY_MAJOR_VERSION = 11;
+  private static final int JAVA_VERSION_REQUIRED = 17;
+  private static final int NEW_DEPENDENCY_MAJOR_VERSION = 12;
+
+  /**
+   * Checks if JMeter is running in GUI mode.
+   * Uses the standard Java method to detect headless mode.
+   * This works even before JMeter is fully initialized.
+   * 
+   * @return true if GUI is available, false if running in headless mode
+   */
+  private static boolean isGuiMode() {
+    // Check both GraphicsEnvironment and system property for headless mode
+    // This is the standard approach used in Java applications
+    try {
+      return !GraphicsEnvironment.isHeadless();
+    } catch (Exception e) {
+      // Fallback: check system property
+      String headless = System.getProperty("java.awt.headless");
+      return headless == null || !"true".equalsIgnoreCase(headless);
+    }
+  }
 
   public static void main(String[] args) {
     if (getVersion() < JAVA_VERSION_REQUIRED) {
-      JOptionPane.showMessageDialog(null,
-          "The HTTP2 Plugin requires java 11 o higher, please upgrade your java version and "
-              + "restart JMeter before using the plugin.",
-          "Java 11 is required", JOptionPane.WARNING_MESSAGE);
+      // Only show dialog if JMeter is running in GUI mode (not headless)
+      if (isGuiMode()) {
+        JOptionPane.showMessageDialog(null,
+            "The HTTP2 Plugin requires Java 17 or higher, please upgrade your Java version and "
+                + "restart JMeter before using the plugin.",
+            "Java 17 is required", JOptionPane.WARNING_MESSAGE);
+      }
       return;
     }
     File pluginsFolder = new File(
@@ -30,8 +53,11 @@ public class Installer {
     File dependencyFolder = pluginsFolder.getParentFile();
     if (!(pluginsFolder.canRead() && pluginsFolder.canWrite())
         || !(dependencyFolder.canWrite() && dependencyFolder.canRead())) {
-      JOptionPane.showMessageDialog(null, "Read or Write permissions denied",
-          "Permission Access", JOptionPane.WARNING_MESSAGE);
+      // Only show dialog if JMeter is running in GUI mode (not headless)
+      if (isGuiMode()) {
+        JOptionPane.showMessageDialog(null, "Read or Write permissions denied",
+            "Permission Access", JOptionPane.WARNING_MESSAGE);
+      }
       return;
     }
 

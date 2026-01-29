@@ -127,4 +127,3 @@ public class HTTP2Controller extends GenericController implements Serializable {
   }
 
 }
-

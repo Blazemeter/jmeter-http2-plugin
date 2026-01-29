@@ -2,8 +2,10 @@ package com.blazemeter.jmeter.http2.sampler;
 
 import static org.apache.jmeter.util.JMeterUtils.getPropDefault;
 
+import com.blazemeter.jmeter.http2.core.HTTP2ClientProfileConfig;
 import com.blazemeter.jmeter.http2.core.HTTP2FutureResponseListener;
 import com.blazemeter.jmeter.http2.core.HTTP2JettyClient;
+import com.blazemeter.jmeter.http2.core.ProtocolErrorException;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.github.benmanes.caffeine.cache.LoadingCache;
 import com.helger.commons.annotation.VisibleForTesting;
@@ -34,6 +36,8 @@ import org.apache.jmeter.protocol.http.util.HTTPConstants;
 import org.apache.jmeter.samplers.SampleResult;
 import org.apache.jmeter.testelement.TestElement;
 import org.apache.jmeter.testelement.ThreadListener;
+import org.apache.jmeter.testelement.property.JMeterProperty;
+import org.apache.jmeter.testelement.property.NullProperty;
 import org.apache.jmeter.threads.JMeterContextService;
 import org.apache.jmeter.threads.JMeterVariables;
 import org.apache.jmeter.util.JMeterUtils;
@@ -41,7 +45,7 @@ import org.apache.jorphan.util.JOrphanUtils;
 import org.apache.oro.text.MalformedCachePatternException;
 import org.apache.oro.text.regex.Pattern;
 import org.apache.oro.text.regex.Perl5Matcher;
-import org.eclipse.jetty.client.HttpRequest;
+import org.eclipse.jetty.client.Request;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -75,6 +79,28 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
           "httpsampler.ignore_failed_embedded_resources", false); // $NON-NLS-1$
 
   private static final String HTTP1_UPGRADE_PROPERTY = "HTTP2Sampler.http1_upgrade";
+  private static final String PROFILE_PROPERTY = "HTTP2Sampler.profile";
+  private static final String ENABLE_HTTP3_PROPERTY = "HTTP2Sampler.enableHttp3";
+  private static final String ENABLE_HTTP2_PROPERTY = "HTTP2Sampler.enableHttp2";
+  private static final String ENABLE_HTTP1_PROPERTY = "HTTP2Sampler.enableHttp1";
+  private static final String ALPN_ENABLED_PROPERTY = "HTTP2Sampler.alpnEnabled";
+  private static final String FALLBACK_ENABLED_PROPERTY = "HTTP2Sampler.fallbackEnabled";
+  private static final String PROTOCOL_ERROR_FALLBACK_PROPERTY =
+      "HTTP2Sampler.protocolErrorFallbackEnabled";
+  private static final String ALT_SVC_CACHE_PROPERTY = "HTTP2Sampler.altSvcCacheEnabled";
+  private static final String HTTP1_ONLY_CACHE_PROPERTY = "HTTP2Sampler.http1OnlyCacheEnabled";
+  private static final String H2C_CACHE_PROPERTY = "HTTP2Sampler.h2cCacheEnabled";
+  private static final String HTTP2_PRIOR_KNOWLEDGE_PROPERTY =
+      "HTTP2Sampler.http2PriorKnowledge";
+  private static final String HAPPY_EYEBALLS_DELAY_PROPERTY =
+      "HTTP2Sampler.happyEyeballsDelayMs";
+  private static final String HTTP3_BROKEN_COOLDOWN_PROPERTY =
+      "HTTP2Sampler.http3BrokenCooldownMs";
+  private static final String HTTP1_ONLY_COOLDOWN_PROPERTY =
+      "HTTP2Sampler.http1OnlyCooldownMs";
+  private static final String H2C_CACHE_TTL_PROPERTY = "HTTP2Sampler.h2cCacheTtlMs";
+  private static final String UI_TAB_INDEX_PROPERTY = "HTTP2Sampler.uiTabIndex";
+  private static final String H2C_UPGRADE_DEFAULT_PROPERTY = "httpJettyClient.h2cUpgradeEnabled";
   // Derive the mapping of content types to parsers
   private static final Map<String, String> PARSERS_FOR_CONTENT_TYPE = new ConcurrentHashMap<>();
   private static final String USER_AGENT = "User-Agent"; // $NON-NLS-1$
@@ -152,14 +178,220 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
   }
 
   public boolean isHttp1UpgradeEnabled() {
-    return getPropertyAsBoolean(HTTP1_UPGRADE_PROPERTY);
+    JMeterProperty property = getProperty(HTTP1_UPGRADE_PROPERTY);
+    if (property == null || property instanceof NullProperty) {
+      return getPropDefault(H2C_UPGRADE_DEFAULT_PROPERTY, false);
+    }
+    return property.getBooleanValue();
+  }
+
+  @Override
+  public boolean isConcurrentDwn() {
+    JMeterProperty property = getProperty(CONCURRENT_DWN);
+    if (property == null || property instanceof NullProperty) {
+      return true;
+    }
+    return property.getBooleanValue();
+  }
+
+  public void setProfile(String profile) {
+    setProperty(PROFILE_PROPERTY, profile);
+  }
+
+  public String getProfile() {
+    JMeterProperty property = getProperty(PROFILE_PROPERTY);
+    if (property == null || property instanceof NullProperty) {
+      return isHttp1UpgradeEnabled() ? "legacy" : "browser-like";
+    }
+    String value = property.getStringValue();
+    return value == null || value.trim().isEmpty() ? "browser-like" : value.trim();
+  }
+
+  public void setUiTabIndex(int index) {
+    setProperty(UI_TAB_INDEX_PROPERTY, index);
+  }
+
+  public int getUiTabIndex() {
+    JMeterProperty property = getProperty(UI_TAB_INDEX_PROPERTY);
+    if (property == null || property instanceof NullProperty) {
+      return 0;
+    }
+    return property.getIntValue();
+  }
+
+  public void setEnableHttp3(Boolean enabled) {
+    setOptionalBoolean(ENABLE_HTTP3_PROPERTY, enabled);
+  }
+
+  public Boolean getEnableHttp3() {
+    return getOptionalBoolean(ENABLE_HTTP3_PROPERTY);
+  }
+
+  public void setEnableHttp2(Boolean enabled) {
+    setOptionalBoolean(ENABLE_HTTP2_PROPERTY, enabled);
+  }
+
+  public Boolean getEnableHttp2() {
+    return getOptionalBoolean(ENABLE_HTTP2_PROPERTY);
+  }
+
+  public void setEnableHttp1(Boolean enabled) {
+    setOptionalBoolean(ENABLE_HTTP1_PROPERTY, enabled);
+  }
+
+  public Boolean getEnableHttp1() {
+    return getOptionalBoolean(ENABLE_HTTP1_PROPERTY);
+  }
+
+  public void setAlpnEnabled(Boolean enabled) {
+    setOptionalBoolean(ALPN_ENABLED_PROPERTY, enabled);
+  }
+
+  public Boolean getAlpnEnabled() {
+    return getOptionalBoolean(ALPN_ENABLED_PROPERTY);
+  }
+
+  public void setFallbackEnabled(Boolean enabled) {
+    setOptionalBoolean(FALLBACK_ENABLED_PROPERTY, enabled);
+  }
+
+  public Boolean getFallbackEnabled() {
+    return getOptionalBoolean(FALLBACK_ENABLED_PROPERTY);
+  }
+
+  public void setProtocolErrorFallbackEnabled(Boolean enabled) {
+    setOptionalBoolean(PROTOCOL_ERROR_FALLBACK_PROPERTY, enabled);
+  }
+
+  public Boolean getProtocolErrorFallbackEnabled() {
+    return getOptionalBoolean(PROTOCOL_ERROR_FALLBACK_PROPERTY);
+  }
+
+  public void setAltSvcCacheEnabled(Boolean enabled) {
+    setOptionalBoolean(ALT_SVC_CACHE_PROPERTY, enabled);
+  }
+
+  public Boolean getAltSvcCacheEnabled() {
+    return getOptionalBoolean(ALT_SVC_CACHE_PROPERTY);
+  }
+
+  public void setHttp1OnlyCacheEnabled(Boolean enabled) {
+    setOptionalBoolean(HTTP1_ONLY_CACHE_PROPERTY, enabled);
+  }
+
+  public Boolean getHttp1OnlyCacheEnabled() {
+    return getOptionalBoolean(HTTP1_ONLY_CACHE_PROPERTY);
+  }
+
+  public void setH2cCacheEnabled(Boolean enabled) {
+    setOptionalBoolean(H2C_CACHE_PROPERTY, enabled);
+  }
+
+  public Boolean getH2cCacheEnabled() {
+    return getOptionalBoolean(H2C_CACHE_PROPERTY);
+  }
+
+  public void setHttp2PriorKnowledgeEnabled(Boolean enabled) {
+    setOptionalBoolean(HTTP2_PRIOR_KNOWLEDGE_PROPERTY, enabled);
+  }
+
+  public Boolean getHttp2PriorKnowledgeEnabled() {
+    return getOptionalBoolean(HTTP2_PRIOR_KNOWLEDGE_PROPERTY);
+  }
+
+  public void setHappyEyeballsDelayMs(Long value) {
+    setOptionalLong(HAPPY_EYEBALLS_DELAY_PROPERTY, value);
+  }
+
+  public Long getHappyEyeballsDelayMs() {
+    return getOptionalLong(HAPPY_EYEBALLS_DELAY_PROPERTY);
+  }
+
+  public void setHttp3BrokenCooldownMs(Long value) {
+    setOptionalLong(HTTP3_BROKEN_COOLDOWN_PROPERTY, value);
+  }
+
+  public Long getHttp3BrokenCooldownMs() {
+    return getOptionalLong(HTTP3_BROKEN_COOLDOWN_PROPERTY);
+  }
+
+  public void setHttp1OnlyCooldownMs(Long value) {
+    setOptionalLong(HTTP1_ONLY_COOLDOWN_PROPERTY, value);
+  }
+
+  public Long getHttp1OnlyCooldownMs() {
+    return getOptionalLong(HTTP1_ONLY_COOLDOWN_PROPERTY);
+  }
+
+  public void setH2cCacheTtlMs(Long value) {
+    setOptionalLong(H2C_CACHE_TTL_PROPERTY, value);
+  }
+
+  public Long getH2cCacheTtlMs() {
+    return getOptionalLong(H2C_CACHE_TTL_PROPERTY);
+  }
+
+  public void clearProfileOverrides() {
+    removeProperty(ENABLE_HTTP3_PROPERTY);
+    removeProperty(ENABLE_HTTP2_PROPERTY);
+    removeProperty(ENABLE_HTTP1_PROPERTY);
+    removeProperty(ALPN_ENABLED_PROPERTY);
+    removeProperty(FALLBACK_ENABLED_PROPERTY);
+    removeProperty(PROTOCOL_ERROR_FALLBACK_PROPERTY);
+    removeProperty(ALT_SVC_CACHE_PROPERTY);
+    removeProperty(HTTP1_ONLY_CACHE_PROPERTY);
+    removeProperty(H2C_CACHE_PROPERTY);
+    removeProperty(HTTP2_PRIOR_KNOWLEDGE_PROPERTY);
+    removeProperty(HAPPY_EYEBALLS_DELAY_PROPERTY);
+    removeProperty(HTTP3_BROKEN_COOLDOWN_PROPERTY);
+    removeProperty(HTTP1_ONLY_COOLDOWN_PROPERTY);
+    removeProperty(H2C_CACHE_TTL_PROPERTY);
+  }
+
+  private Boolean getOptionalBoolean(String key) {
+    JMeterProperty property = getProperty(key);
+    if (property == null || property instanceof NullProperty) {
+      return null;
+    }
+    return property.getBooleanValue();
+  }
+
+  private void setOptionalBoolean(String key, Boolean value) {
+    if (value == null) {
+      removeProperty(key);
+    } else {
+      setProperty(key, value);
+    }
+  }
+
+  private Long getOptionalLong(String key) {
+    JMeterProperty property = getProperty(key);
+    if (property == null || property instanceof NullProperty) {
+      return null;
+    }
+    String text = property.getStringValue();
+    if (text == null || text.trim().isEmpty()) {
+      return null;
+    }
+    return Long.parseLong(text.trim());
+  }
+
+  private void setOptionalLong(String key, Long value) {
+    if (value == null) {
+      removeProperty(key);
+    } else {
+      setProperty(key, String.valueOf(value));
+    }
   }
 
   @Override
   protected HTTPSampleResult sample(URL url, String method, boolean areFollowingRedirect,
                                     int depth) {
+    LOG.debug("=== HTTP2Sampler.sample() ENTRY ===");
+    LOG.debug("URL: {}, method: {}, depth: {}", url, method, depth);
     try {
       HTTP2JettyClient client = clientFactory.call();
+      LOG.debug("=== Client obtained, proceeding with request ===");
       this.maxBufferSize = client.getMaxBufferSize();
       this.requestTimeout = client.getRequestTimeout();
       if (!isSyncRequest()) {
@@ -168,7 +400,7 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
           HTTP2FutureResponseListener listener =
               new HTTP2FutureResponseListener(client.getMaxBufferSize());
           this.asyncListener = listener;
-          HttpRequest req = client.sampleAsync(this, this.result, listener);
+          Request req = client.sampleAsync(this, this.result, listener);
           req.send(listener); // Fire the Async
           return null;
         } else {
@@ -188,6 +420,77 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
       }
       return buildErrorResult(e, this.result);
     } catch (Exception e) {
+      // Add logging to diagnose - using ERROR level to ensure it appears in logs
+      LOG.error("=== Exception caught in HTTP2Sampler.sample() ===");
+      LOG.error("Exception type: {}", e.getClass().getName());
+      LOG.error("Exception message: {}", e.getMessage());
+      
+      // Log full exception details including stack trace
+      LOG.error("Full exception stack trace:", e);
+      
+      Throwable cause = e.getCause();
+      String causeInfo = cause != null
+          ? cause.getClass().getName() + ": " + cause.getMessage()
+          : "null";
+      LOG.error("Cause: {}", causeInfo);
+      
+      // Check all levels of the exception chain for protocol_error
+      Throwable current = e;
+      int exceptionDepth = 0;
+      while (current != null && exceptionDepth < 5) {
+        LOG.error("Checking exception at depth {}: type={}, message={}", 
+            exceptionDepth, current.getClass().getName(), current.getMessage());
+        if (current.getMessage() != null) {
+          String msg = current.getMessage().toLowerCase();
+          LOG.error("  Message contains 'protocol_error': {}", msg.contains("protocol_error"));
+          LOG.error("  Message contains 'protocol error': {}", msg.contains("protocol error"));
+        }
+        current = current.getCause();
+        exceptionDepth++;
+      }
+      
+      // Check if this is a protocol_error and attempt HTTP/1.1 fallback
+      boolean isProtocolErrorCause = cause != null && ProtocolErrorException.isProtocolError(cause);
+      boolean isProtocolErrorException = ProtocolErrorException.isProtocolError(e);
+      LOG.error("isProtocolError(cause): {}", isProtocolErrorCause);
+      LOG.error("isProtocolError(exception): {}", isProtocolErrorException);
+      
+      if (isProtocolErrorCause || isProtocolErrorException) {
+        boolean fallbackEnabled = isProtocolErrorFallbackEnabled();
+        if (!fallbackEnabled) {
+          LOG.warn("HTTP/2 protocol_error detected and fallback is DISABLED. "
+              + "Request will fail.");
+          LOG.warn("Error: {}", cause != null ? cause.getMessage() : e.getMessage());
+          LOG.warn("To enable fallback, set httpJettyClient.protocolErrorFallbackEnabled=true "
+              + "or httpJettyClient.disableFallback=false in jmeter.properties");
+        } else {
+          LOG.warn("HTTP/2 protocol_error detected in HTTP2Sampler! "
+              + "Attempting fallback to HTTP/1.1");
+          LOG.warn("Error: {}", cause != null ? cause.getMessage() : e.getMessage());
+          
+          try {
+            // Get the client and request details for fallback
+            HTTP2JettyClient client = clientFactory.call();
+            if (Objects.isNull(this.result)) {
+              this.result = buildResult(url, method);
+            }
+            
+            // Retry with HTTP/1.1 only
+            LOG.info("Retrying request with HTTP/1.1 only: {}", url);
+            HTTPSampleResult fallbackResult = client.retryWithHTTP11Only(this, this.result);
+            
+            if (fallbackResult != null && fallbackResult.isSuccessful()) {
+              LOG.info("HTTP/1.1 fallback succeeded: status={}", fallbackResult.getResponseCode());
+              return fallbackResult;
+            } else {
+              LOG.warn("HTTP/1.1 fallback returned unsuccessful result");
+            }
+          } catch (Exception fallbackException) {
+            LOG.error("Failed to attempt HTTP/1.1 fallback", fallbackException);
+          }
+        }
+      }
+      
       if (Objects.isNull(this.result)) {
         this.result = buildResult(url, method);
       }
@@ -195,7 +498,16 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
     }
   }
 
-  protected HttpRequest sampleAsync(HTTPSampleResult result, HTTP2FutureResponseListener listener)
+  private boolean isProtocolErrorFallbackEnabled() {
+    if (JMeterUtils.getJMeterProperties()
+        .containsKey("httpJettyClient.protocolErrorFallbackEnabled")) {
+      return Boolean.parseBoolean(JMeterUtils.getJMeterProperties()
+          .getProperty("httpJettyClient.protocolErrorFallbackEnabled"));
+    }
+    return !Boolean.parseBoolean(getPropDefault("httpJettyClient.disableFallback", "false"));
+  }
+
+  protected Request sampleAsync(HTTPSampleResult result, HTTP2FutureResponseListener listener)
       throws Exception {
 
     HTTP2JettyClient client = clientFactory.call();
@@ -237,7 +549,8 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
   private HTTP2JettyClient buildClient() throws Exception {
     HTTP2ClientKey connectionKey = buildConnectionKey();
     HTTP2JettyClient client = new HTTP2JettyClient(isHttp1UpgradeEnabled(),
-        "http2[" + connectionKey.target + ":" + Thread.currentThread().getId() + "]");
+        "http2[" + connectionKey.target + ":" + Thread.currentThread().getId() + "]",
+        buildProfileConfig());
     client.start();
     CONNECTIONS.get().put(connectionKey, client);
     return client;
@@ -245,7 +558,56 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
 
   private HTTP2ClientKey buildConnectionKey() throws MalformedURLException {
     return new HTTP2ClientKey(getUrl(), !getProxyHost().isEmpty(), getProxyScheme(), getProxyHost(),
-        getProxyPortInt());
+        getProxyPortInt(), buildProfileKey());
+  }
+
+  private HTTP2ClientProfileConfig buildProfileConfig() {
+    return HTTP2ClientProfileConfig.builder()
+        .profile(getProfile())
+        .enableHttp3(getEnableHttp3())
+        .enableHttp2(getEnableHttp2())
+        .enableHttp1(getEnableHttp1())
+        .alpnEnabled(getAlpnEnabled())
+        .fallbackEnabled(getFallbackEnabled())
+        .protocolErrorFallbackEnabled(getProtocolErrorFallbackEnabled())
+        .altSvcCacheEnabled(getAltSvcCacheEnabled())
+        .http1OnlyCacheEnabled(getHttp1OnlyCacheEnabled())
+        .h2cCacheEnabled(getH2cCacheEnabled())
+        .http2PriorKnowledgeEnabled(getHttp2PriorKnowledgeEnabled())
+        .happyEyeballsDelayMs(getHappyEyeballsDelayMs())
+        .http3BrokenCooldownMs(getHttp3BrokenCooldownMs())
+        .http1OnlyCooldownMs(getHttp1OnlyCooldownMs())
+        .h2cCacheTtlMs(getH2cCacheTtlMs())
+        .build();
+  }
+
+  private String buildProfileKey() {
+    StringBuilder key = new StringBuilder();
+    key.append(getProfile());
+    appendBooleanKey(key, "h3", getEnableHttp3());
+    appendBooleanKey(key, "h2", getEnableHttp2());
+    appendBooleanKey(key, "h1", getEnableHttp1());
+    appendBooleanKey(key, "alpn", getAlpnEnabled());
+    appendBooleanKey(key, "fb", getFallbackEnabled());
+    appendBooleanKey(key, "pef", getProtocolErrorFallbackEnabled());
+    appendBooleanKey(key, "altsvc", getAltSvcCacheEnabled());
+    appendBooleanKey(key, "h1c", getHttp1OnlyCacheEnabled());
+    appendBooleanKey(key, "h2cc", getH2cCacheEnabled());
+    appendBooleanKey(key, "h2pk", getHttp2PriorKnowledgeEnabled());
+    appendLongKey(key, "he", getHappyEyeballsDelayMs());
+    appendLongKey(key, "h3cd", getHttp3BrokenCooldownMs());
+    appendLongKey(key, "h1cd", getHttp1OnlyCooldownMs());
+    appendLongKey(key, "h2cttl", getH2cCacheTtlMs());
+    appendBooleanKey(key, "h2cup", isHttp1UpgradeEnabled());
+    return key.toString();
+  }
+
+  private void appendBooleanKey(StringBuilder key, String name, Boolean value) {
+    key.append(';').append(name).append('=').append(value == null ? "-" : value);
+  }
+
+  private void appendLongKey(StringBuilder key, String name, Long value) {
+    key.append(';').append(name).append('=').append(value == null ? "-" : value);
   }
 
   private HTTP2JettyClient getClient() throws Exception {
@@ -667,14 +1029,16 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
     private final String proxyScheme;
     private final String proxyHost;
     private final int proxyPort;
+    private final String profileKey;
 
     private HTTP2ClientKey(URL url, boolean hasProxy, String proxyScheme, String proxyHost,
-                           int proxyPort) {
+                           int proxyPort, String profileKey) {
       this.target = url.getProtocol() + "://" + url.getAuthority();
       this.hasProxy = hasProxy;
       this.proxyScheme = proxyScheme;
       this.proxyHost = proxyHost;
       this.proxyPort = proxyPort;
+      this.profileKey = profileKey;
     }
 
     @Override
@@ -690,12 +1054,13 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
           proxyPort == that.proxyPort &&
           target.equals(that.target) &&
           proxyScheme.equals(that.proxyScheme) &&
-          proxyHost.equals(that.proxyHost);
+          proxyHost.equals(that.proxyHost) &&
+          profileKey.equals(that.profileKey);
     }
 
     @Override
     public int hashCode() {
-      return Objects.hash(target, hasProxy, proxyScheme, proxyHost, proxyPort);
+      return Objects.hash(target, hasProxy, proxyScheme, proxyHost, proxyPort, profileKey);
     }
   }
 }
