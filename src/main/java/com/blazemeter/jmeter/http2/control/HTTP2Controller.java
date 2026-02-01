@@ -41,6 +41,7 @@ public class HTTP2Controller extends GenericController implements Serializable {
           String urlProcesed = http2FListener.getRequest().getURI().toString();
           LOG.debug("HTTP2 Future Finished, retrying the sample with that data {}", urlProcesed);
           http2SamplesSync.remove(0); // Remove the sample
+          http2Sam.suppressPreProcessorsOnce();
           return http2Sam; // The second attempt take the data from the finished listener
         }
         try {

@@ -9,6 +9,7 @@ import com.blazemeter.jmeter.http2.core.ProtocolErrorException;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.github.benmanes.caffeine.cache.LoadingCache;
 import com.helger.commons.annotation.VisibleForTesting;
+import java.lang.reflect.Field;
 import java.net.MalformedURLException;
 import java.net.URISyntaxException;
 import java.net.URL;
@@ -26,6 +27,7 @@ import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.jmeter.engine.event.LoopIterationEvent;
 import org.apache.jmeter.engine.event.LoopIterationListener;
+import org.apache.jmeter.processor.PreProcessor;
 import org.apache.jmeter.protocol.http.parser.BaseParser;
 import org.apache.jmeter.protocol.http.parser.LinkExtractorParseException;
 import org.apache.jmeter.protocol.http.parser.LinkExtractorParser;
@@ -39,7 +41,10 @@ import org.apache.jmeter.testelement.ThreadListener;
 import org.apache.jmeter.testelement.property.JMeterProperty;
 import org.apache.jmeter.testelement.property.NullProperty;
 import org.apache.jmeter.threads.JMeterContextService;
+import org.apache.jmeter.threads.JMeterThread;
 import org.apache.jmeter.threads.JMeterVariables;
+import org.apache.jmeter.threads.SamplePackage;
+import org.apache.jmeter.threads.TestCompiler;
 import org.apache.jmeter.util.JMeterUtils;
 import org.apache.jorphan.util.JOrphanUtils;
 import org.apache.oro.text.MalformedCachePatternException;
@@ -142,6 +147,8 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
   private int maxBufferSize;
   private int requestTimeout;
   private HTTPSampleResult result;
+  private transient List<PreProcessor> suppressedPreProcessors;
+  private transient SamplePackage suppressedSamplePackage;
 
   public HTTP2Sampler() {
     setName("HTTP2 Sampler");
@@ -405,9 +412,13 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
           return null;
         } else {
           // If there is a listener, it is processed using the result it had
-          this.result = sampleFromListener(
-              this.result, areFollowingRedirect, depth, this.asyncListener);
-          return this.result;
+          try {
+            this.result = sampleFromListener(
+                this.result, areFollowingRedirect, depth, this.asyncListener);
+            return this.result;
+          } finally {
+            restoreSuppressedPreProcessors();
+          }
         }
       } else {
         this.result = buildResult(url, method);
@@ -967,9 +978,59 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
   @Override
   public void iterationStart(LoopIterationEvent iterEvent) {
     this.asyncListener = null;
+    restoreSuppressedPreProcessors();
     JMeterVariables jMeterVariables = JMeterContextService.getContext().getVariables();
     if (!jMeterVariables.isSameUserOnNextIteration()) {
       clearUserStores();
+    }
+  }
+
+  public void suppressPreProcessorsOnce() {
+    if (suppressedPreProcessors != null) {
+      return;
+    }
+    try {
+      JMeterThread thread = JMeterContextService.getContext().getThread();
+      if (thread == null) {
+        return;
+      }
+      Field compilerField = JMeterThread.class.getDeclaredField("compiler");
+      compilerField.setAccessible(true);
+      TestCompiler compiler = (TestCompiler) compilerField.get(thread);
+      if (compiler == null) {
+        return;
+      }
+      SamplePackage pack = compiler.configureSampler(this);
+      if (pack == null || pack.getPreProcessors() == null) {
+        return;
+      }
+      List<PreProcessor> currentPre = pack.getPreProcessors();
+      if (currentPre.isEmpty()) {
+        return;
+      }
+      suppressedPreProcessors = new ArrayList<>(currentPre);
+      suppressedSamplePackage = pack;
+      currentPre.clear();
+      LOG.debug("Pre-processors suppressed for async completion run (sampler={})", getName());
+    } catch (Exception e) {
+      LOG.debug("Failed to suppress pre-processors for async completion", e);
+    }
+  }
+
+  private void restoreSuppressedPreProcessors() {
+    if (suppressedPreProcessors == null || suppressedSamplePackage == null) {
+      return;
+    }
+    try {
+      List<PreProcessor> currentPre = suppressedSamplePackage.getPreProcessors();
+      if (currentPre != null) {
+        currentPre.clear();
+        currentPre.addAll(suppressedPreProcessors);
+      }
+      LOG.debug("Pre-processors restored after async completion (sampler={})", getName());
+    } finally {
+      suppressedPreProcessors = null;
+      suppressedSamplePackage = null;
     }
   }
 

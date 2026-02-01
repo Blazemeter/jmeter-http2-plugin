@@ -1,6 +1,7 @@
 package com.blazemeter.jmeter.http2.control;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import com.blazemeter.jmeter.http2.HTTP2TestBase;
@@ -105,6 +106,42 @@ public class HTTP2ControllerTest extends HTTP2TestBase {
       next = http2Controller.next();
     }
     assertThat(next).isInstanceOf(HTTPSampler.class);
+  }
+
+  @Test
+  public void shouldSuppressPreProcessorsOnAsyncCompletionBeforeReturningSampler()
+      throws Exception {
+    FlagHTTP2Sampler flaggedSampler = new FlagHTTP2Sampler();
+    HTTP2FutureResponseListener flaggedListener = mock(HTTP2FutureResponseListener.class);
+    flaggedSampler.setFutureResponseListener(flaggedListener);
+
+    JMeterUtils.setProperty(MAX_CONCURRENT_ASYNC_IN_CONTROLLER, "1000");
+    http2Controller = new HTTP2Controller();
+    http2Controller.addTestElement(flaggedSampler);
+    http2Controller.addTestElement(otherSamplerType);
+
+    when(request.getURI()).thenReturn(new URI("https://test.com"));
+    when(flaggedListener.getRequest()).thenReturn(request);
+    when(flaggedListener.isDone()).thenReturn(true);
+
+    http2Controller.next();
+    Sampler next = http2Controller.next();
+
+    assertThat(next).isSameAs(flaggedSampler);
+    assertThat(flaggedSampler.wasSuppressed()).isTrue();
+  }
+
+  private static class FlagHTTP2Sampler extends HTTP2Sampler {
+    private boolean suppressed;
+
+    @Override
+    public void suppressPreProcessorsOnce() {
+      suppressed = true;
+    }
+
+    boolean wasSuppressed() {
+      return suppressed;
+    }
   }
 
   // TODO:
