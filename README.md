@@ -172,13 +172,13 @@ store only the selected profile and use defaults.
 |-----------------------------------------------------|----------------------------------------------------------------------------------|-------------|
 | **httpJettyClient.maxBufferSize**                   | Maximum size of the downloaded resources in bytes                                | 2097152     |
 | **httpJettyClient.minThreads**                      | Minimum number of threads per http client                                        | 1           |
-| **httpJettyClient.maxThreads**                      | Maximum number of threads per http client                                        | 5           |
+| **httpJettyClient.maxThreads**                      | Maximum number of threads per http client. If `httpJettyClient.sharedThreadPool` is true and this property is not set, the shared pool defaults to 500 threads. | 5           |
 | **httpJettyClient.maxRequestsQueuedPerDestination** | Maximum number of requests that may be queued to a destination                   | 32767       |
-| **httpJettyClient.maxConnectionsPerDestination**    | Sets the max number of connections to open to each destinations                  | 1           |
+| **httpJettyClient.maxConnectionsPerDestination**    | Sets the max number of connections to open to each destinations                  | 100         |
 | **httpJettyClient.byteBufferPoolFactor**            | Factor number used in the allocation of memory in the buffer of http client      | 4           |
 | **httpJettyClient.strictEventOrdering**             | Force request events ordering                                                    | false       |
-| **httpJettyClient.removeIdleDestinations**          | Whether destinations that have no connections should be removed                  | true        |
-| **httpJettyClient.idleTimeout**                     | the max time, in milliseconds, a connection can be idle                          | 30000       |
+| **httpJettyClient.sharedThreadPool**                | Use a shared thread pool across HTTP clients. When enabled and `httpJettyClient.maxThreads` is not set, the shared pool max defaults to 500. | false       |
+| **httpJettyClient.idleTimeout**                     | Max time, in milliseconds, a connection can be idle (also used as destination idle timeout when enabled) | 60000       |
 | **httpJettyClient.auth.preemptive**                 | Use of Basic preemptive authentication results                                   | false       |
 | **httpJettyClient.maxConcurrentPushedStreams**      | Sets the maximum number of server push streams that is allowed to concurrently receive from a server | 100 |
 | **httpJettyClient.maxConcurrentAsyncInController**  | Maximum number of concurrent http2 samplers inside a HTTP2 Async Controller      | 1000        |
@@ -206,3 +206,6 @@ store only the selected profile and use defaults.
 | **httpJettyClient.quicMaxBidirectionalStreams**     | QUIC max bidirectional streams                                                  | 100          |
 | **httpJettyClient.quicMaxUnidirectionalStreams**    | QUIC max unidirectional streams                                                 | 100          |
 | **httpJettyClient.settingsMaxHeaderListSize**       | HTTP/2 SETTINGS_MAX_HEADER_LIST_SIZE                                            | 4096         |
+
+Legacy property (backward compatibility):
+- **httpJettyClient.removeIdleDestinations**: if set to false, disables destination idle timeout.

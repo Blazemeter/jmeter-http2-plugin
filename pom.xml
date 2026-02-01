@@ -135,7 +135,7 @@
     <dependency>
       <groupId>kg.apc</groupId>
       <artifactId>jmeter-plugins-emulators</artifactId>
-      <version>0.4</version>
+      <version>0.5</version>
       <scope>test</scope>
       <exclusions>
         <exclusion>
@@ -321,7 +321,7 @@
           </excludes>
         </configuration>
         <executions>
-          <!-- Compile Installer.java with Java 8 target FIRST so it can run on older Java versions to show the message -->
+          <!-- Compile Installer.java with Java 8 target FIRST so, it can run on older Java versions to show the message -->
           <execution>
             <id>compile-installer-java8</id>
             <phase>compile</phase>
@@ -448,7 +448,7 @@
           <plugin>
             <groupId>org.apache.maven.plugins</groupId>
             <artifactId>maven-enforcer-plugin</artifactId>
-            <version>3.0.0-M3</version>
+            <version>3.6.2</version>
             <executions>
               <execution>
                 <id>enforce-no-snapshots</id>

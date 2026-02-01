@@ -143,17 +143,18 @@ public class HTTP2JettyClient {
   private static final Map<String, Http1OnlyEntry> HTTP1_ONLY_CACHE = new ConcurrentHashMap<>();
   private static final Map<String, H2cEntry> H2C_CACHE = new ConcurrentHashMap<>();
   private int requestTimeout = 0;
-  private int maxBufferSize = 2 * 1024 * 1024;
+  private int maxBufferSize = 21 * 1024 * 1024;
   private int maxThreads = 5;
+  private boolean maxThreadsConfigured = false;
   private int minThreads = 1;
   private int maxRequestsQueuedPerDestination = Short.MAX_VALUE;
-  private int maxConnectionsPerDestination = 1;
+  private int maxConnectionsPerDestination = 100;
 
   private int byteBufferPoolFactor = 4;
   private int maxConcurrentPushedStreams = 100;
   private int maxRequestsPerConnection = 100;
-  private boolean sharedThreadPoolEnabled = false;
-  
+  private boolean sharedThreadPoolEnabled = true;
+
   // Experimental HTTP/2 SETTINGS frame configuration
   // These can be adjusted via properties to fix protocol_error with specific servers
   private int settingsInitialWindowSize = 65535;
@@ -166,7 +167,7 @@ public class HTTP2JettyClient {
 
   private boolean strictEventOrdering = false;
   private boolean removeIdleDestinations = true;
-  private int idleTimeout = 30000;
+  private int idleTimeout = 60000;
   private final HttpClient httpClient;
   private final HttpClient httpClientNoH3;
   private final HttpClient httpClientHttp1Only;
@@ -201,7 +202,7 @@ public class HTTP2JettyClient {
   }
 
   public HTTP2JettyClient(boolean http1UpgradeRequired, String name,
-      HTTP2ClientProfileConfig profileConfig) {
+                          HTTP2ClientProfileConfig profileConfig) {
     loadProperties(profileConfig);
     LOG.info(PLUGIN_BUILD_TAG);
 
@@ -230,13 +231,13 @@ public class HTTP2JettyClient {
     ClientConnectionFactory.Info http11 = HttpClientConnectionFactory.HTTP11;
 
     HTTP2Client http2Client = new HTTP2Client(clientConnector);
-    
+
     // Add session listener to log SETTINGS frames received from server (for debugging Issue #12071)
     // This helps identify if the server sends a lower SETTINGS_MAX_HEADER_LIST_SIZE
     try {
       // Use reflection to add Session.Listener if available
       Class<?> sessionListenerClass = Class.forName("org.eclipse.jetty.http2.api.Session$Listener");
-      
+
       Object sessionListener = java.lang.reflect.Proxy.newProxyInstance(
           sessionListenerClass.getClassLoader(),
           new Class<?>[] {sessionListenerClass},
@@ -251,7 +252,7 @@ public class HTTP2JettyClient {
                 @SuppressWarnings("unchecked")
                 java.util.Map<Integer, Integer> settings =
                     (java.util.Map<Integer, Integer>) getSettingsMethod.invoke(settingsFrame);
-                
+
                 if (settings != null) {
                   // SETTINGS_MAX_HEADER_LIST_SIZE = 0x6
                   Integer maxHeaderListSize = settings.get(0x6);
@@ -260,8 +261,8 @@ public class HTTP2JettyClient {
                         + "SETTINGS_MAX_HEADER_LIST_SIZE={}", maxHeaderListSize);
                     if (maxHeaderListSize < settingsMaxHeaderListSize) {
                       LOG.warn("Server SETTINGS_MAX_HEADER_LIST_SIZE ({}) is lower than "
-                          + "client setting ({}). This may cause protocol_error if headers exceed "
-                          + "server limit (Issue #12071).",
+                              + "client setting ({}). This may cause protocol_error if headers "
+                              + "exceed server limit (Issue #12071).",
                           maxHeaderListSize, settingsMaxHeaderListSize);
                     }
                   }
@@ -269,7 +270,7 @@ public class HTTP2JettyClient {
                   Integer maxFrameSize = settings.get(0x5); // SETTINGS_MAX_FRAME_SIZE
                   Integer initialWindowSize = settings.get(0x4); // INITIAL_WINDOW_SIZE
                   Integer maxConcurrentStreams = settings.get(0x3); // MAX_CONCURRENT_STREAMS
-                  
+
                   if (maxFrameSize != null) {
                     LOG.debug("HTTP/2 SETTINGS: SETTINGS_MAX_FRAME_SIZE={}", maxFrameSize);
                   }
@@ -288,7 +289,7 @@ public class HTTP2JettyClient {
             }
             return null; // Session.Listener methods return void
           });
-      
+
       // Add the listener to HTTP2Client
       java.lang.reflect.Method addSessionListenerMethod =
           http2Client.getClass().getMethod("addSessionListener", sessionListenerClass);
@@ -298,7 +299,7 @@ public class HTTP2JettyClient {
       LOG.debug("Could not add Session.Listener to HTTP2Client "
           + "(may not be available in this Jetty version)", e);
     }
-    
+
     CustomClientConnectionFactoryOverHTTP2.HTTP2 http2 =
         new CustomClientConnectionFactoryOverHTTP2.HTTP2(http2Client);
 
@@ -310,75 +311,75 @@ public class HTTP2JettyClient {
       http2Client.setMaxConcurrentPushedStreams(maxConcurrentPushedStreams);
     }
     http2Client.setUseALPN(alpnEnabled);
-    
+
     // Configure HTTP/2 SETTINGS frame parameters
     // These parameters are sent in the SETTINGS frame during HTTP/2 connection establishment
     // Some servers may reject HTTP/2 if these values are not compatible
     // Using reflection to access methods that may not be available in all Jetty versions
     // Values can be configured via properties for specific server compatibility
-    
+
     // SETTINGS_INITIAL_WINDOW_SIZE: Initial window size for flow control
     try {
       if (hasMethod(http2Client.getClass(), "setInitialStreamWindowSize", int.class)) {
         http2Client.getClass().getMethod("setInitialStreamWindowSize", int.class)
             .invoke(http2Client, settingsInitialWindowSize);
-        LOG.info("HTTP2Client: setInitialStreamWindowSize={} (SETTINGS_INITIAL_WINDOW_SIZE)", 
+        LOG.info("HTTP2Client: setInitialStreamWindowSize={} (SETTINGS_INITIAL_WINDOW_SIZE)",
             settingsInitialWindowSize);
       }
     } catch (Exception e) {
       LOG.debug("HTTP2Client: setInitialStreamWindowSize not available", e);
     }
-    
+
     // SETTINGS_MAX_FRAME_SIZE: Maximum size of a frame
     try {
       if (hasMethod(http2Client.getClass(), "setMaxFrameSize", int.class)) {
         http2Client.getClass().getMethod("setMaxFrameSize", int.class)
             .invoke(http2Client, settingsMaxFrameSize);
-        LOG.info("HTTP2Client: setMaxFrameSize={} (SETTINGS_MAX_FRAME_SIZE)", 
+        LOG.info("HTTP2Client: setMaxFrameSize={} (SETTINGS_MAX_FRAME_SIZE)",
             settingsMaxFrameSize);
       }
     } catch (Exception e) {
       LOG.debug("HTTP2Client: setMaxFrameSize not available", e);
     }
-    
+
     // SETTINGS_MAX_CONCURRENT_STREAMS: Maximum number of concurrent streams
     // Note: 0 means no limit (RFC 7540)
     try {
       if (hasMethod(http2Client.getClass(), "setMaxConcurrentStreams", int.class)) {
         http2Client.getClass().getMethod("setMaxConcurrentStreams", int.class)
             .invoke(http2Client, settingsMaxConcurrentStreams);
-        LOG.info("HTTP2Client: setMaxConcurrentStreams={} (SETTINGS_MAX_CONCURRENT_STREAMS)", 
+        LOG.info("HTTP2Client: setMaxConcurrentStreams={} (SETTINGS_MAX_CONCURRENT_STREAMS)",
             settingsMaxConcurrentStreams);
       }
     } catch (Exception e) {
       LOG.debug("HTTP2Client: setMaxConcurrentStreams not available", e);
     }
-    
+
     // SETTINGS_MAX_HEADER_LIST_SIZE: Maximum size of header list
     // Note: 0 means no limit (RFC 7540)
     try {
       if (hasMethod(http2Client.getClass(), "setMaxHeaderListSize", int.class)) {
         http2Client.getClass().getMethod("setMaxHeaderListSize", int.class)
             .invoke(http2Client, settingsMaxHeaderListSize);
-        LOG.info("HTTP2Client: setMaxHeaderListSize={} (SETTINGS_MAX_HEADER_LIST_SIZE)", 
+        LOG.info("HTTP2Client: setMaxHeaderListSize={} (SETTINGS_MAX_HEADER_LIST_SIZE)",
             settingsMaxHeaderListSize);
       }
     } catch (Exception e) {
       LOG.debug("HTTP2Client: setMaxHeaderListSize not available", e);
     }
-    
+
     // SETTINGS_HEADER_TABLE_SIZE: Maximum size of header compression table (HPACK)
     try {
       if (hasMethod(http2Client.getClass(), "setHeaderTableSize", int.class)) {
         http2Client.getClass().getMethod("setHeaderTableSize", int.class)
             .invoke(http2Client, settingsHeaderTableSize);
-        LOG.info("HTTP2Client: setHeaderTableSize={} (SETTINGS_HEADER_TABLE_SIZE)", 
+        LOG.info("HTTP2Client: setHeaderTableSize={} (SETTINGS_HEADER_TABLE_SIZE)",
             settingsHeaderTableSize);
       }
     } catch (Exception e) {
       LOG.debug("HTTP2Client: setHeaderTableSize not available", e);
     }
-    
+
     LOG.info("HTTP2Client configured: ALPN={}, maxConcurrentPushedStreams={}, "
         + "http1UpgradeRequired={}", alpnEnabled, maxConcurrentPushedStreams, http1UpgradeRequired);
     LOG.info("HTTP2Client SETTINGS frame parameters configured "
@@ -543,9 +544,11 @@ public class HTTP2JettyClient {
     minThreads = Integer
         .parseInt(JMeterUtils.getPropDefault("httpJettyClient.minThreads",
             String.valueOf(minThreads)));
+    maxThreadsConfigured =
+      JMeterUtils.getJMeterProperties().containsKey("httpJettyClient.maxThreads");
     maxThreads = Integer
-        .parseInt(JMeterUtils.getPropDefault("httpJettyClient.maxThreads",
-            String.valueOf(maxThreads)));
+      .parseInt(JMeterUtils.getPropDefault("httpJettyClient.maxThreads",
+        String.valueOf(maxThreads)));
     maxRequestsQueuedPerDestination = Integer
         .parseInt(JMeterUtils.getPropDefault("httpJettyClient.maxRequestsQueuedPerDestination",
             String.valueOf(maxRequestsQueuedPerDestination)));
@@ -569,6 +572,9 @@ public class HTTP2JettyClient {
         Integer.parseInt(JMeterUtils.getPropDefault("httpJettyClient.idleTimeout",
             String.valueOf(idleTimeout)));
     sharedThreadPoolEnabled = JMeterUtils.getPropDefault("httpJettyClient.sharedThreadPool", false);
+    if (sharedThreadPoolEnabled && !maxThreadsConfigured) {
+      maxThreads = 500;
+    }
     quicMaxIdleTimeout = Integer
         .parseInt(JMeterUtils.getPropDefault("httpJettyClient.quicMaxIdleTimeout",
             String.valueOf(quicMaxIdleTimeout)));
@@ -671,7 +677,7 @@ public class HTTP2JettyClient {
   }
 
   private boolean resolveProtocolErrorFallback(ProfileDefaults defaults,
-      HTTP2ClientProfileConfig profileConfig) {
+                                               HTTP2ClientProfileConfig profileConfig) {
     if (profileConfig != null && profileConfig.getProtocolErrorFallbackEnabled() != null) {
       return profileConfig.getProtocolErrorFallbackEnabled();
     }
@@ -793,10 +799,13 @@ public class HTTP2JettyClient {
     private final long happyEyeballsDelayMs;
 
     private ProfileDefaults(boolean enableHttp3, boolean enableHttp2, boolean enableHttp1,
-        boolean alpnEnabled, boolean fallbackEnabled, boolean protocolErrorFallbackEnabled,
-        boolean altSvcCacheEnabled, boolean http1OnlyCacheEnabled, boolean h2cCacheEnabled,
-        boolean http2PriorKnowledgeEnabled, long http3BrokenCooldownMs, long http1OnlyCooldownMs,
-        long h2cCacheTtlMs, long happyEyeballsDelayMs) {
+                            boolean alpnEnabled, boolean fallbackEnabled,
+                            boolean protocolErrorFallbackEnabled,
+                            boolean altSvcCacheEnabled, boolean http1OnlyCacheEnabled,
+                            boolean h2cCacheEnabled,
+                            boolean http2PriorKnowledgeEnabled, long http3BrokenCooldownMs,
+                            long http1OnlyCooldownMs,
+                            long h2cCacheTtlMs, long happyEyeballsDelayMs) {
       this.enableHttp3 = enableHttp3;
       this.enableHttp2 = enableHttp2;
       this.enableHttp1 = enableHttp1;
@@ -833,7 +842,7 @@ public class HTTP2JettyClient {
 
   public void start() throws Exception {
     if (!httpClient.isStarted()) {
-      LOG.info("Starting HttpClient: name={}, http1UpgradeRequired={}", 
+      LOG.info("Starting HttpClient: name={}, http1UpgradeRequired={}",
           httpClient.getName(), http1UpgradeRequired);
       httpClient.start();
       LOG.info("HttpClient started successfully");
@@ -870,20 +879,20 @@ public class HTTP2JettyClient {
   /**
    * Creates a new HttpClient configured with only HTTP/1.1 (no HTTP/2) for fallback scenarios.
    * This is used when protocol_error is detected and we need to retry with HTTP/1.1 only.
-   * 
+   *
    * @param name Name for the HttpClient
    * @return A new HttpClient configured for HTTP/1.1 only
    */
   private HttpClient createHTTP11OnlyClient(String name) throws Exception {
     LOG.debug("Creating HTTP/1.1-only client for fallback");
-    
+
     ClientConnector clientConnector = createClientConnector(name + "-http11-fallback");
-    
+
     // Create transport with ONLY HTTP/1.1 (no HTTP/2)
     ClientConnectionFactory.Info http11 = HttpClientConnectionFactory.HTTP11;
     HttpClientTransport transport = new HttpClientTransportDynamic(clientConnector, http11);
     LOG.debug("HttpClientTransportDynamic configured with HTTP/1.1 only (fallback mode)");
-    
+
     HttpClient http11Client = new HttpClient(transport);
     http11Client.setUserAgentField(null);
     http11Client.setMaxRequestsQueuedPerDestination(maxRequestsQueuedPerDestination);
@@ -894,13 +903,13 @@ public class HTTP2JettyClient {
     }
     http11Client.setIdleTimeout(idleTimeout);
     http11Client.setName(name + "-http11-fallback");
-    
+
     // Start the client
     if (!http11Client.isStarted()) {
       http11Client.start();
       LOG.debug("HTTP/1.1-only fallback client started");
     }
-    
+
     return http11Client;
   }
 
@@ -908,16 +917,16 @@ public class HTTP2JettyClient {
    * Retries a request using HTTP/1.1 only (fallback mode).
    * This is called when protocol_error is detected with HTTP/2.
    * This is a public method that can be called from HTTP2Sampler.
-   * 
+   *
    * @param sampler The HTTP2Sampler with request details
-   * @param result The HTTPSampleResult with URL and method
+   * @param result  The HTTPSampleResult with URL and method
    * @return HTTPSampleResult from the HTTP/1.1 request
    */
   public HTTPSampleResult retryWithHTTP11Only(HTTP2Sampler sampler, HTTPSampleResult result)
       throws Exception {
     LOG.warn("Retrying request with HTTP/1.1 only due to protocol_error");
     URL url = result.getURL();
-    
+
     // Build a new request with the shared HTTP/1.1-only client (keeps auth config)
     Request http11Request = httpClientHttp1Only.newRequest(url.toURI())
         .method(result.getHTTPMethod())
@@ -953,18 +962,18 @@ public class HTTP2JettyClient {
   /**
    * Sends a request using HTTP/1.1 only (fallback mode).
    * This is called when protocol_error is detected with HTTP/2.
-   * 
-   * @param originalRequest The original request that failed with protocol_error
+   *
+   * @param originalRequest  The original request that failed with protocol_error
    * @param originalListener The original listener (for compatibility)
    * @return ContentResponse from the HTTP/1.1 request
    */
-  private ContentResponse sendWithHTTP11Only(Request originalRequest, 
-                                              HTTP2FutureResponseListener originalListener)
+  private ContentResponse sendWithHTTP11Only(Request originalRequest,
+                                             HTTP2FutureResponseListener originalListener)
       throws InterruptedException, TimeoutException, ExecutionException {
     URI uri = originalRequest.getURI();
-    LOG.info("Retrying request with HTTP/1.1 only: method={}, URI={}", 
+    LOG.info("Retrying request with HTTP/1.1 only: method={}, URI={}",
         originalRequest.getMethod(), uri);
-    
+
     try {
       // Rebuild the request with the shared HTTP/1.1-only client
       Request http11Request = httpClientHttp1Only.newRequest(uri)
@@ -1000,10 +1009,10 @@ public class HTTP2JettyClient {
       // Send request and wait for response
       LOG.debug("Sending HTTP/1.1 fallback request");
       ContentResponse response = http11Request.send();
-      
-      LOG.info("HTTP/1.1 fallback request succeeded: status={}, version={}", 
+
+      LOG.info("HTTP/1.1 fallback request succeeded: status={}, version={}",
           response.getStatus(), response.getVersion());
-      
+
       return response;
     } catch (Exception e) {
       LOG.error("HTTP/1.1 fallback also failed for URI: {}", uri, e);
@@ -1123,8 +1132,8 @@ public class HTTP2JettyClient {
   }
 
   public Request sampleAsync(HTTP2Sampler sampler,
-                                 HTTPSampleResult result,
-                                 HTTP2FutureResponseListener listener)
+                             HTTPSampleResult result,
+                             HTTP2FutureResponseListener listener)
       throws Exception {
     URL url = result.getURL();
     LOG.info("Creating async HTTP request: method={}, URL={}", result.getHTTPMethod(), url);
@@ -1204,7 +1213,7 @@ public class HTTP2JettyClient {
           ? cause.getClass().getName() + ": " + cause.getMessage()
           : "null";
       LOG.error("Cause: {}", causeInfo);
-      
+
       // Check if this is a protocol_error and attempt HTTP/1.1 fallback
       RetryableRequestException retryable =
           findRetryableRequestException(cause != null ? cause : e);
@@ -1242,7 +1251,7 @@ public class HTTP2JettyClient {
       boolean isProtocolErrorException = ProtocolErrorException.isProtocolError(e);
       LOG.error("isProtocolError(cause): {}", isProtocolErrorCause);
       LOG.error("isProtocolError(exception): {}", isProtocolErrorException);
-      
+
       if ((isProtocolErrorCause || isProtocolErrorException) && protocolErrorFallbackEnabled) {
         LOG.warn("HTTP/2 protocol_error detected in sampleFromListener()! "
             + "Attempting fallback to HTTP/1.1");
@@ -1266,7 +1275,7 @@ public class HTTP2JettyClient {
           LOG.warn("HTTP/1.1 fallback disabled by configuration");
         }
       }
-      
+
       // Re-throw if fallback didn't work
       throw e;
     }
@@ -1278,16 +1287,16 @@ public class HTTP2JettyClient {
     LOG.debug("=== send() called ===");
     LOG.debug("Request URI: {}", request.getURI());
     LOG.debug("Listener: {}", listener != null ? listener.getClass().getName() : "null");
-    
+
     URI uri = request.getURI();
     LOG.info("Sending request: method={}, URI={}", request.getMethod(), uri);
-    
+
     if (request.getHeaders() != null) {
       HttpFields hm = request.getHeaders();
       String ae = hm.get("Accept-Encoding");
       LOG.debug("Request headers: Accept-Encoding={}, total headers={}", ae, hm.size());
     }
-    
+
     LOG.debug("Sending request via HttpClient (ALPN negotiation will occur during TLS handshake)");
     if (shouldUseHappyEyeballs(request)) {
       return sendWithHappyEyeballs(request, listener);
@@ -1462,13 +1471,13 @@ public class HTTP2JettyClient {
     long getStart = System.currentTimeMillis();
     int timeoutMs = requestTimeout > 0 ? requestTimeout + 2000 : 0;
     LOG.debug("Waiting for response with timeout={}ms", timeoutMs);
-    
+
     LOG.debug("=== getContent() called ===");
     String originalRequestUri = originalRequest != null
         ? originalRequest.getURI().toString()
         : "null";
     LOG.debug("originalRequest: {}", originalRequestUri);
-    
+
     try {
       ContentResponse response;
       LOG.debug("=== Calling listener.get() ===");
@@ -1503,7 +1512,7 @@ public class HTTP2JettyClient {
       long elapsed = System.currentTimeMillis() - getStart;
       Throwable cause = e.getCause();
       LOG.error("Request failed after {}ms with ExecutionException", elapsed, e);
-      
+
       // Check if the cause is a ProtocolErrorException
       RetryableRequestException retryable =
           findRetryableRequestException(cause != null ? cause : e);
@@ -1999,7 +2008,11 @@ public class HTTP2JettyClient {
 
   private ClientConnector createClientConnector(String name) {
     ClientConnector connector = new ClientConnector();
-    connector.setSelectors(1);
+    if (sharedThreadPoolEnabled) {
+      connector.setSelectors(-1);
+    } else {
+      connector.setSelectors(1); // Only one selector per thread in thread pool
+    }
     connector.setConnectBlocking(false);
     SslContextFactory.Client sslContextFactory = new JMeterJettySslContextFactory();
     connector.setSslContextFactory(sslContextFactory);
@@ -2037,17 +2050,31 @@ public class HTTP2JettyClient {
     }
     synchronized (SHARED_POOL_LOCK) {
       if (sharedExecutor == null) {
-        sharedThreadPool = new QueuedThreadPool(maxThreads);
+        if (sharedMaxThreads <= 0) {
+          sharedMaxThreads = maxThreads;
+        }
+
+        sharedThreadPool = new QueuedThreadPool(sharedMaxThreads);
         sharedThreadPool.setMinThreads(minThreads);
+
+        sharedThreadPool.setReservedThreads(-1); // Automatic
+        sharedThreadPool.setIdleTimeout(10000); // 60 seconds to free a idle thread
+        int aggressiveEvictCount = Math.max(8, sharedMaxThreads / 10); // ~10% of  pool
+        sharedThreadPool.setMaxEvictCount(aggressiveEvictCount); // Free on aggressive way
+
+        int cores = Runtime.getRuntime().availableProcessors();
+        sharedThreadPool.setLowThreadsThreshold(cores * 2);
+
         sharedThreadPool.setName(SHARED_POOL_NAME);
         try {
           sharedThreadPool.start();
         } catch (Exception e) {
-          LOG.warn("Failed to start shared Jetty thread pool, falling back to local pools", e);
+          LOG.warn("Failed to start shared Jetty thread pool, falling back to " +
+              "local pools", e);
           sharedThreadPool = null;
           return createLocalThreadPool("http2-local-fallback");
         }
-        sharedMaxThreads = maxThreads;
+
         sharedMinThreads = minThreads;
         sharedExecutor = sharedThreadPool;
       } else if (sharedThreadPool != null
@@ -2217,7 +2244,7 @@ public class HTTP2JettyClient {
             }
           });
     }
-    
+
     // Filter invalid headers for HTTP/2 (Issue #2788)
     // HTTP/2 does not support Connection: close or other connection-specific headers
     // This must be done after all headers are set to ensure we catch headers from HeaderManager
@@ -2244,17 +2271,17 @@ public class HTTP2JettyClient {
     } else if (http1UpgradeRequired && "https".equalsIgnoreCase(url.getProtocol())) {
       LOG.debug("Skipping upgrade headers for HTTPS connection (ALPN handles HTTP/2 negotiation)");
     }
-    
+
     // Filter invalid headers for HTTP/2 again after upgrade headers (if any)
     // This ensures we don't have invalid headers even after adding upgrade headers
     filterInvalidHTTP2Headers(request);
-    
+
     // Log all headers for debugging HTTP/2 protocol_error
     if (request.getHeaders() != null) {
       HttpFields headers = request.getHeaders();
-      LOG.debug("Request headers configured: total={}, http1UpgradeRequired={}", 
+      LOG.debug("Request headers configured: total={}, http1UpgradeRequired={}",
           headers.size(), http1UpgradeRequired);
-      
+
       // Log pseudo-headers (HTTP/2 specific) - these are set automatically by Jetty
       URI uri = request.getURI();
       String authority = uri.getAuthority() != null ? uri.getAuthority()
@@ -2263,7 +2290,7 @@ public class HTTP2JettyClient {
       String path = uri.getPath() + (uri.getQuery() != null ? "?" + uri.getQuery() : "");
       LOG.debug("HTTP/2 pseudo-headers (set by Jetty): :method={}, :scheme={}, "
           + ":authority={}, :path={}", request.getMethod(), uri.getScheme(), authority, path);
-      
+
       // Log all headers (for debugging)
       if (LOG.isDebugEnabled()) {
         headers.forEach(field -> {
@@ -2315,7 +2342,7 @@ public class HTTP2JettyClient {
   }
 
   private void addPreemptiveAuthorizationHeader(Request request, URL url,
-      AuthManager authManager) {
+                                                AuthManager authManager) {
     if (request == null || url == null || authManager == null) {
       return;
     }
@@ -2384,7 +2411,7 @@ public class HTTP2JettyClient {
    * HTTP/2 does not support certain headers like "Connection: close" or other
    * connection-specific headers that are valid in HTTP/1.1 but invalid in HTTP/2.
    * This method removes these headers to prevent protocol_error.
-   * 
+   *
    * @param request The HTTP request to filter headers from
    */
   private void filterInvalidHTTP2Headers(Request request) {
@@ -2392,28 +2419,28 @@ public class HTTP2JettyClient {
     if (headers == null || !(headers instanceof HttpFields.Mutable)) {
       return;
     }
-    
+
     HttpFields.Mutable mutableHeaders = (HttpFields.Mutable) headers;
-    
+
     // Check if this is an HTTP/2 request (has pseudo-headers or version is HTTP/2)
     // For HTTPS connections, we assume HTTP/2 if ALPN negotiated it
     // For HTTP connections, we check if upgrade headers are present
     boolean isHTTP2 = "https".equalsIgnoreCase(request.getURI().getScheme())
         || (http1UpgradeRequired && headers.contains(HttpHeader.UPGRADE));
-    
+
     if (isHTTP2) {
       // HTTP/2 does not support Connection header except for upgrade (which we handle separately)
       // Remove Connection: close or any Connection header that's not for upgrade
       if (headers.contains(HttpHeader.CONNECTION)) {
         String connectionValue = headers.get(HttpHeader.CONNECTION);
-        if (connectionValue != null && 
-            !connectionValue.contains("Upgrade") && 
+        if (connectionValue != null &&
+            !connectionValue.contains("Upgrade") &&
             !connectionValue.contains("HTTP2-Settings")) {
           LOG.debug("Removing invalid Connection header for HTTP/2: {}", connectionValue);
           mutableHeaders.remove(HttpHeader.CONNECTION);
         }
       }
-      
+
       // HTTP/2 headers must be lowercase (RFC 7540)
       // Jetty should handle this automatically, but we log if we see uppercase headers
       if (LOG.isDebugEnabled()) {
@@ -2523,11 +2550,11 @@ public class HTTP2JettyClient {
       String boundary = extractMultipartBoundary(multipartEntityBuilder);
       Charset contentCharset =
           buildCharsetOrDefault(contentEncoding, StandardCharsets.UTF_8);
-      
+
       // Build multipart body as bytes
-      byte[] multipartBody = buildMultipartBodyBytes(sampler, boundary, contentCharset, 
+      byte[] multipartBody = buildMultipartBodyBytes(sampler, boundary, contentCharset,
           hasContentTypeHeader);
-      
+
       // Set Content-Type header with boundary
       // Note: boundary from extractMultipartBoundary() does NOT include the "--" prefix
       // The test expects: boundary="JettyHttpClient-..." (with quotes)
@@ -2536,13 +2563,13 @@ public class HTTP2JettyClient {
       // The test (line 690) uses: "multipart/form-data; boundary=" + boundary.substring(2)
       // Since our boundary doesn't have "--", we use it directly
       HttpFields.Mutable headers = (Mutable) request.getHeaders();
-      headers.put(HTTPConstants.HEADER_CONTENT_TYPE, 
+      headers.put(HTTPConstants.HEADER_CONTENT_TYPE,
           "multipart/form-data; boundary=\"" + boundary + "\"");
-      
+
       // Use BytesRequestContent instead of MultiPartRequestContent
       Request.Content requestContent = new BytesRequestContent(multipartBody);
       request.body(requestContent);
-      
+
       // Build postBody string for query string display (for logging/debugging)
       for (JMeterProperty jMeterProperty : sampler.getArguments()) {
         HTTPArgument arg = (HTTPArgument) jMeterProperty.getObjectValue();
@@ -2562,7 +2589,7 @@ public class HTTP2JettyClient {
       }
       postBody.append(MULTI_PART_SEPARATOR).append(boundary).append(MULTI_PART_SEPARATOR)
           .append(LINE_SEPARATOR);
-      
+
       multipartEntityBuilder.close();
     } else {
       if (!sampler.hasArguments() && sampler.getSendFileAsPostBody()) {
@@ -2683,9 +2710,9 @@ public class HTTP2JettyClient {
    * Builds multipart/form-data body as bytes for Jetty 12.
    * In Jetty 12, MultiPartRequestContent API changed, so we build the body manually.
    *
-   * @param sampler The HTTP2 sampler with arguments and files
-   * @param boundary The multipart boundary (with -- prefix)
-   * @param contentCharset The charset for encoding
+   * @param sampler              The HTTP2 sampler with arguments and files
+   * @param boundary             The multipart boundary (with -- prefix)
+   * @param contentCharset       The charset for encoding
    * @param hasContentTypeHeader Whether content type header is already set
    * @return The complete multipart body as bytes
    * @throws IOException If there's an error reading files
@@ -2707,7 +2734,7 @@ public class HTTP2JettyClient {
           argContentType = "text/plain";
         }
         argContentType = argContentType + "; charset="
-          + contentCharset.name().toLowerCase(Locale.ROOT);
+            + contentCharset.name().toLowerCase(Locale.ROOT);
 
         Mutable partHeaders = HttpFields.build()
             .add("Content-Disposition", "form-data; name=\"" + arg.getEncodedName() + "\"")
@@ -2729,18 +2756,18 @@ public class HTTP2JettyClient {
       }
       String fileName = Paths.get(file.getPath()).getFileName().toString();
       String mimeTypeFile = extractFileMimeType(hasContentTypeHeader, file);
-      
+
       // Build headers using HttpFields to match the format expected by tests
       // The test uses HttpFields.build().toString() which has a specific format
       Mutable partHeaders = HttpFields.build()
-          .add("Content-Disposition", 
+          .add("Content-Disposition",
               "form-data; name=\"" + file.getParamName() + "\"; filename=\"" + fileName + "\"")
           .add(HttpHeader.CONTENT_TYPE, mimeTypeFile);
-      
+
       output.write(boundaryLine.getBytes(StandardCharsets.US_ASCII));
       output.write(partHeaders.toString().getBytes(StandardCharsets.US_ASCII));
       output.write(newLine.getBytes(StandardCharsets.US_ASCII));
-      
+
       // Read and write file content
       try (InputStream fileStream = Files.newInputStream(Paths.get(file.getPath()))) {
         byte[] buffer = new byte[8192];
