@@ -185,20 +185,13 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
   }
 
   public boolean isHttp1UpgradeEnabled() {
-    JMeterProperty property = getProperty(HTTP1_UPGRADE_PROPERTY);
-    if (property == null || property instanceof NullProperty) {
-      return getPropDefault(H2C_UPGRADE_DEFAULT_PROPERTY, false);
-    }
-    return property.getBooleanValue();
+    return getPropertyAsBoolean(HTTP1_UPGRADE_PROPERTY,
+        getPropDefault(H2C_UPGRADE_DEFAULT_PROPERTY, false));
   }
 
   @Override
   public boolean isConcurrentDwn() {
-    JMeterProperty property = getProperty(CONCURRENT_DWN);
-    if (property == null || property instanceof NullProperty) {
-      return true;
-    }
-    return property.getBooleanValue();
+    return getPropertyAsBoolean(CONCURRENT_DWN, true);
   }
 
   public void setProfile(String profile) {
@@ -219,11 +212,7 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
   }
 
   public int getUiTabIndex() {
-    JMeterProperty property = getProperty(UI_TAB_INDEX_PROPERTY);
-    if (property == null || property instanceof NullProperty) {
-      return 0;
-    }
-    return property.getIntValue();
+    return getPropertyAsInt(UI_TAB_INDEX_PROPERTY, 0);
   }
 
   public void setEnableHttp3(Boolean enabled) {
