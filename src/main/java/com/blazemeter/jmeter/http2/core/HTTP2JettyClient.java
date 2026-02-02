@@ -1097,6 +1097,7 @@ public class HTTP2JettyClient {
     result.sampleStart();
 
     setBody(request, sampler, result);
+    initializeSentBytes(result, request);
 
   }
 
@@ -2655,6 +2656,40 @@ public class HTTP2JettyClient {
       }
     }
     result.setQueryString(postBody.toString());
+  }
+
+  private void initializeSentBytes(HTTPSampleResult result, Request request) {
+    if (result.getSentBytes() > 0) {
+      return;
+    }
+    long headerBytes = estimateRequestHeaderBytes(request);
+    if (headerBytes > 0) {
+      result.setSentBytes(headerBytes);
+    }
+  }
+
+  private long estimateRequestHeaderBytes(Request request) {
+    String headers = buildHeadersString(request.getHeaders());
+    long headersBytes = headers.isEmpty()
+        ? 0
+        : headers.getBytes(StandardCharsets.UTF_8).length + 1;
+
+    String path = request.getURI().getRawPath();
+    if (path == null || path.isEmpty()) {
+      path = "/";
+    }
+    String query = request.getURI().getRawQuery();
+    if (query != null && !query.isEmpty()) {
+      path = path + "?" + query;
+    }
+
+    String version = request.getVersion() != null
+        ? request.getVersion().asString()
+        : "HTTP/1.1";
+    String requestLine = request.getMethod() + " " + path + " " + version + "\n";
+    long requestLineBytes = requestLine.getBytes(StandardCharsets.UTF_8).length;
+
+    return requestLineBytes + headersBytes;
   }
 
   private String extractMultipartBoundary(MultiPartRequestContent multipartEntityBuilder) {
