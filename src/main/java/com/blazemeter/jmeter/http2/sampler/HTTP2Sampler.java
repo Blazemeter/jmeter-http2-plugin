@@ -383,11 +383,11 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
   @Override
   protected HTTPSampleResult sample(URL url, String method, boolean areFollowingRedirect,
                                     int depth) {
-    LOG.debug("=== HTTP2Sampler.sample() ENTRY ===");
-    LOG.debug("URL: {}, method: {}, depth: {}", url, method, depth);
+    LOG.trace("=== HTTP2Sampler.sample() ENTRY ===");
+    LOG.trace("URL: {}, method: {}, depth: {}", url, method, depth);
     try {
       HTTP2JettyClient client = clientFactory.call();
-      LOG.debug("=== Client obtained, proceeding with request ===");
+      LOG.trace("=== Client obtained, proceeding with request ===");
       this.maxBufferSize = client.getMaxBufferSize();
       this.requestTimeout = client.getRequestTimeout();
       if (!isSyncRequest()) {
@@ -420,40 +420,34 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
       }
       return buildErrorResult(e, this.result);
     } catch (Exception e) {
-      // Add logging to diagnose - using ERROR level to ensure it appears in logs
-      LOG.error("=== Exception caught in HTTP2Sampler.sample() ===");
-      LOG.error("Exception type: {}", e.getClass().getName());
-      LOG.error("Exception message: {}", e.getMessage());
-      
-      // Log full exception details including stack trace
-      LOG.error("Full exception stack trace:", e);
-      
+      LOG.error("HTTP2Sampler.sample() failed", e);
+
       Throwable cause = e.getCause();
       String causeInfo = cause != null
           ? cause.getClass().getName() + ": " + cause.getMessage()
           : "null";
-      LOG.error("Cause: {}", causeInfo);
-      
+      LOG.debug("Cause: {}", causeInfo);
+
       // Check all levels of the exception chain for protocol_error
       Throwable current = e;
       int exceptionDepth = 0;
       while (current != null && exceptionDepth < 5) {
-        LOG.error("Checking exception at depth {}: type={}, message={}", 
+        LOG.debug("Checking exception at depth {}: type={}, message={}",
             exceptionDepth, current.getClass().getName(), current.getMessage());
         if (current.getMessage() != null) {
           String msg = current.getMessage().toLowerCase();
-          LOG.error("  Message contains 'protocol_error': {}", msg.contains("protocol_error"));
-          LOG.error("  Message contains 'protocol error': {}", msg.contains("protocol error"));
+          LOG.debug("  Message contains 'protocol_error': {}", msg.contains("protocol_error"));
+          LOG.debug("  Message contains 'protocol error': {}", msg.contains("protocol error"));
         }
         current = current.getCause();
         exceptionDepth++;
       }
-      
+
       // Check if this is a protocol_error and attempt HTTP/1.1 fallback
       boolean isProtocolErrorCause = cause != null && ProtocolErrorException.isProtocolError(cause);
       boolean isProtocolErrorException = ProtocolErrorException.isProtocolError(e);
-      LOG.error("isProtocolError(cause): {}", isProtocolErrorCause);
-      LOG.error("isProtocolError(exception): {}", isProtocolErrorException);
+      LOG.debug("isProtocolError(cause): {}", isProtocolErrorCause);
+      LOG.debug("isProtocolError(exception): {}", isProtocolErrorException);
       
       if (isProtocolErrorCause || isProtocolErrorException) {
         boolean fallbackEnabled = isProtocolErrorFallbackEnabled();
