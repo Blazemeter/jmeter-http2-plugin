@@ -96,7 +96,7 @@ public class BrotliContentDecoder {
       }
       
       // If we haven't read all compressed data yet, read it and decompress when complete
-      if (!reading.getAndSet(true)) {
+      if (reading.compareAndSet(false, true)) {
         try {
           readAndDecompress();
         } catch (IOException e) {
@@ -213,9 +213,12 @@ public class BrotliContentDecoder {
       if (!decompressed.get()) {
         compressed.demand(() -> {
           try {
-            if (!reading.getAndSet(true)) {
-              readAndDecompress();
-              reading.set(false);
+            if (reading.compareAndSet(false, true)) {
+              try {
+                readAndDecompress();
+              } finally {
+                reading.set(false);
+              }
             }
             demandCallback.run();
           } catch (IOException e) {
