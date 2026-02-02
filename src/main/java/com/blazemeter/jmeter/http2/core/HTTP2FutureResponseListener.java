@@ -2,6 +2,8 @@ package com.blazemeter.jmeter.http2.core;
 
 import java.io.IOException;
 import java.net.URI;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
@@ -281,8 +283,14 @@ public class HTTP2FutureResponseListener extends BufferingResponseListener
     
     @Override
     public String getContentAsString() {
-      return encoding != null ? new String(content, java.nio.charset.Charset.forName(encoding))
-          : new String(content, java.nio.charset.StandardCharsets.UTF_8);
+      if (encoding != null) {
+        try {
+          return new String(content, Charset.forName(encoding));
+        } catch (RuntimeException e) {
+          LOG.warn("Unsupported charset '{}', falling back to UTF-8", encoding, e);
+        }
+      }
+      return new String(content, StandardCharsets.UTF_8);
     }
     
     // ContentResponse extends Response, so we need to implement Response methods
