@@ -14,8 +14,8 @@
       <AppenderRef ref="Console"/>
       <AppenderRef ref="File"/>
     </Logger>
-    <!-- Set logging level for Jetty to DEBUG to see HTTP/2 protocol details -->
-    <Logger name="org.eclipse.jetty" level="DEBUG"/>
+    <!-- Set logging level for Jetty to INFO to avoid excessive test logs -->
+    <Logger name="org.eclipse.jetty" level="INFO"/>
     <!-- Set logging level for HTTP/2 specific classes to DEBUG -->
     <Logger name="org.eclipse.jetty.http2" level="DEBUG"/>
     <Logger name="org.eclipse.jetty.http2.client" level="DEBUG"/>
