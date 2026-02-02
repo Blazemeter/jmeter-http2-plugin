@@ -19,7 +19,6 @@ import org.eclipse.jetty.util.ssl.SslContextFactory;
 public class JMeterJettySslContextFactory extends SslContextFactory.Client {
 
   private final JmeterKeyStore keys;
-  private final KeyStore tustStoreKeys;
 
   public JMeterJettySslContextFactory() {
     setTrustAll(true);
@@ -39,14 +38,12 @@ public class JMeterJettySslContextFactory extends SslContextFactory.Client {
     String truststore = System.getProperty("javax.net.ssl.trustStore");
     if (truststore != null && !truststore.isEmpty()) {
       setTrustStorePath("file://" + truststore);
-      tustStoreKeys = getTrustStore((JsseSSLManager) SSLManager.getInstance());
+      getTrustStore((JsseSSLManager) SSLManager.getInstance());
       /*
        we need to set password after getting truststore since getTrustStore may ask the user for the
        password.
       */
       setTrustStorePassword(System.getProperty("javax.net.ssl.trustStorePassword"));
-    } else {
-      tustStoreKeys = null;
     }
   }
 
