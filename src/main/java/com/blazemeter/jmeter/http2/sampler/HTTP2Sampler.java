@@ -25,6 +25,7 @@ import java.util.function.Predicate;
 import java.util.regex.PatternSyntaxException;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.tuple.Pair;
+import org.apache.jmeter.config.Arguments;
 import org.apache.jmeter.engine.event.LoopIterationEvent;
 import org.apache.jmeter.engine.event.LoopIterationListener;
 import org.apache.jmeter.processor.PreProcessor;
@@ -149,17 +150,24 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
   private HTTPSampleResult result;
   private transient List<PreProcessor> suppressedPreProcessors;
   private transient SamplePackage suppressedSamplePackage;
+  private transient boolean profileInferenceWarningLogged;
 
   public HTTP2Sampler() {
-    setName("HTTP2 Sampler");
-    setMethod(HTTPConstants.GET);
     clientFactory = this::getClient;
-    this.syncRequest = getPropertyAsBoolean(SYNC_REQUEST, true);
+    initializeDefaults();
   }
 
   @VisibleForTesting
   public HTTP2Sampler(Callable<HTTP2JettyClient> clientFactory) {
     this.clientFactory = clientFactory;
+    initializeDefaults();
+  }
+
+  private void initializeDefaults() {
+    setName("HTTP2 Sampler");
+    setMethod(HTTPConstants.GET);
+    setArguments(new Arguments());
+    this.syncRequest = getPropertyAsBoolean(SYNC_REQUEST, true);
   }
 
   public void setSyncRequest(boolean sync) {
@@ -201,7 +209,15 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
   public String getProfile() {
     JMeterProperty property = getProperty(PROFILE_PROPERTY);
     if (property == null || property instanceof NullProperty) {
-      return isHttp1UpgradeEnabled() ? "legacy" : "browser-like";
+      boolean http1UpgradeEnabled = isHttp1UpgradeEnabled();
+      if (http1UpgradeEnabled && !profileInferenceWarningLogged) {
+        LOG.warn(
+            "Profile not set; inferring 'legacy' because {} is enabled. "
+                + "Consider setting {} explicitly to avoid ambiguity.",
+            HTTP1_UPGRADE_PROPERTY, PROFILE_PROPERTY);
+        profileInferenceWarningLogged = true;
+      }
+      return http1UpgradeEnabled ? "legacy" : "browser-like";
     }
     String value = property.getStringValue();
     return value == null || value.trim().isEmpty() ? "browser-like" : value.trim();
@@ -427,21 +443,6 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
           ? cause.getClass().getName() + ": " + cause.getMessage()
           : "null";
       LOG.debug("Cause: {}", causeInfo);
-
-      // Check all levels of the exception chain for protocol_error
-      Throwable current = e;
-      int exceptionDepth = 0;
-      while (current != null && exceptionDepth < 5) {
-        LOG.debug("Checking exception at depth {}: type={}, message={}",
-            exceptionDepth, current.getClass().getName(), current.getMessage());
-        if (current.getMessage() != null) {
-          String msg = current.getMessage().toLowerCase();
-          LOG.debug("  Message contains 'protocol_error': {}", msg.contains("protocol_error"));
-          LOG.debug("  Message contains 'protocol error': {}", msg.contains("protocol error"));
-        }
-        current = current.getCause();
-        exceptionDepth++;
-      }
 
       // Check if this is a protocol_error and attempt HTTP/1.1 fallback
       boolean isProtocolErrorCause = cause != null && ProtocolErrorException.isProtocolError(cause);
@@ -983,8 +984,10 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
       if (compiler == null) {
         return;
       }
-      SamplePackage pack = compiler.configureSampler(this);
+      SamplePackage pack = getSamplePackageFromCompiler(compiler);
       if (pack == null || pack.getPreProcessors() == null) {
+        LOG.debug("No SamplePackage found for sampler={}, skipping pre-processor suppression",
+            getName());
         return;
       }
       List<PreProcessor> currentPre = pack.getPreProcessors();
@@ -997,6 +1000,18 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
       LOG.debug("Pre-processors suppressed for async completion run (sampler={})", getName());
     } catch (Exception e) {
       LOG.debug("Failed to suppress pre-processors for async completion", e);
+    }
+  }
+
+  private SamplePackage getSamplePackageFromCompiler(TestCompiler compiler) {
+    try {
+      Field mapField = TestCompiler.class.getDeclaredField("samplerConfigMap");
+      mapField.setAccessible(true);
+      Map<?, SamplePackage> map = (Map<?, SamplePackage>) mapField.get(compiler);
+      return map != null ? map.get(this) : null;
+    } catch (Exception e) {
+      LOG.debug("Failed to access samplerConfigMap for pre-processor suppression", e);
+      return null;
     }
   }
 
