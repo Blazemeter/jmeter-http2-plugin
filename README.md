@@ -84,11 +84,13 @@ All HTTP2 samplers embedded in a HTTP2 Async controller will run asynchronous.
 
 ![HTTP2 Controller Demostration](docs/http2-async-controller.gif)
 **Considerations**:
-1. The amount of asynchronous requests will be determined by the JMeter property `httpJettyClient.maxConcurrentAsyncInController` which by default is `1000`
+1. The amount of asynchronous requests will be determined by the JMeter property `httpJettyClient.maxConcurrentAsyncInController` which by default is `100`
 
 1. If there are any elements within the Async Controller that are not HTTP2Samplers, they will function as a synchronization point for all asynchronous requests that occur before those elements. This means that before executing the different element, the controller will wait for all previous requests to complete.
 
 1. Listeners such as View Result Tree will process the elements that finish first, so the order in which they display results may not necessarily follow the TestPlan order.
+
+1. To emit a parent sample for the async controller duration (from the first async request start to the last completion), set the JMeter property `http2AsyncController.generateParentSample=true` or enable **Generate Parent Sample** in the controller UI. Child samples will be attached as sub-results of that parent sample.
 
 
 ## ALPN

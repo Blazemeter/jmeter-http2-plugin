@@ -2,6 +2,7 @@ package com.blazemeter.jmeter.http2.sampler;
 
 import static org.apache.jmeter.util.JMeterUtils.getPropDefault;
 
+import com.blazemeter.jmeter.http2.control.HTTP2Controller;
 import com.blazemeter.jmeter.http2.core.HTTP2ClientProfileConfig;
 import com.blazemeter.jmeter.http2.core.HTTP2FutureResponseListener;
 import com.blazemeter.jmeter.http2.core.HTTP2JettyClient;
@@ -151,6 +152,7 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
   private transient List<PreProcessor> suppressedPreProcessors;
   private transient SamplePackage suppressedSamplePackage;
   private transient boolean profileInferenceWarningLogged;
+  private transient boolean asyncParentSampleEnabled;
 
   public HTTP2Sampler() {
     clientFactory = this::getClient;
@@ -172,6 +174,14 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
 
   public void setSyncRequest(boolean sync) {
     this.syncRequest = sync;
+  }
+
+  public void setAsyncParentSampleEnabled(boolean enabled) {
+    this.asyncParentSampleEnabled = enabled;
+  }
+
+  public boolean isAsyncParentSampleEnabled() {
+    return asyncParentSampleEnabled;
   }
 
   @VisibleForTesting
@@ -409,6 +419,9 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
       if (!isSyncRequest()) {
         if (Objects.isNull(this.asyncListener)) {
           this.result = buildResult(url, method); // Save the main result for next step
+          if (isAsyncParentSampleEnabled()) {
+            this.result.setIgnore();
+          }
           HTTP2FutureResponseListener listener =
               new HTTP2FutureResponseListener(client.getMaxBufferSize());
           this.asyncListener = listener;
@@ -420,7 +433,11 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
           try {
             this.result = sampleFromListener(
                 this.result, areFollowingRedirect, depth, this.asyncListener);
-            return this.result;
+            if (isAsyncParentSampleEnabled()) {
+              this.result.setIgnore();
+            }
+            HTTP2Controller.registerAsyncSampleResult(this, this.result, this.asyncListener);
+            return isAsyncParentSampleEnabled() ? null : this.result;
           } finally {
             restoreSuppressedPreProcessors();
           }
@@ -434,7 +451,12 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
       if (Objects.isNull(this.result)) {
         this.result = buildResult(url, method);
       }
-      return buildErrorResult(e, this.result);
+      HTTPSampleResult errorResult = buildErrorResult(e, this.result);
+      if (isAsyncParentSampleEnabled()) {
+        errorResult.setIgnore();
+      }
+      HTTP2Controller.registerAsyncSampleResult(this, errorResult, this.asyncListener);
+      return isAsyncParentSampleEnabled() ? null : errorResult;
     } catch (Exception e) {
       LOG.error("HTTP2Sampler.sample() failed", e);
 
@@ -449,7 +471,7 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
       boolean isProtocolErrorException = ProtocolErrorException.isProtocolError(e);
       LOG.debug("isProtocolError(cause): {}", isProtocolErrorCause);
       LOG.debug("isProtocolError(exception): {}", isProtocolErrorException);
-      
+
       if (isProtocolErrorCause || isProtocolErrorException) {
         boolean fallbackEnabled = isProtocolErrorFallbackEnabled();
         if (!fallbackEnabled) {
@@ -462,18 +484,18 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
           LOG.warn("HTTP/2 protocol_error detected in HTTP2Sampler! "
               + "Attempting fallback to HTTP/1.1");
           LOG.warn("Error: {}", cause != null ? cause.getMessage() : e.getMessage());
-          
+
           try {
             // Get the client and request details for fallback
             HTTP2JettyClient client = clientFactory.call();
             if (Objects.isNull(this.result)) {
               this.result = buildResult(url, method);
             }
-            
+
             // Retry with HTTP/1.1 only
             LOG.info("Retrying request with HTTP/1.1 only: {}", url);
             HTTPSampleResult fallbackResult = client.retryWithHTTP11Only(this, this.result);
-            
+
             if (fallbackResult != null && fallbackResult.isSuccessful()) {
               LOG.info("HTTP/1.1 fallback succeeded: status={}", fallbackResult.getResponseCode());
               return fallbackResult;
@@ -485,11 +507,16 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
           }
         }
       }
-      
+
       if (Objects.isNull(this.result)) {
         this.result = buildResult(url, method);
       }
-      return buildErrorResult(e, this.result);
+      HTTPSampleResult errorResult = buildErrorResult(e, this.result);
+      if (isAsyncParentSampleEnabled()) {
+        errorResult.setIgnore();
+      }
+      HTTP2Controller.registerAsyncSampleResult(this, errorResult, this.asyncListener);
+      return isAsyncParentSampleEnabled() ? null : errorResult;
     }
   }
 
