@@ -4,6 +4,8 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.brotli.dec.BrotliInputStream;
 import org.eclipse.jetty.client.ContentDecoder;
@@ -74,11 +76,11 @@ public class BrotliContentDecoder {
     private final ByteArrayOutputStream compressedBuffer = new ByteArrayOutputStream();
     private final AtomicReference<ByteArrayOutputStream> decompressedBuffer =
         new AtomicReference<>(new ByteArrayOutputStream());
-    private final AtomicReference<Integer> position = new AtomicReference<>(0);
-    private final AtomicReference<Boolean> eof = new AtomicReference<>(false);
+    private final AtomicInteger position = new AtomicInteger(0);
+    private final AtomicBoolean eof = new AtomicBoolean(false);
     private final AtomicReference<Throwable> failure = new AtomicReference<>(null);
-    private final AtomicReference<Boolean> reading = new AtomicReference<>(false);
-    private final AtomicReference<Boolean> decompressed = new AtomicReference<>(false);
+    private final AtomicBoolean reading = new AtomicBoolean(false);
+    private final AtomicBoolean decompressed = new AtomicBoolean(false);
     
     BrotliDecodingSource(Content.Source compressed) {
       this.compressed = compressed;
