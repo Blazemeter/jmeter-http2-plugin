@@ -8,14 +8,16 @@ import java.util.List;
 import java.util.Objects;
 import org.apache.jmeter.control.GenericController;
 import org.apache.jmeter.control.NextIsNullException;
-import org.apache.jmeter.samplers.SampleEvent;
-import org.apache.jmeter.samplers.SampleListener;
+import org.apache.jmeter.samplers.AbstractSampler;
+import org.apache.jmeter.samplers.Entry;
 import org.apache.jmeter.samplers.SampleResult;
+import org.apache.jmeter.samplers.Sampler;
 import org.apache.jmeter.testelement.TestElement;
 import org.apache.jmeter.threads.JMeterContextService;
 import org.apache.jmeter.threads.JMeterThread;
 import org.apache.jmeter.threads.JMeterVariables;
 import org.apache.jmeter.threads.SamplePackage;
+import org.apache.jmeter.threads.TestCompiler;
 import org.apache.jmeter.util.JMeterUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -39,6 +41,7 @@ public class HTTP2Controller extends GenericController implements Serializable {
   private transient List<TestElement> subControllersAndSamplersBackup = new ArrayList();
   private transient boolean controllerSampleEmitted;
   private transient boolean asyncSamplesSeen;
+  private transient ParentSample parentSample;
   private boolean generateControllerSample;
 
   public HTTP2Controller() {
@@ -193,7 +196,11 @@ public class HTTP2Controller extends GenericController implements Serializable {
       }
       if (http2SamplesSync.isEmpty()) {
         LOG.debug("No more elements!");
-        emitAsyncControllerSampleIfNeeded();
+        Sampler parent = buildParentSamplerIfNeeded();
+        if (parent != null) {
+          subControllersAndSamplers.add(current, parent);
+          return parent;
+        }
       }
     }
     return null;
@@ -202,6 +209,7 @@ public class HTTP2Controller extends GenericController implements Serializable {
   private void resetAsyncControllerSampleState() {
     controllerSampleEmitted = false;
     asyncSamplesSeen = false;
+    parentSample = null;
     if (isGenerateControllerSample()) {
       ASYNC_PARENT_CONTEXT.set(new AsyncParentContext(true));
     } else {
@@ -209,25 +217,84 @@ public class HTTP2Controller extends GenericController implements Serializable {
     }
   }
 
-  private void emitAsyncControllerSampleIfNeeded() {
+  private Sampler buildParentSamplerIfNeeded() {
     if (!isGenerateControllerSample() || controllerSampleEmitted || !asyncSamplesSeen) {
+      return null;
+    }
+    if (parentSample != null) {
+      return parentSample;
+    }
+    AsyncParentContext context = ASYNC_PARENT_CONTEXT.get();
+    if (context == null) {
+      return null;
+    }
+    if (context.startTime == 0 || context.endTime == 0 || context.endTime < context.startTime) {
+      return null;
+    }
+    parentSample = new ParentSample();
+    parentSample.setName(getName());
+    registerParentSamplePackage(parentSample);
+    return parentSample;
+  }
+
+  private SamplePackage getSamplePackageFromContext() {
+    JMeterVariables vars = JMeterContextService.getContext().getVariables();
+    if (vars == null) {
+      return null;
+    }
+    Object pack = vars.getObject("JMeterThread.pack");
+    return pack instanceof SamplePackage ? (SamplePackage) pack : null;
+  }
+
+  private void registerParentSamplePackage(ParentSample sampler) {
+    SamplePackage pack = getSamplePackageFromContext();
+    if (pack == null) {
       return;
     }
     JMeterThread thread = JMeterContextService.getContext().getThread();
+    if (thread == null) {
+      return;
+    }
+    try {
+      java.lang.reflect.Field compilerField = JMeterThread.class.getDeclaredField("compiler");
+      compilerField.setAccessible(true);
+      TestCompiler compiler = (TestCompiler) compilerField.get(thread);
+      if (compiler == null) {
+        return;
+      }
+      java.lang.reflect.Field mapField = TestCompiler.class.getDeclaredField("samplerConfigMap");
+      mapField.setAccessible(true);
+      @SuppressWarnings("unchecked")
+      java.util.Map<Object, SamplePackage> map =
+          (java.util.Map<Object, SamplePackage>) mapField.get(compiler);
+      if (map != null) {
+        map.put(sampler, pack);
+      }
+    } catch (Exception e) {
+      LOG.debug("Failed to register parent sampler package", e);
+    }
+  }
+
+  private SampleResult buildParentSampleResult() {
     AsyncParentContext context = ASYNC_PARENT_CONTEXT.get();
-    if (thread == null || context == null) {
-      return;
-    }
-    if (context.startTime == 0 || context.endTime == 0 || context.endTime < context.startTime) {
-      return;
-    }
-    SamplePackage controllerSamplePackage = getSamplePackageFromContext();
-    if (controllerSamplePackage == null) {
-      return;
+    if (context == null || context.startTime == 0 || context.endTime == 0
+        || context.endTime < context.startTime) {
+      return null;
     }
     long duration = context.endTime - context.startTime;
-    SampleResult controllerSample = new SampleResult(context.startTime, duration);
+    SampleResult controllerSample = new SampleResult();
+    controllerSample.setStampAndTime(context.startTime, duration);
     controllerSample.setSampleLabel(getName());
+    controllerSample.setSamplerData("");
+    controllerSample.setResponseData(new byte[0]);
+    SampleResult firstChild = context.children.isEmpty() ? null : context.children.get(0);
+    if (firstChild != null) {
+      controllerSample.setThreadName(firstChild.getThreadName());
+      controllerSample.setGroupThreads(firstChild.getGroupThreads());
+      controllerSample.setAllThreads(firstChild.getAllThreads());
+    }
+    controllerSample.setSampleCount(1);
+    controllerSample.setErrorCount(context.failingSamples > 0 ? 1 : 0);
     controllerSample.setSuccessful(context.failingSamples == 0);
     if (context.failingSamples == 0) {
       controllerSample.setResponseCodeOK();
@@ -239,23 +306,29 @@ public class HTTP2Controller extends GenericController implements Serializable {
     for (SampleResult child : context.children) {
       controllerSample.addSubResult(child, false);
     }
-    JMeterVariables variables = JMeterContextService.getContext().getVariables();
-    SampleEvent event = new SampleEvent(controllerSample,
-        JMeterContextService.getContext().getThreadGroup().getName(), variables, true);
-    for (SampleListener listener : controllerSamplePackage.getSampleListeners()) {
-      listener.sampleOccurred(event);
-    }
     controllerSampleEmitted = true;
     ASYNC_PARENT_CONTEXT.remove();
+    parentSample = null;
+    return controllerSample;
   }
 
-  private SamplePackage getSamplePackageFromContext() {
-    JMeterVariables vars = JMeterContextService.getContext().getVariables();
-    if (vars == null) {
-      return null;
+  private class ParentSample extends AbstractSampler {
+    @Override
+    public SampleResult sample(Entry e) {
+      SampleResult result = buildParentSampleResult();
+      if (result == null) {
+        long now = System.currentTimeMillis();
+        SampleResult empty = new SampleResult();
+        empty.setStampAndTime(now, 0);
+        empty.setSampleLabel(getName());
+        empty.setResponseCodeOK();
+        empty.setResponseMessage("OK");
+        empty.setSuccessful(true);
+        empty.setIgnore();
+        return empty;
+      }
+      return result;
     }
-    Object pack = vars.getObject("JMeterThread.pack");
-    return pack instanceof SamplePackage ? (SamplePackage) pack : null;
   }
 
   private static final class AsyncParentContext {
