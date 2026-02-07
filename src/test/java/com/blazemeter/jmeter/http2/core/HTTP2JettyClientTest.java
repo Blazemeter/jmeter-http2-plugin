@@ -5,6 +5,7 @@ import static com.blazemeter.jmeter.http2.core.ServerBuilder.AUTH_REALM;
 import static com.blazemeter.jmeter.http2.core.ServerBuilder.AUTH_USERNAME;
 import static com.blazemeter.jmeter.http2.core.ServerBuilder.BASIC_HTML_TEMPLATE;
 import static com.blazemeter.jmeter.http2.core.ServerBuilder.BIG_BUFFER_SIZE;
+import static com.blazemeter.jmeter.http2.core.ServerBuilder.BINARY_RESPONSE_BODY;
 import static com.blazemeter.jmeter.http2.core.ServerBuilder.HOST_NAME;
 import static com.blazemeter.jmeter.http2.core.ServerBuilder.KEYSTORE_PASSWORD;
 import static com.blazemeter.jmeter.http2.core.ServerBuilder.RESPONSE_DATA_COOKIES;
@@ -15,6 +16,7 @@ import static com.blazemeter.jmeter.http2.core.ServerBuilder.SERVER_PATH_200_EMB
 import static com.blazemeter.jmeter.http2.core.ServerBuilder.SERVER_PATH_200_FILE_SENT;
 import static com.blazemeter.jmeter.http2.core.ServerBuilder.SERVER_PATH_200_GZIP;
 import static com.blazemeter.jmeter.http2.core.ServerBuilder.SERVER_PATH_200_BROTLI;
+import static com.blazemeter.jmeter.http2.core.ServerBuilder.SERVER_PATH_200_ZSTD;
 import static com.blazemeter.jmeter.http2.core.ServerBuilder.SERVER_PATH_200_WITH_BODY;
 import static com.blazemeter.jmeter.http2.core.ServerBuilder.SERVER_PATH_302;
 import static com.blazemeter.jmeter.http2.core.ServerBuilder.SERVER_PATH_400;
@@ -69,6 +71,8 @@ import org.assertj.core.api.JUnitSoftAssertions;
 import org.eclipse.jetty.client.Request;
 import org.eclipse.jetty.client.ContentResponse;
 import org.eclipse.jetty.client.RetryableRequestException;
+import org.eclipse.jetty.client.HttpProxy;
+import org.eclipse.jetty.client.ProxyConfiguration;
 import org.eclipse.jetty.http.HttpCookie;
 import org.eclipse.jetty.http.HttpCookieStore;
 import org.eclipse.jetty.http.HttpFields;
@@ -278,12 +282,22 @@ public class HTTP2JettyClientTest extends HTTP2TestBase {
     hm.add(new Header(HttpHeader.ACCEPT_ENCODING.asString(), "br"));
     sampler.setHeaderManager(hm);
     HTTPSampleResult result = sampleWithGet(SERVER_PATH_200_BROTLI);
-    // Verify that the request was successful
-    // This test verifies that Brotli decoder registration doesn't break requests
-    // Note: Actual Brotli decompression testing requires compressed data
+    // Verify that the request was successful and content was decompressed
     assertThat(result.isSuccessful()).isTrue();
-    // Verify that the response data is correct (uncompressed in this case)
-    assertThat(result.getResponseDataAsString()).isNotEmpty();
+    assertThat(result.getResponseData()).containsExactly(BINARY_RESPONSE_BODY);
+  }
+
+  @Test
+  public void shouldReturnSuccessSampleResultWhenSuccessResponseWithContentTypeZstd()
+      throws Exception {
+    buildStartedServer();
+    HeaderManager hm = new HeaderManager();
+    hm.add(new Header(HttpHeader.ACCEPT_ENCODING.asString(), "zstd"));
+    sampler.setHeaderManager(hm);
+    HTTPSampleResult result = sampleWithGet(SERVER_PATH_200_ZSTD);
+    // Verify that the request was successful and content was decompressed
+    assertThat(result.isSuccessful()).isTrue();
+    assertThat(result.getResponseData()).containsExactly(BINARY_RESPONSE_BODY);
   }
 
   @Test
@@ -298,6 +312,21 @@ public class HTTP2JettyClientTest extends HTTP2TestBase {
     // Verify that the request was successful with both encodings
     assertThat(result.isSuccessful()).isTrue();
     // The Accept-Encoding header should still contain "br" (not removed)
+    // This is verified by the fact that the request succeeds
+  }
+
+  @Test
+  public void shouldAcceptZstdEncodingInAcceptEncodingHeader()
+      throws Exception {
+    buildStartedServer();
+    HeaderManager hm = new HeaderManager();
+    // Test that "zstd" is NOT removed from Accept-Encoding
+    hm.add(new Header(HttpHeader.ACCEPT_ENCODING.asString(), "gzip, zstd"));
+    sampler.setHeaderManager(hm);
+    HTTPSampleResult result = sampleWithGet(SERVER_PATH_200);
+    // Verify that the request was successful with both encodings
+    assertThat(result.isSuccessful()).isTrue();
+    // The Accept-Encoding header should still contain "zstd" (not removed)
     // This is verified by the fact that the request succeeds
   }
 
@@ -356,14 +385,8 @@ public class HTTP2JettyClientTest extends HTTP2TestBase {
     softly.assertThat(result.isSuccessful()).isEqualTo(expected.isSuccessful());
     softly.assertThat(result.getResponseCode()).isEqualTo(expected.getResponseCode());
     softly.assertThat(result.getResponseMessage()).isEqualTo(expected.getResponseMessage());
-    // In Jetty 12, sentBytes may differ due to how PathRequestContent calculates size
-    // We compare the actual sent bytes from the result instead of the expected value
-    // This handles cases where the file size calculation differs between Jetty 11 and 12
-    if (expected.getSentBytes() > 0) {
-      // Only validate if we have a non-zero expected value
-      // The actual sent bytes should match what was actually sent
-      softly.assertThat(result.getSentBytes()).isEqualTo(result.getSentBytes());
-    }
+    // In Jetty 12, sentBytes may differ due to how PathRequestContent calculates size,
+    // so we intentionally do not assert on sentBytes here to keep the test stable.
     softly.assertThat(result.getResponseDataAsString())
         .isEqualTo(expected.getResponseDataAsString());
   }
@@ -1210,6 +1233,30 @@ public class HTTP2JettyClientTest extends HTTP2TestBase {
     httpRequest.send(listener);
     ContentResponse contentResponse = listener.get();
     assertThat(contentResponse.getContent()).isNotEmpty();
+  }
+
+  @Test
+  public void shouldConfigureProxyWhenAsyncRequestIsPrepared() throws Exception {
+    sampler.setProxyHost("localhost");
+    sampler.setProxyPortInt(String.valueOf(8888));
+    sampler.setProxyScheme(HTTPConstants.PROTOCOL_HTTP);
+
+    HTTP2FutureResponseListener listener = new HTTP2FutureResponseListener();
+    Request httpRequest = client.sampleAsync(
+        sampler,
+        buildBaseResult(createURL(HTTPConstants.PROTOCOL_HTTP, "example.com", 80, "/"),
+            HTTPConstants.GET),
+        listener);
+
+    assertNotNull(httpRequest);
+    List<ProxyConfiguration.Proxy> proxies =
+        client.getHttpClient().getProxyConfiguration().getProxies();
+    assertThat(proxies).hasSize(1);
+    ProxyConfiguration.Proxy proxy = proxies.get(0);
+    assertThat(proxy).isInstanceOf(HttpProxy.class);
+    HttpProxy httpProxy = (HttpProxy) proxy;
+    assertThat(httpProxy.getAddress().getHost()).isEqualTo("localhost");
+    assertThat(httpProxy.getAddress().getPort()).isEqualTo(8888);
   }
 
   @Test

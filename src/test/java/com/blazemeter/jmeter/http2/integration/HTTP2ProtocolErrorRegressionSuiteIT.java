@@ -6,7 +6,8 @@ import org.junit.runners.Suite;
 /**
  * Integration suite for protocol_error regression checks.
  *
- * Run with: -Dit.demoblaze=true -Dit.blazedemo=true -Dit.h2c=true
+ * Run with: -Dit.demoblaze=true -Dit.blazedemo=true -Dit.h2c=true (defaults)
+ * Disable with: -Dit.demoblaze=false -Dit.blazedemo=false -Dit.h2c=false
  */
 @RunWith(Suite.class)
 @Suite.SuiteClasses({

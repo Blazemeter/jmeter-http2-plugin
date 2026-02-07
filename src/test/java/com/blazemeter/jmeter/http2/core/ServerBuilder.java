@@ -3,6 +3,7 @@ package com.blazemeter.jmeter.http2.core;
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.net.URISyntaxException;
@@ -11,8 +12,14 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.function.Consumer;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
+import java.util.zip.DeflaterOutputStream;
 import java.util.zip.GZIPOutputStream;
+import org.eclipse.jetty.compression.brotli.BrotliCompression;
+import org.eclipse.jetty.compression.zstandard.ZstandardCompression;
+import org.eclipse.jetty.io.ArrayByteBufferPool;
+import org.eclipse.jetty.io.ByteBufferPool;
 import jodd.net.MimeTypes;
 import org.apache.jmeter.protocol.http.util.HTTPConstants;
 import org.eclipse.jetty.alpn.server.ALPNServerConnectionFactory;
@@ -54,7 +61,9 @@ public class ServerBuilder {
   public static final String SERVER_PATH_200 = "/test/200";
   public static final String SERVER_PATH_SLOW = "/test/slow";
   public static final String SERVER_PATH_200_GZIP = "/test/gzip";
+  public static final String SERVER_PATH_200_DEFLATE = "/test/deflate";
   public static final String SERVER_PATH_200_BROTLI = "/test/brotli";
+  public static final String SERVER_PATH_200_ZSTD = "/test/zstd";
   public static final String SERVER_PATH_200_EMBEDDED = "/test/embedded";
   public static final String SERVER_PATH_200_FILE_SENT = "/test/file";
   public static final String SERVER_PATH_BIG_RESPONSE = "/test/big-response";
@@ -65,11 +74,15 @@ public class ServerBuilder {
   public static final String BASIC_HTML_TEMPLATE = "<!DOCTYPE html><html><head><title>Page "
       + "Title</title></head><body><div><img src='image.png'></div></body></html>";
   public static final byte[] BINARY_RESPONSE_BODY = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
+  private static final byte[] GZIP_RESPONSE_BODY = buildGzipResponseBody();
+  private static final byte[] DEFLATE_RESPONSE_BODY = buildDeflateResponseBody();
+  private static final AtomicInteger GZIP_REQUEST_COUNT = new AtomicInteger();
   public static final String AUTH_USERNAME = "username";
   public static final String AUTH_PASSWORD = "password";
   public static final String AUTH_REALM = "realm";
   public static final String KEYSTORE_PASSWORD = "storepwd";
   public static final int BIG_BUFFER_SIZE = 4 * 1024 * 1024;
+  private static final ByteBufferPool COMPRESSION_BUFFER_POOL = new ArrayByteBufferPool();
 
   private boolean ALPN;
   private final TeardownableServer server = new TeardownableServer();
@@ -274,21 +287,39 @@ public class ServerBuilder {
             resp.getOutputStream().write(requestBody);
             break;
           case SERVER_PATH_200_GZIP:
+            int gzipHit = GZIP_REQUEST_COUNT.incrementAndGet();
             resp.addHeader("Content-Encoding", "gzip");
-            GZIPOutputStream gzipOutputStream = new GZIPOutputStream(resp.getOutputStream());
-            gzipOutputStream.write(BINARY_RESPONSE_BODY);
-            gzipOutputStream.close();
+            resp.addHeader("X-Gzip-Req-Protocol", req.getProtocol());
+            resp.addHeader("Connection", "close");
+            resp.setContentLength(GZIP_RESPONSE_BODY.length);
+            resp.getOutputStream().write(GZIP_RESPONSE_BODY);
+            resp.flushBuffer();
+            resp.getOutputStream().close();
+            break;
+          case SERVER_PATH_200_DEFLATE:
+            resp.addHeader("Content-Encoding", "deflate");
+            resp.setContentLength(DEFLATE_RESPONSE_BODY.length);
+            resp.getOutputStream().write(DEFLATE_RESPONSE_BODY);
+            resp.flushBuffer();
+            resp.getOutputStream().close();
             break;
           case SERVER_PATH_200_BROTLI:
-            // Note: org.brotli:dec only provides decoder, not encoder
-            // For testing decoder registration, we send uncompressed data
-            // but don't set Content-Encoding header to avoid decompression errors
-            // The test verifies that the decoder is registered when "br" is in Accept-Encoding
-            // In a real scenario with actual Brotli compression, you'd:
-            // 1. Compress the data using org.brotli:enc or similar
-            // 2. Set Content-Encoding: br header
-            // 3. Send compressed data
-            resp.getOutputStream().write(BINARY_RESPONSE_BODY);
+            resp.addHeader("Content-Encoding", "br");
+            BrotliCompression brotliCompression = new BrotliCompression();
+            brotliCompression.setByteBufferPool(COMPRESSION_BUFFER_POOL);
+            try (java.io.OutputStream brotliOutputStream =
+                brotliCompression.newEncoderOutputStream(resp.getOutputStream())) {
+              brotliOutputStream.write(BINARY_RESPONSE_BODY);
+            }
+            break;
+          case SERVER_PATH_200_ZSTD:
+            resp.addHeader("Content-Encoding", "zstd");
+            ZstandardCompression zstdCompression = new ZstandardCompression();
+            zstdCompression.setByteBufferPool(COMPRESSION_BUFFER_POOL);
+            try (java.io.OutputStream zstdOutputStream =
+                zstdCompression.newEncoderOutputStream(resp.getOutputStream())) {
+              zstdOutputStream.write(BINARY_RESPONSE_BODY);
+            }
             break;
           case SERVER_PATH_DELETE_DATA:
             resp.setStatus(HttpStatus.OK_200);
@@ -300,6 +331,28 @@ public class ServerBuilder {
         }
       }
     };
+  }
+
+  private static byte[] buildGzipResponseBody() {
+    try (ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+         GZIPOutputStream gzipOutputStream = new GZIPOutputStream(outputStream)) {
+      gzipOutputStream.write(BINARY_RESPONSE_BODY);
+      gzipOutputStream.finish();
+      return outputStream.toByteArray();
+    } catch (IOException e) {
+      throw new ExceptionInInitializerError(e);
+    }
+  }
+
+  private static byte[] buildDeflateResponseBody() {
+    try (ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+         DeflaterOutputStream deflateOutputStream = new DeflaterOutputStream(outputStream)) {
+      deflateOutputStream.write(BINARY_RESPONSE_BODY);
+      deflateOutputStream.finish();
+      return outputStream.toByteArray();
+    } catch (IOException e) {
+      throw new ExceptionInInitializerError(e);
+    }
   }
 
 

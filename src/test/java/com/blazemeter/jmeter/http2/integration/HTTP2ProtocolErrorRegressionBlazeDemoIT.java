@@ -18,7 +18,7 @@ import org.junit.Test;
 /**
  * Integration test for the HTTP/2 protocol_error regression against blazedemo.com.
  *
- * Run with: -Dit.blazedemo=true
+ * Run with: -Dit.blazedemo=true (default) or disable with -Dit.blazedemo=false
  */
 public class HTTP2ProtocolErrorRegressionBlazeDemoIT extends HTTP2TestBase {
   private static final String BLAZEDEMO_HOST = "blazedemo.com";
@@ -43,7 +43,7 @@ public class HTTP2ProtocolErrorRegressionBlazeDemoIT extends HTTP2TestBase {
 
   @Test
   public void shouldNotFallbackToHttp11OnBlazeDemo() throws Exception {
-    Assume.assumeTrue(Boolean.parseBoolean(System.getProperty("it.blazedemo", "false")));
+    Assume.assumeTrue(Boolean.parseBoolean(System.getProperty("it.blazedemo", "true")));
 
     HTTP2Sampler sampler = new HTTP2Sampler();
     sampler.setMethod(HTTPConstants.GET);

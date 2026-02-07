@@ -74,6 +74,10 @@ import org.eclipse.jetty.client.RetryableRequestException;
 import org.eclipse.jetty.client.StringRequestContent;
 import org.eclipse.jetty.client.transport.HttpClientConnectionFactory;
 import org.eclipse.jetty.client.transport.HttpClientTransportDynamic;
+import org.eclipse.jetty.compression.brotli.BrotliCompression;
+import org.eclipse.jetty.compression.client.CompressionContentDecoderFactory;
+import org.eclipse.jetty.compression.gzip.GzipCompression;
+import org.eclipse.jetty.compression.zstandard.ZstandardCompression;
 import org.eclipse.jetty.http.HttpCookie;
 import org.eclipse.jetty.http.HttpCookieStore;
 import org.eclipse.jetty.http.HttpField;
@@ -185,6 +189,7 @@ public class HTTP2JettyClient {
   private long h2cCacheTtlMs = DEFAULT_H2C_CACHE_TTL_MS;
   private long happyEyeballsDelayMs = DEFAULT_HAPPY_EYEBALLS_DELAY_MS;
   private boolean http2PriorKnowledgeEnabled = false;
+  private boolean http3PriorKnowledgeEnabled = false;
   private boolean enableHttp3 = true;
   private boolean enableHttp2 = true;
   private boolean enableHttp1 = true;
@@ -631,6 +636,8 @@ public class HTTP2JettyClient {
     http2PriorKnowledgeEnabled = getBooleanProp("httpJettyClient.http2PriorKnowledge",
         profileConfig != null ? profileConfig.getHttp2PriorKnowledgeEnabled() : null,
         defaults.http2PriorKnowledgeEnabled);
+    http3PriorKnowledgeEnabled = Boolean.parseBoolean(JMeterUtils.getPropDefault(
+      "httpJettyClient.http3PriorKnowledge", "false"));
     happyEyeballsDelayMs = getLongProp("httpJettyClient.happyEyeballsDelayMs",
         profileConfig != null ? profileConfig.getHappyEyeballsDelayMs() : null,
         defaults.happyEyeballsDelayMs);
@@ -642,6 +649,10 @@ public class HTTP2JettyClient {
       LOG.warn("All protocols disabled via configuration; enabling HTTP/1.1 "
           + "to keep client usable");
       enableHttp1 = true;
+    }
+    if (enableHttp3 && !enableHttp1 && !enableHttp2) {
+      http3PriorKnowledgeEnabled = true;
+      LOG.info("HTTP/3 prior knowledge enabled (HTTP/3-only configuration)");
     }
     if (!enableHttp1 && !enableHttp2 && enableHttp3 && !altSvcCacheEnabled) {
       LOG.warn("HTTP/3 enabled but Alt-Svc cache disabled; enabling HTTP/1.1 "
@@ -1093,6 +1104,11 @@ public class HTTP2JettyClient {
 
     if (!sampler.getProxyHost().isEmpty()) {
       setProxy(sampler.getProxyHost(), sampler.getProxyPortInt(), sampler.getProxyScheme());
+      if (Boolean.TRUE.equals(request.getAttributes().get(ATTR_HTTP3_ATTEMPTED))) {
+        LOG.warn("Proxy configured but HTTP/3 is attempted for {}. "
+            + "Most proxies cannot capture HTTP/3/QUIC traffic; consider disabling HTTP/3 "
+            + "or removing the proxy.", request.getURI());
+      }
     }
     result.sampleStart();
 
@@ -1603,10 +1619,43 @@ public class HTTP2JettyClient {
 
     if (!hasDecoderFactory(factories, "br")) {
       try {
-        factories.put(new BrotliContentDecoder.Factory());
+        BrotliCompression brotli = new BrotliCompression();
+        brotli.setByteBufferPool(bufferPool);
+        factories.put(new CompressionContentDecoderFactory(brotli));
         LOG.info("Registered Brotli content decoder");
       } catch (Throwable t) {
         LOG.warn("Brotli decoder not available; skipping registration", t);
+      }
+    }
+
+    if (!hasDecoderFactory(factories, "zstd")) {
+      try {
+        ZstandardCompression zstd = new ZstandardCompression();
+        zstd.setByteBufferPool(bufferPool);
+        factories.put(new CompressionContentDecoderFactory(zstd));
+        LOG.info("Registered Zstandard content decoder");
+      } catch (Throwable t) {
+        LOG.warn("Zstandard decoder not available; skipping registration", t);
+      }
+    }
+
+    if (!hasDecoderFactory(factories, "gzip")) {
+      try {
+        GzipCompression gzip = new GzipCompression();
+        gzip.setByteBufferPool(bufferPool);
+        factories.put(new CompressionContentDecoderFactory(gzip));
+        LOG.info("Registered Gzip content decoder");
+      } catch (Throwable t) {
+        LOG.warn("Gzip decoder not available; skipping registration", t);
+      }
+    }
+
+    if (!hasDecoderFactory(factories, "deflate")) {
+      try {
+        factories.put(new DeflateContentDecoderFactory(bufferPool));
+        LOG.info("Registered Deflate content decoder");
+      } catch (Throwable t) {
+        LOG.warn("Deflate decoder not available; skipping registration", t);
       }
     }
   }
@@ -1678,7 +1727,16 @@ public class HTTP2JettyClient {
   }
 
   private boolean shouldAttemptHttp3(URI uri) {
-    if (!enableHttp3 || !altSvcCacheEnabled) {
+    if (!enableHttp3) {
+      return false;
+    }
+    if (uri == null || !"https".equalsIgnoreCase(uri.getScheme())) {
+      return false;
+    }
+    if (http3PriorKnowledgeEnabled) {
+      return true;
+    }
+    if (!altSvcCacheEnabled) {
       return false;
     }
     AltSvcEntry entry = ALT_SVC_CACHE.get(originKey(uri));
@@ -2526,12 +2584,20 @@ public class HTTP2JettyClient {
   }
 
   private void setProxy(String host, int port, String protocol) {
-    HttpProxy proxy =
-        new HttpProxy(new Address(host, port), HTTPConstants.PROTOCOL_HTTPS.equals(protocol));
+    boolean secureProxy = HTTPConstants.PROTOCOL_HTTPS.equals(protocol);
     // It is not allowed to change the running proxy.
     // Only the first assigned is used.
-    if (httpClient.getProxyConfiguration().getProxies().isEmpty()) {
-      httpClient.getProxyConfiguration().getProxies().add(proxy);
+    addProxyIfEmpty(httpClient, host, port, secureProxy);
+    addProxyIfEmpty(httpClientNoH3, host, port, secureProxy);
+    addProxyIfEmpty(httpClientHttp1Only, host, port, secureProxy);
+    addProxyIfEmpty(httpClientH2cPrior, host, port, secureProxy);
+    addProxyIfEmpty(httpClientH2cUpgrade, host, port, secureProxy);
+  }
+
+  private void addProxyIfEmpty(HttpClient target, String host, int port, boolean secureProxy) {
+    if (target.getProxyConfiguration().getProxies().isEmpty()) {
+      HttpProxy proxy = new HttpProxy(new Address(host, port), secureProxy);
+      target.getProxyConfiguration().addProxy(proxy);
     }
   }
 

@@ -18,7 +18,7 @@ import org.junit.Test;
 /**
  * Integration test for the HTTP/2 protocol_error regression against demoblaze.com.
  *
- * Run with: -Dit.demoblaze=true
+ * Run with: -Dit.demoblaze=true (default) or disable with -Dit.demoblaze=false
  */
 public class HTTP2ProtocolErrorRegressionIT extends HTTP2TestBase {
   private static final String DEMOBLAZE_HOST = "www.demoblaze.com";
@@ -43,7 +43,7 @@ public class HTTP2ProtocolErrorRegressionIT extends HTTP2TestBase {
 
   @Test
   public void shouldNotFallbackToHttp11OnDemoblaze() throws Exception {
-    Assume.assumeTrue(Boolean.parseBoolean(System.getProperty("it.demoblaze", "false")));
+    Assume.assumeTrue(Boolean.parseBoolean(System.getProperty("it.demoblaze", "true")));
 
     HTTP2Sampler sampler = new HTTP2Sampler();
     sampler.setMethod(HTTPConstants.GET);

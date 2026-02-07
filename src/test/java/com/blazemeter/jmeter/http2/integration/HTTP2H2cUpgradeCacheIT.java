@@ -27,13 +27,13 @@ import org.junit.Test;
 /**
  * Integration test for h2c upgrade and cache behavior.
  *
- * Run with: -Dit.h2c=true
+ * Run with: -Dit.h2c=true (default) or disable with -Dit.h2c=false
  */
 public class HTTP2H2cUpgradeCacheIT extends HTTP2TestBase {
 
   @Test
   public void shouldUpgradeAndCacheH2c() throws Exception {
-    Assume.assumeTrue(Boolean.parseBoolean(System.getProperty("it.h2c", "false")));
+    Assume.assumeTrue(Boolean.parseBoolean(System.getProperty("it.h2c", "true")));
     String originalSharedThreadPoolProperty =
         JMeterUtils.getProperty("httpJettyClient.sharedThreadPool");
     JMeterUtils.setProperty("httpJettyClient.sharedThreadPool", "false");

@@ -54,8 +54,20 @@ public class HTTP2DependenciesIntegrationTest extends HTTP2TestBase {
     "com.blazemeter.jmeter.http2.shaded.org.eclipse.jetty.compression.Compression",
     "com.blazemeter.jmeter.http2.shaded.org.eclipse.jetty.client"
       + ".HttpClient$CompressionContentDecoderFactory",
-    // Brotli decoder (relocated)
-    "com.blazemeter.jmeter.http2.shaded.org.brotli.dec.BrotliInputStream"
+    // Jetty compression client factory (relocated)
+    "com.blazemeter.jmeter.http2.shaded.org.eclipse.jetty.compression.client"
+      + ".CompressionContentDecoderFactory",
+    // Brotli compression (relocated)
+    "com.blazemeter.jmeter.http2.shaded.org.eclipse.jetty.compression.brotli"
+      + ".BrotliCompression",
+    // Zstandard compression (relocated)
+    "com.blazemeter.jmeter.http2.shaded.org.eclipse.jetty.compression.zstandard"
+      + ".ZstandardCompression",
+    // Gzip compression (relocated)
+    "com.blazemeter.jmeter.http2.shaded.org.eclipse.jetty.compression.gzip"
+      + ".GzipCompression",
+    // Zstd decoder (not relocated, per zstd-jni limitation)
+    "com.github.luben.zstd.ZstdInputStream"
   ));
 
   private static final Set<String> SHADED_COMPRESSION_CLASS_RESOURCES = new HashSet<>(
@@ -194,8 +206,36 @@ public class HTTP2DependenciesIntegrationTest extends HTTP2TestBase {
     Path pluginJar = requireShadedJar();
 
     assertJarContainsClass(pluginJar,
-        "com/blazemeter/jmeter/http2/shaded/org/brotli/dec/BrotliInputStream.class",
-        "Shaded jar should include Brotli decoder class");
+      "com/blazemeter/jmeter/http2/shaded/org/eclipse/jetty/compression/brotli/"
+        + "BrotliCompression.class",
+      "Shaded jar should include Jetty Brotli compression class");
+
+    assertJarContainsClass(pluginJar,
+      "com/aayushatharva/brotli4j/decoder/BrotliInputStream.class",
+      "Shaded jar should include Brotli4j decoder class");
+  }
+
+  @Test
+  public void shouldHaveZstdDependency() {
+    Path pluginJar = requireShadedJar();
+
+    assertJarContainsClass(pluginJar,
+        "com/blazemeter/jmeter/http2/shaded/org/eclipse/jetty/compression/zstandard/"
+            + "ZstandardCompression.class",
+        "Shaded jar should include Jetty Zstandard compression class");
+
+    assertJarContainsClass(pluginJar,
+        "com/github/luben/zstd/ZstdInputStream.class",
+        "Shaded jar should include Zstd decoder class");
+  }
+
+  @Test
+  public void shouldNotRelocateZstdClasses() {
+    Path pluginJar = requireShadedJar();
+
+    assertJarDoesNotContainClass(pluginJar,
+        "com/blazemeter/jmeter/http2/shaded/com/github/luben/zstd/ZstdInputStream.class",
+        "Shaded jar must not relocate zstd-jni classes");
   }
 
   @Test
@@ -244,6 +284,16 @@ public class HTTP2DependenciesIntegrationTest extends HTTP2TestBase {
       assertThat(jarFile.getEntry(resourceName))
           .as(message)
           .isNotNull();
+    } catch (IOException e) {
+      fail("Failed to open JAR for validation: " + jarPath + " (" + e.getMessage() + ")");
+    }
+  }
+
+  private void assertJarDoesNotContainClass(Path jarPath, String resourceName, String message) {
+    try (JarFile jarFile = new JarFile(jarPath.toFile())) {
+      assertThat(jarFile.getEntry(resourceName))
+          .as(message)
+          .isNull();
     } catch (IOException e) {
       fail("Failed to open JAR for validation: " + jarPath + " (" + e.getMessage() + ")");
     }
