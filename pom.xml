@@ -15,7 +15,7 @@
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
     <jmeter.version>5.4.1</jmeter.version>
-    <jetty.version>12.1.5</jetty.version>
+    <jetty.version>12.1.6</jetty.version>
     <checkstyle.skip>false</checkstyle.skip>
   </properties>
 
