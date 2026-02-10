@@ -106,7 +106,7 @@ public class HTTP2Controller extends GenericController implements Serializable {
     if (http2SamplesSync.size() > 0) {
       HTTP2Sampler http2Sam = http2SamplesSync.get(0);
       HTTP2FutureResponseListener http2FListener =
-          http2Sam.geFutureResponseListener();
+          http2Sam.getFutureResponseListener();
       while (!interrupted && (http2FListener != null)) {
         if (http2FListener.isDone() || http2FListener.isCancelled()) {
           String urlProcesed = http2FListener.getRequest().getURI().toString();

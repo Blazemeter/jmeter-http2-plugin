@@ -1229,7 +1229,7 @@ public class HTTP2JettyClientTest extends HTTP2TestBase {
     Request httpRequest = client.sampleAsync(
         sampler,
         buildBaseResult(createURL(SERVER_PATH_200), HTTPConstants.GET),
-        sampler.geFutureResponseListener());
+        sampler.getFutureResponseListener());
     httpRequest.send(listener);
     ContentResponse contentResponse = listener.get();
     assertThat(contentResponse.getContent()).isNotEmpty();

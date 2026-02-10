@@ -189,7 +189,7 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
     return this.syncRequest;
   }
 
-  public HTTP2FutureResponseListener geFutureResponseListener() {
+  public HTTP2FutureResponseListener getFutureResponseListener() {
     return asyncListener;
   }
 
@@ -942,7 +942,7 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
           HTTP2Sampler http2Sam = (HTTP2Sampler) samplers.get(0);
 
           HTTP2FutureResponseListener http2FListener =
-              http2Sam.geFutureResponseListener();
+              http2Sam.getFutureResponseListener();
           while (!interrupted && (http2FListener != null)) {
             if (http2FListener.isDone() || http2FListener.isCancelled()) {
               String urlProcesed = http2FListener.getRequest().getURI().toString();
