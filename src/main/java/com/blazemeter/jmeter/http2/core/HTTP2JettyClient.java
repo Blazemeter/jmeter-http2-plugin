@@ -133,16 +133,18 @@ public class HTTP2JettyClient {
   private static final long DEFAULT_HTTP1_ONLY_COOLDOWN_MS = 300000;
   private static final long DEFAULT_H2C_CACHE_TTL_MS = 300000;
   private static final long DEFAULT_HAPPY_EYEBALLS_DELAY_MS = 250;
+  private static final long H3_RECENT_SUCCESS_WINDOW_MS =
+      TimeUnit.MINUTES.toMillis(5);
   private static final Object SHARED_POOL_LOCK = new Object();
   private static final String SHARED_POOL_NAME = "http2-shared";
   private static volatile QueuedThreadPool sharedThreadPool;
   private static volatile Executor sharedExecutor;
   private static volatile int sharedMaxThreads = -1;
   private static volatile int sharedMinThreads = -1;
-  private static final ScheduledExecutorService HAPPY_EYEBALLS_SCHEDULER =
-      Executors.newSingleThreadScheduledExecutor(new HappyEyeballsThreadFactory("http3-he"));
-  private static final ScheduledExecutorService HAPPY_EYEBALLS_EXECUTOR =
-      Executors.newScheduledThreadPool(2, new HappyEyeballsThreadFactory("http3-he-worker"));
+  private static final Object HAPPY_EYEBALLS_LOCK = new Object();
+  private static final AtomicInteger HAPPY_EYEBALLS_CLIENTS = new AtomicInteger(0);
+  private static volatile ScheduledExecutorService happyEyeballsScheduler;
+  private static volatile ScheduledExecutorService happyEyeballsExecutor;
   private static final Map<String, AltSvcEntry> ALT_SVC_CACHE = new ConcurrentHashMap<>();
   private static final Map<String, Http1OnlyEntry> HTTP1_ONLY_CACHE = new ConcurrentHashMap<>();
   private static final Map<String, H2cEntry> H2C_CACHE = new ConcurrentHashMap<>();
@@ -201,6 +203,7 @@ public class HTTP2JettyClient {
   private boolean altSvcCacheEnabled = true;
   private boolean http1OnlyCacheEnabled = true;
   private boolean h2cCacheEnabled = true;
+  private boolean heExecutorsRegistered = false;
 
   public HTTP2JettyClient(boolean http1UpgradeRequired, String name) {
     this(http1UpgradeRequired, name, null);
@@ -550,10 +553,10 @@ public class HTTP2JettyClient {
         .parseInt(JMeterUtils.getPropDefault("httpJettyClient.minThreads",
             String.valueOf(minThreads)));
     maxThreadsConfigured =
-      JMeterUtils.getJMeterProperties().containsKey("httpJettyClient.maxThreads");
+        JMeterUtils.getJMeterProperties().containsKey("httpJettyClient.maxThreads");
     maxThreads = Integer
-      .parseInt(JMeterUtils.getPropDefault("httpJettyClient.maxThreads",
-        String.valueOf(maxThreads)));
+        .parseInt(JMeterUtils.getPropDefault("httpJettyClient.maxThreads",
+            String.valueOf(maxThreads)));
     maxRequestsQueuedPerDestination = Integer
         .parseInt(JMeterUtils.getPropDefault("httpJettyClient.maxRequestsQueuedPerDestination",
             String.valueOf(maxRequestsQueuedPerDestination)));
@@ -637,7 +640,7 @@ public class HTTP2JettyClient {
         profileConfig != null ? profileConfig.getHttp2PriorKnowledgeEnabled() : null,
         defaults.http2PriorKnowledgeEnabled);
     http3PriorKnowledgeEnabled = Boolean.parseBoolean(JMeterUtils.getPropDefault(
-      "httpJettyClient.http3PriorKnowledge", "false"));
+        "httpJettyClient.http3PriorKnowledge", "false"));
     happyEyeballsDelayMs = getLongProp("httpJettyClient.happyEyeballsDelayMs",
         profileConfig != null ? profileConfig.getHappyEyeballsDelayMs() : null,
         defaults.happyEyeballsDelayMs);
@@ -852,6 +855,11 @@ public class HTTP2JettyClient {
   }
 
   public void start() throws Exception {
+    if (!heExecutorsRegistered) {
+      ensureHappyEyeballsExecutors();
+      HAPPY_EYEBALLS_CLIENTS.incrementAndGet();
+      heExecutorsRegistered = true;
+    }
     if (!httpClient.isStarted()) {
       LOG.info("Starting HttpClient: name={}, http1UpgradeRequired={}",
           httpClient.getName(), http1UpgradeRequired);
@@ -1080,6 +1088,14 @@ public class HTTP2JettyClient {
     httpClientH2cPrior.stop();
     httpClientH2cUpgrade.stop();
     clearBufferPool();
+    if (heExecutorsRegistered) {
+      int remaining = HAPPY_EYEBALLS_CLIENTS.decrementAndGet();
+      if (remaining <= 0) {
+        HAPPY_EYEBALLS_CLIENTS.set(0);
+        shutdownHappyEyeballsExecutors();
+      }
+      heExecutorsRegistered = false;
+    }
   }
 
   private void samplePrepareRequest(Request request,
@@ -1401,64 +1417,130 @@ public class HTTP2JettyClient {
                                                 HTTP2FutureResponseListener h3Listener)
       throws InterruptedException, TimeoutException, ExecutionException {
     URI uri = h3Request.getURI();
+    ensureHappyEyeballsExecutors();
+    long effectiveDelayMs = computeHappyEyeballsDelayMs(uri);
     LOG.info("Happy Eyeballs enabled for HTTP/3: origin={}, delayMs={}",
-        originKey(uri), happyEyeballsDelayMs);
+        originKey(uri), effectiveDelayMs);
     int timeoutMs = requestTimeout > 0 ? requestTimeout + 2000 : 0;
     AtomicReference<ContentResponse> winner = new AtomicReference<>();
     AtomicReference<Throwable> failure = new AtomicReference<>();
     AtomicInteger failures = new AtomicInteger(0);
     java.util.concurrent.CountDownLatch done = new java.util.concurrent.CountDownLatch(1);
+    java.util.concurrent.atomic.AtomicBoolean resolved =
+        new java.util.concurrent.atomic.AtomicBoolean(false);
+    java.util.concurrent.atomic.AtomicBoolean h2Started =
+        new java.util.concurrent.atomic.AtomicBoolean(false);
 
     HTTP2FutureResponseListener h2Listener = new HTTP2FutureResponseListener(maxBufferSize);
     Request h2Request = cloneRequest(h3Request, httpClientNoH3);
     h2Listener.setRequest(h2Request);
 
-    h3Request.send(h3Listener);
-    HAPPY_EYEBALLS_EXECUTOR.execute(() -> {
-      try {
-        ContentResponse response = getContent(h3Listener, h3Request);
-        if (winner.compareAndSet(null, response)) {
-          done.countDown();
-          h2Request.abort(new java.util.concurrent.CancellationException("Happy Eyeballs H3 won"));
-        }
-      } catch (Throwable t) {
-        if (failures.incrementAndGet() >= 2) {
-          failure.set(t);
-          done.countDown();
-        }
-      }
-    });
+    java.util.concurrent.atomic.AtomicReference<java.util.concurrent.ScheduledFuture<?>>
+        h2StartFuture = new java.util.concurrent.atomic.AtomicReference<>();
 
-    HAPPY_EYEBALLS_SCHEDULER.schedule(() -> {
-      if (done.getCount() == 0) {
-        return;
+    Runnable cancelScheduledStart = () -> {
+      java.util.concurrent.ScheduledFuture<?> future = h2StartFuture.get();
+      if (future != null) {
+        future.cancel(false);
       }
-      LOG.info("Happy Eyeballs fallback to HTTP/2 after {}ms: origin={}",
-          happyEyeballsDelayMs, originKey(uri));
-      h2Request.send(h2Listener);
-      HAPPY_EYEBALLS_EXECUTOR.execute(() -> {
-        try {
-          ContentResponse response = getContent(h2Listener, h2Request);
-          if (winner.compareAndSet(null, response)) {
+    };
+
+    Runnable completeTimeoutCleanup = () -> {
+      cancelScheduledStart.run();
+      h3Request.abort(new java.util.concurrent.CancellationException(
+          "Happy Eyeballs timeout"));
+      h2Request.abort(new java.util.concurrent.CancellationException(
+          "Happy Eyeballs timeout"));
+    };
+
+    java.util.function.BiConsumer<ContentResponse, Boolean> completeSuccess =
+        (response, h3Won) -> {
+          if (!resolved.compareAndSet(false, true)) {
+            return;
+          }
+          winner.set(response);
+          cancelScheduledStart.run();
+          if (h3Won) {
+            h2Request.abort(new java.util.concurrent.CancellationException(
+                "Happy Eyeballs H3 won"));
+          } else {
             h3Listener.completeWith(response,
                 h2Listener.getResponseStart(), h2Listener.getResponseEnd());
-            done.countDown();
             h3Request.abort(new java.util.concurrent.CancellationException(
                 "Happy Eyeballs H2 won"));
           }
+          done.countDown();
+        };
+
+    java.util.function.Consumer<Throwable> completeFailure = (t) -> {
+      if (failures.incrementAndGet() >= 2 && resolved.compareAndSet(false, true)) {
+        failure.set(t);
+        cancelScheduledStart.run();
+        h3Request.abort(new java.util.concurrent.CancellationException(
+            "Happy Eyeballs failed"));
+        h2Request.abort(new java.util.concurrent.CancellationException(
+            "Happy Eyeballs failed"));
+        done.countDown();
+      }
+    };
+
+    java.util.function.Consumer<String> startH2 = (reason) -> {
+      if (resolved.get() || !h2Started.compareAndSet(false, true)) {
+        return;
+      }
+      LOG.info("Happy Eyeballs starting HTTP/2 ({}): origin={}",
+          reason, originKey(uri));
+      try {
+        h2Request.send(h2Listener);
+      } catch (Throwable sendFailure) {
+        completeFailure.accept(sendFailure);
+        return;
+      }
+      happyEyeballsExecutor.execute(() -> {
+        try {
+          ContentResponse response = getContent(h2Listener, h2Request);
+          completeSuccess.accept(response, false);
         } catch (Throwable t) {
-          if (failures.incrementAndGet() >= 2) {
-            failure.set(t);
-            done.countDown();
-          }
+          completeFailure.accept(t);
         }
       });
-    }, happyEyeballsDelayMs, TimeUnit.MILLISECONDS);
+    };
+
+    boolean h3Sent = false;
+    try {
+      h3Request.send(h3Listener);
+      h3Sent = true;
+    } catch (Throwable sendFailure) {
+      startH2.accept("h3-send-failed");
+      completeFailure.accept(sendFailure);
+    }
+    if (h3Sent) {
+      happyEyeballsExecutor.execute(() -> {
+        try {
+          ContentResponse response = getContent(h3Listener, h3Request);
+          completeSuccess.accept(response, true);
+        } catch (Throwable t) {
+          startH2.accept("h3-failed-early");
+          completeFailure.accept(t);
+        }
+      });
+    }
+
+    if (effectiveDelayMs <= 0) {
+      startH2.accept("delay 0ms");
+    } else {
+      h2StartFuture.set(happyEyeballsScheduler.schedule(
+          () -> startH2.accept("delay " + effectiveDelayMs + "ms"),
+          effectiveDelayMs, TimeUnit.MILLISECONDS));
+    }
 
     boolean completed;
     if (timeoutMs > 0) {
       completed = done.await(timeoutMs, TimeUnit.MILLISECONDS);
       if (!completed) {
+        if (resolved.compareAndSet(false, true)) {
+          completeTimeoutCleanup.run();
+        }
         throw new TimeoutException();
       }
     } else {
@@ -1512,6 +1594,9 @@ public class HTTP2JettyClient {
             response.getStatus(), response.getVersion(), elapsed, contentLength);
         int headerCount = response.getHeaders() != null ? response.getHeaders().size() : 0;
         LOG.debug("Response headers: {}", headerCount);
+        if (originalRequest != null && response.getVersion() == HttpVersion.HTTP_3) {
+          recordHttp3Success(originalRequest.getURI());
+        }
         updateHttp1OnlyCache(originalRequest, response);
         updateH2cCache(originalRequest, response);
         updateAltSvcCache(originalRequest, response.getHeaders());
@@ -1829,6 +1914,32 @@ public class HTTP2JettyClient {
         origin, entry.h3, entry.expiresAt);
   }
 
+  private long computeHappyEyeballsDelayMs(URI uri) {
+    long baseDelay = happyEyeballsDelayMs;
+    if (baseDelay <= 0) {
+      return 0L;
+    }
+    if (http3PriorKnowledgeEnabled) {
+      return baseDelay;
+    }
+    if (!altSvcCacheEnabled || uri == null) {
+      return baseDelay;
+    }
+    AltSvcEntry entry = ALT_SVC_CACHE.get(originKey(uri));
+    if (entry == null) {
+      return baseDelay;
+    }
+    long now = System.currentTimeMillis();
+    if (entry.brokenUntil > now) {
+      return 0L;
+    }
+    if (entry.lastH3SuccessAt > 0
+        && now - entry.lastH3SuccessAt <= H3_RECENT_SUCCESS_WINDOW_MS) {
+      return baseDelay;
+    }
+    return Math.max(0L, baseDelay / 2);
+  }
+
   private AltSvcEntry parseAltSvc(String value) {
     String[] parts = value.split(",");
     boolean h3 = false;
@@ -1866,7 +1977,22 @@ public class HTTP2JettyClient {
     entry.h3 = true;
     entry.expiresAt = System.currentTimeMillis() + TimeUnit.SECONDS.toMillis(maxAgeSeconds);
     entry.brokenUntil = 0L;
+    entry.lastH3SuccessAt = 0L;
     return entry;
+  }
+
+  private void recordHttp3Success(URI uri) {
+    if (!enableHttp3 || !altSvcCacheEnabled || uri == null) {
+      return;
+    }
+    String origin = originKey(uri);
+    AltSvcEntry entry = ALT_SVC_CACHE.get(origin);
+    if (entry == null) {
+      return;
+    }
+    entry.lastH3SuccessAt = System.currentTimeMillis();
+    entry.brokenUntil = 0L;
+    ALT_SVC_CACHE.put(origin, entry);
   }
 
   private void updateHttp1OnlyCache(Request request, Response response) {
@@ -2186,10 +2312,56 @@ public class HTTP2JettyClient {
         + ":" + port;
   }
 
+  private static void ensureHappyEyeballsExecutors() {
+    if (happyEyeballsScheduler != null && !happyEyeballsScheduler.isShutdown()
+        && happyEyeballsExecutor != null && !happyEyeballsExecutor.isShutdown()) {
+      return;
+    }
+    synchronized (HAPPY_EYEBALLS_LOCK) {
+      if (happyEyeballsScheduler == null || happyEyeballsScheduler.isShutdown()) {
+        happyEyeballsScheduler = Executors.newSingleThreadScheduledExecutor(
+            new HappyEyeballsThreadFactory("http3-he"));
+      }
+      if (happyEyeballsExecutor == null || happyEyeballsExecutor.isShutdown()) {
+        happyEyeballsExecutor = Executors.newScheduledThreadPool(2,
+            new HappyEyeballsThreadFactory("http3-he-worker"));
+      }
+    }
+  }
+
+  private static void shutdownHappyEyeballsExecutors() {
+    ScheduledExecutorService scheduler;
+    ScheduledExecutorService executor;
+    synchronized (HAPPY_EYEBALLS_LOCK) {
+      scheduler = happyEyeballsScheduler;
+      executor = happyEyeballsExecutor;
+      happyEyeballsScheduler = null;
+      happyEyeballsExecutor = null;
+    }
+    shutdownExecutor(scheduler);
+    shutdownExecutor(executor);
+  }
+
+  private static void shutdownExecutor(ScheduledExecutorService executor) {
+    if (executor == null) {
+      return;
+    }
+    executor.shutdown();
+    try {
+      if (!executor.awaitTermination(3, TimeUnit.SECONDS)) {
+        executor.shutdownNow();
+      }
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      executor.shutdownNow();
+    }
+  }
+
   private static class AltSvcEntry {
     private boolean h3;
     private long expiresAt;
     private long brokenUntil;
+    private long lastH3SuccessAt;
   }
 
   private static class Http1OnlyEntry {
