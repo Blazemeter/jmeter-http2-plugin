@@ -70,6 +70,7 @@ public class ServerBuilder {
   public static final String SERVER_PATH_400 = "/test/400";
   public static final String SERVER_PATH_302 = "/test/302";
   public static final String SERVER_PATH_200_WITH_BODY = "/test/body";
+  public static final String SERVER_PATH_JSON_ONLY = "/test/json-only";
   public static final String SERVER_PATH_DELETE_DATA = "/test/delete";
   public static final String BASIC_HTML_TEMPLATE = "<!DOCTYPE html><html><head><title>Page "
       + "Title</title></head><body><div><img src='image.png'></div></body></html>";
@@ -263,6 +264,18 @@ public class ServerBuilder {
             String bodyRequest = req.getReader().lines().collect(Collectors.joining());
             resp.getWriter().write(bodyRequest);
             break;
+          case SERVER_PATH_JSON_ONLY:
+            String contentType = req.getContentType();
+            if (contentType == null || !contentType.toLowerCase().startsWith("application/json")) {
+              resp.setStatus(HttpStatus.UNSUPPORTED_MEDIA_TYPE_415);
+              resp.setContentType("text/html; charset=utf-8");
+              resp.getWriter().write("Unsupported Media Type");
+              break;
+            }
+            resp.setStatus(HttpStatus.OK_200);
+            resp.setContentType("application/json");
+            resp.getWriter().write("{\"ok\":true}");
+            break;
           case SERVER_PATH_SET_COOKIES:
             resp.addHeader(HTTPConstants.HEADER_SET_COOKIE,
                 RESPONSE_DATA_COOKIES);
@@ -287,7 +300,7 @@ public class ServerBuilder {
             resp.getOutputStream().write(requestBody);
             break;
           case SERVER_PATH_200_GZIP:
-            int gzipHit = GZIP_REQUEST_COUNT.incrementAndGet();
+            GZIP_REQUEST_COUNT.incrementAndGet();
             resp.addHeader("Content-Encoding", "gzip");
             resp.addHeader("X-Gzip-Req-Protocol", req.getProtocol());
             resp.addHeader("Connection", "close");
@@ -362,7 +375,7 @@ public class ServerBuilder {
   // - Constraint is now an interface with static factory methods from()
   // - Password → Credential.getCredential()
   private void configureAuthHandler(Server server, Authenticator authenticator,
-                                    String mechanism) {
+                                   String mechanism) {
     SecurityHandler.PathMapped securityHandler = new SecurityHandler.PathMapped();
     String[] roles = new String[] {"can-access"};
     

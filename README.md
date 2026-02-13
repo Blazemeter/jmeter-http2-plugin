@@ -207,7 +207,5 @@ store only the selected profile and use defaults.
 | **httpJettyClient.quicMaxIdleTimeout**              | QUIC max idle timeout in milliseconds                                           | 30000        |
 | **httpJettyClient.quicMaxBidirectionalStreams**     | QUIC max bidirectional streams                                                  | 100          |
 | **httpJettyClient.quicMaxUnidirectionalStreams**    | QUIC max unidirectional streams                                                 | 100          |
-| **httpJettyClient.settingsMaxHeaderListSize**       | HTTP/2 SETTINGS_MAX_HEADER_LIST_SIZE                                            | 4096         |
-
-Legacy property (backward compatibility):
+| **httpJettyClient.settingsMaxHeaderListSize**       | HTTP/2 SETTINGS_MAX_HEADER_LIST_SIZE                                            | 4096         |Legacy property (backward compatibility):
 - **httpJettyClient.removeIdleDestinations**: if set to false, disables destination idle timeout.

@@ -1,5 +1,7 @@
 package com.blazemeter.jmeter.http2.core;
 
+import static com.blazemeter.jmeter.http2.core.LowLevelDebugLog.lowLevelDebug;
+
 import java.io.IOException;
 import java.net.URI;
 import java.nio.charset.Charset;
@@ -46,16 +48,16 @@ public class HTTP2FutureResponseListener extends BufferingResponseListener
   public HTTP2FutureResponseListener(int maxLength) {
     super(maxLength);
     setStart();
-    LOG.debug("=== HTTP2FutureResponseListener CREATED ===");
-    LOG.debug("maxLength: {}", maxLength);
-    LOG.debug("Thread: {}", Thread.currentThread().getName());
+    lowLevelDebug("=== HTTP2FutureResponseListener CREATED ===");
+    lowLevelDebug("maxLength: {}", maxLength);
+    lowLevelDebug("Thread: {}", Thread.currentThread().getName());
   }
 
   public void setRequest(Request request) {
     this.request = request;
-    LOG.debug("=== setRequest() called ===");
-    LOG.debug("Request URI: {}", request != null ? request.getURI() : "null");
-    LOG.debug("Thread: {}", Thread.currentThread().getName());
+    lowLevelDebug("=== setRequest() called ===");
+    lowLevelDebug("Request URI: {}", request != null ? request.getURI() : "null");
+    lowLevelDebug("Thread: {}", Thread.currentThread().getName());
   }
 
   public Request getRequest() {
@@ -102,34 +104,37 @@ public class HTTP2FutureResponseListener extends BufferingResponseListener
    */
   @Override
   public void onFailure(Response response, Throwable failure) {
-    LOG.warn("=== onFailure() CALLED ===");
-    LOG.warn("Thread: {}", Thread.currentThread().getName());
-    LOG.warn("Response: {}", response != null ? "present" : "null");
+    lowLevelDebug("=== onFailure() CALLED ===");
+    lowLevelDebug("Thread: {}", Thread.currentThread().getName());
+    lowLevelDebug("Response: {}", response != null ? "present" : "null");
     String failureInfo = failure != null
         ? failure.getClass().getName() + ": " + failure.getMessage()
         : "null";
-    LOG.warn("Failure: {}", failureInfo);
+    lowLevelDebug("Failure: {}", failureInfo);
     
     // Store the failure immediately
     this.failure = failure;
     
     // Check if this is a protocol_error
     if (failure != null) {
-      LOG.debug("Checking isProtocolError in onFailure() for: {}", failure.getClass().getName());
+      lowLevelDebug("Checking isProtocolError in onFailure() for: {}",
+          failure.getClass().getName());
       boolean isProtocolError = ProtocolErrorException.isProtocolError(failure);
-      LOG.debug("isProtocolError returned: {}", isProtocolError);
+      lowLevelDebug("isProtocolError returned: {}", isProtocolError);
       
       if (isProtocolError) {
-        LOG.warn("=== PROTOCOL_ERROR DETECTED IN onFailure() ===");
-        LOG.warn("Original failure: {}: {}", failure.getClass().getName(), failure.getMessage());
-        LOG.warn("HTTP/2 protocol_error detected in onFailure() - "
+        lowLevelDebug("=== PROTOCOL_ERROR DETECTED IN onFailure() ===");
+        lowLevelDebug("Original failure: {}: {}",
+            failure.getClass().getName(), failure.getMessage());
+        lowLevelDebug("HTTP/2 protocol_error detected in onFailure() - "
             + "replacing with ProtocolErrorException");
         String message = failure.getMessage();
         // Replace failure with ProtocolErrorException so it can be caught specifically
         this.failure = new ProtocolErrorException(
             message != null ? message : "protocol_error", 
             failure);
-        LOG.warn("Replaced with ProtocolErrorException: {}", this.failure.getClass().getName());
+        lowLevelDebug("Replaced with ProtocolErrorException: {}",
+            this.failure.getClass().getName());
       }
     }
     
@@ -142,20 +147,20 @@ public class HTTP2FutureResponseListener extends BufferingResponseListener
     // CRITICAL: Mark that onComplete was called
     onCompleteCalled = true;
     
-    LOG.debug("=== onComplete() CALLED ===");
-    LOG.debug("Thread: {}", Thread.currentThread().getName());
-    LOG.debug("Result: {}", result != null ? "present" : "null");
+    lowLevelDebug("=== onComplete() CALLED ===");
+    lowLevelDebug("Thread: {}", Thread.currentThread().getName());
+    lowLevelDebug("Result: {}", result != null ? "present" : "null");
     
     if (result != null) {
       String failureInfo = result.getFailure() != null
           ? result.getFailure().getClass().getName() + ": "
               + result.getFailure().getMessage()
           : "null";
-      LOG.debug("Result.getFailure(): {}", failureInfo);
-      LOG.debug("Result.getResponse(): {}", 
+      lowLevelDebug("Result.getFailure(): {}", failureInfo);
+      lowLevelDebug("Result.getResponse(): {}", 
           result.getResponse() != null ? "present" : "null");
       if (result.getResponse() != null) {
-        LOG.debug("Response status: {}, version: {}", 
+        lowLevelDebug("Response status: {}, version: {}", 
             result.getResponse().getStatus(), result.getResponse().getVersion());
       }
     }
@@ -163,45 +168,46 @@ public class HTTP2FutureResponseListener extends BufferingResponseListener
     setEnd();
     failure = result != null ? result.getFailure() : null;
     
-    LOG.debug("failure set: {}",
+    lowLevelDebug("failure set: {}",
         failure != null ? failure.getClass().getName() + ": " + failure.getMessage() : "null");
     
     // CRITICAL: Detect protocol_error immediately when failure is set
     // This allows us to replace it with ProtocolErrorException before it propagates
     if (failure != null) {
-      LOG.debug("Checking isProtocolError for: {}", failure.getClass().getName());
+      lowLevelDebug("Checking isProtocolError for: {}", failure.getClass().getName());
       boolean isProtocolError = ProtocolErrorException.isProtocolError(failure);
-      LOG.debug("isProtocolError returned: {}", isProtocolError);
+      lowLevelDebug("isProtocolError returned: {}", isProtocolError);
       
       if (isProtocolError) {
-        LOG.warn("=== PROTOCOL_ERROR DETECTED IN onComplete() ===");
-        LOG.warn("Original failure: {}: {}", failure.getClass().getName(), failure.getMessage());
-        LOG.warn("HTTP/2 protocol_error detected in onComplete() - "
+        lowLevelDebug("=== PROTOCOL_ERROR DETECTED IN onComplete() ===");
+        lowLevelDebug("Original failure: {}: {}",
+            failure.getClass().getName(), failure.getMessage());
+        lowLevelDebug("HTTP/2 protocol_error detected in onComplete() - "
             + "replacing with ProtocolErrorException");
         String message = failure.getMessage();
         // Replace failure with ProtocolErrorException so it can be caught specifically
         failure = new ProtocolErrorException(
             message != null ? message : "protocol_error", 
             failure);
-        LOG.warn("Replaced with ProtocolErrorException: {}", failure.getClass().getName());
+        lowLevelDebug("Replaced with ProtocolErrorException: {}", failure.getClass().getName());
       }
     }
     
     if (result != null && result.getResponse() != null) {
       Response httpResponse = result.getResponse();
-      LOG.info("Response completed: status={}, version={}, reason={}, failure={}",
+      lowLevelDebug("Response completed: status={}, version={}, reason={}, failure={}",
           httpResponse.getStatus(), httpResponse.getVersion(), httpResponse.getReason(),
           failure != null ? failure.getClass().getName() : "none");
       
       if (httpResponse.getVersion() != null) {
-        LOG.info("HTTP version negotiated: {}", httpResponse.getVersion());
+        lowLevelDebug("HTTP version negotiated: {}", httpResponse.getVersion());
       }
       
       // In Jetty 12, ContentResponse is abstract - create a wrapper implementation
       response = new ContentResponseWrapper(httpResponse, getContent(),
           getMediaType(), getEncoding());
     } else {
-      LOG.warn("Response is null in onComplete()");
+      lowLevelDebug("Response is null in onComplete()");
     }
     
     if (failure != null) {
@@ -215,7 +221,7 @@ public class HTTP2FutureResponseListener extends BufferingResponseListener
           LOG.error("HTTP/2 protocol_error in onComplete() - ALPN negotiation likely failed");
         }
       }
-      LOG.debug("Full failure stack trace:", failure);
+      lowLevelDebug("Full failure stack trace:", failure);
     }
     
     latch.countDown();
@@ -326,12 +332,12 @@ public class HTTP2FutureResponseListener extends BufferingResponseListener
 
   @Override
   public ContentResponse get() throws InterruptedException, ExecutionException {
-    LOG.debug("=== get() called (no timeout) ===");
-    LOG.debug("Thread: {}", Thread.currentThread().getName());
-    LOG.debug("onCompleteCalled before await: {}", onCompleteCalled);
+    lowLevelDebug("=== get() called (no timeout) ===");
+    lowLevelDebug("Thread: {}", Thread.currentThread().getName());
+    lowLevelDebug("onCompleteCalled before await: {}", onCompleteCalled);
     setStart();
     latch.await();
-    LOG.debug("latch.await() completed, onCompleteCalled: {}", onCompleteCalled);
+    lowLevelDebug("latch.await() completed, onCompleteCalled: {}", onCompleteCalled);
     try {
       return getResult();
     } catch (ProtocolErrorException e) {
@@ -350,16 +356,16 @@ public class HTTP2FutureResponseListener extends BufferingResponseListener
   public ContentResponse get(long timeout, TimeUnit unit)
       throws InterruptedException, ExecutionException,
       TimeoutException {
-    LOG.debug("=== get(timeout) called ===");
-    LOG.debug("Timeout: {} {}", timeout, unit);
-    LOG.debug("Thread: {}", Thread.currentThread().getName());
-    LOG.debug("onCompleteCalled before await: {}", onCompleteCalled);
+    lowLevelDebug("=== get(timeout) called ===");
+    lowLevelDebug("Timeout: {} {}", timeout, unit);
+    lowLevelDebug("Thread: {}", Thread.currentThread().getName());
+    lowLevelDebug("onCompleteCalled before await: {}", onCompleteCalled);
     setStart();
     boolean expired = !latch.await(timeout, unit);
-    LOG.debug("latch.await() completed, expired: {}, onCompleteCalled: {}",
+    lowLevelDebug("latch.await() completed, expired: {}, onCompleteCalled: {}",
         expired, onCompleteCalled);
     if (expired) {
-      LOG.warn("Timeout expired, throwing TimeoutException");
+      lowLevelDebug("Timeout expired, throwing TimeoutException");
       throw new TimeoutException();
     }
     try {
@@ -377,26 +383,26 @@ public class HTTP2FutureResponseListener extends BufferingResponseListener
   }
 
   private ContentResponse getResult() throws ExecutionException, ProtocolErrorException {
-    LOG.debug("=== getResult() called ===");
-    LOG.debug("Thread: {}", Thread.currentThread().getName());
-    LOG.debug("onCompleteCalled: {}", onCompleteCalled);
-    LOG.debug("isCancelled(): {}", isCancelled());
+    lowLevelDebug("=== getResult() called ===");
+    lowLevelDebug("Thread: {}", Thread.currentThread().getName());
+    lowLevelDebug("onCompleteCalled: {}", onCompleteCalled);
+    lowLevelDebug("isCancelled(): {}", isCancelled());
     String failureInfo = failure != null
         ? failure.getClass().getName() + ": " + failure.getMessage()
         : "null";
-    LOG.debug("failure: {}", failureInfo);
-    LOG.debug("response: {}", response != null ? "present" : "null");
+    lowLevelDebug("failure: {}", failureInfo);
+    lowLevelDebug("response: {}", response != null ? "present" : "null");
     
     // If onComplete was never called, log a warning
     if (!onCompleteCalled) {
-      LOG.warn("getResult() called but onComplete() was NEVER called!");
-      LOG.warn("This suggests the error was handled before onComplete() could execute");
-      LOG.warn("The error may have been thrown synchronously or handled by "
+      lowLevelDebug("getResult() called but onComplete() was NEVER called!");
+      lowLevelDebug("This suggests the error was handled before onComplete() could execute");
+      lowLevelDebug("The error may have been thrown synchronously or handled by "
           + "BufferingResponseListener");
     }
     
     if (isCancelled()) {
-      LOG.warn("Request was cancelled");
+      lowLevelDebug("Request was cancelled");
       throw (CancellationException) new CancellationException().initCause(failure);
     }
     if (failure != null) { // Failure and Response can coexist.
@@ -429,7 +435,7 @@ public class HTTP2FutureResponseListener extends BufferingResponseListener
           String message = ioException.getMessage();
           LOG.error("IOException details: {}", message);
         }
-        LOG.debug("Full failure stack trace (no response):", failure);
+        lowLevelDebug("Full failure stack trace (no response):", failure);
         throw new ExecutionException(failure);
       } else {
         // It is a failure caused after obtaining the response,
@@ -445,15 +451,15 @@ public class HTTP2FutureResponseListener extends BufferingResponseListener
           throw new ProtocolErrorException(message != null ? message : "protocol_error", failure);
         }
         
-        LOG.debug("Failure after response received:", failure);
+        lowLevelDebug("Failure after response received:", failure);
         throw new ExecutionException(failure);
       }
     }
 
     if (response == null) {
-      LOG.warn("Response is null in getResult() but no failure was set");
+      lowLevelDebug("Response is null in getResult() but no failure was set");
     } else {
-      LOG.debug("Response retrieved successfully: status={}, version={}", 
+      lowLevelDebug("Response retrieved successfully: status={}, version={}", 
           response.getStatus(), response.getVersion());
     }
     return response;
@@ -492,11 +498,13 @@ public class HTTP2FutureResponseListener extends BufferingResponseListener
       if (request.getBody() != null) {
         http11Request.body(request.getBody());
       }
-      LOG.warn("Retrying request with HTTP/1.1 in listener fallback: {}", request.getURI());
+      lowLevelDebug("Retrying request with HTTP/1.1 in listener fallback: {}", request.getURI());
       return http11Request.send();
     } catch (Exception e) {
       LOG.error("HTTP/1.1 fallback in listener failed", e);
       return null;
     }
   }
+
 }
+

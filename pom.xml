@@ -336,10 +336,7 @@
         <configuration>
           <!-- avoid issue with jdk 11+ -->
           <useSystemClassLoader>false</useSystemClassLoader>
-          <!-- Avoid bringing slf4j-simple into unit tests; keep SLF4J 1.7 from JMeter separate. -->
-          <classpathDependencyExcludes>
-            <classpathDependencyExclude>org.slf4j:slf4j-simple</classpathDependencyExclude>
-          </classpathDependencyExcludes>
+          <!-- Allow slf4j-simple in unit tests to enable Jetty frame logging. -->
           <excludes>
             <exclude>**/*IntegrationTest.java</exclude>
           </excludes>

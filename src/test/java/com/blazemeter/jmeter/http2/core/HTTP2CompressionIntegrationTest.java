@@ -103,6 +103,7 @@ public class HTTP2CompressionIntegrationTest extends HTTP2TestBase {
 
   @Test
   public void shouldDecompressGzipWithShadedJar() throws Exception {
+    // Gzip depends on initialized InflaterPool; regressions can show as stream cancel errors.
     HTTPSampleResult result = sampleWithDirectClient("gzip", SERVER_PATH_200_GZIP,
         ServerMode.HTTP1_CLEAR, true);
     assertThat(result.isSuccessful()).isTrue();

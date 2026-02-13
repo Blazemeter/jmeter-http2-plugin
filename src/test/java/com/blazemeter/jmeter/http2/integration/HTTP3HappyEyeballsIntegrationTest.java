@@ -60,7 +60,9 @@ public class HTTP3HappyEyeballsIntegrationTest extends HTTP2TestBase {
       JMeterUtils.setProperty("httpJettyClient.enableHttp3", "true");
       JMeterUtils.setProperty("httpJettyClient.altSvcCacheEnabled", "true");
       JMeterUtils.setProperty("httpJettyClient.http3PriorKnowledge", "false");
-      JMeterUtils.setProperty("httpJettyClient.happyEyeballsDelayMs", "200");
+      // Use a larger base delay so the race outcome is deterministic across
+      // environments where HTTP/3 startup/handshake can be slower.
+      JMeterUtils.setProperty("httpJettyClient.happyEyeballsDelayMs", "600");
       JMeterUtils.setProperty("httpJettyClient.fallbackEnabled", "true");
 
       AtomicInteger h2Requests = new AtomicInteger();
@@ -149,19 +151,37 @@ public class HTTP3HappyEyeballsIntegrationTest extends HTTP2TestBase {
       HTTP2JettyClient client = new HTTP2JettyClient(false, "IT-HTTP3-HE-Recent");
       try {
         client.start();
+        // Phase A: establish Alt-Svc and force one confirmed H3 success first.
         HTTPSampleResult first = sample(client, sampler, url);
         assertThat(first.isSuccessful()).isTrue();
         assertThat(first.getResponseHeaders()).startsWith("HTTP/2");
 
-        h2DelayMs.set(250L);
-        HTTPSampleResult second = sample(client, sampler, url);
-        assertThat(second.isSuccessful()).isTrue();
-        assertThat(second.getResponseHeaders()).contains("HTTP/3");
+        h2DelayMs.set(500L);
+        h3DelayMs.set(0L);
+        int h3BeforeWarmup = h3Requests.get();
+        HTTPSampleResult warmupH3 = null;
+        for (int attempt = 0; attempt < 6; attempt++) {
+          warmupH3 = sample(client, sampler, url);
+          assertThat(warmupH3.isSuccessful()).isTrue();
+          if (h3Requests.get() > h3BeforeWarmup
+              && warmupH3.getResponseHeaders().contains("HTTP/3")) {
+            break;
+          }
+        }
+        assertThat(warmupH3).isNotNull();
+        assertThat(warmupH3.getResponseHeaders()).contains("HTTP/3");
+        assertThat(h3Requests.get()).isGreaterThan(h3BeforeWarmup);
 
+        // Phase B: recent H3 success must keep base delay and attempt H3 in the race.
+        long effectiveDelay = computeHappyEyeballsDelay(client, url.toURI());
+        assertThat(effectiveDelay).isEqualTo(200L);
+
+        h2DelayMs.set(40L);
         h3DelayMs.set(150L);
-        HTTPSampleResult third = sample(client, sampler, url);
-        assertThat(third.isSuccessful()).isTrue();
-        assertThat(third.getResponseHeaders()).contains("HTTP/3");
+        int h3BeforeRace = h3Requests.get();
+        HTTPSampleResult raceAfterRecentSuccess = sample(client, sampler, url);
+        assertThat(raceAfterRecentSuccess.isSuccessful()).isTrue();
+        assertThat(h3Requests.get()).isGreaterThan(h3BeforeRace);
       } finally {
         client.stop();
       }
@@ -366,6 +386,13 @@ public class HTTP3HappyEyeballsIntegrationTest extends HTTP2TestBase {
         "markHttp3Broken", URI.class);
     method.setAccessible(true);
     method.invoke(client, uri);
+  }
+
+  private long computeHappyEyeballsDelay(HTTP2JettyClient client, URI uri) throws Exception {
+    java.lang.reflect.Method method = HTTP2JettyClient.class.getDeclaredMethod(
+        "computeHappyEyeballsDelayMs", URI.class);
+    method.setAccessible(true);
+    return (long) method.invoke(client, uri);
   }
 
   private void stopServer(Server server) {

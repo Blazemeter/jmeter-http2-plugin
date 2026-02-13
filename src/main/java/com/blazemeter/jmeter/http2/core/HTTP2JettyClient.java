@@ -1,13 +1,17 @@
 package com.blazemeter.jmeter.http2.core;
 
+import static com.blazemeter.jmeter.http2.core.LowLevelDebugLog.lowLevelDebug;
+
 import com.blazemeter.jmeter.http2.core.jetty.custom.http2.CustomClientConnectionFactoryOverHTTP2;
 import com.blazemeter.jmeter.http2.core.jetty.custom.http3.CustomClientConnectionFactoryOverHTTP3;
 import com.blazemeter.jmeter.http2.sampler.HTTP2Sampler;
+import com.github.luben.zstd.ZstdInputStream;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UnsupportedEncodingException;
+import java.lang.reflect.Method;
 import java.net.MalformedURLException;
 import java.net.URI;
 import java.net.URISyntaxException;
@@ -19,6 +23,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.Base64;
@@ -39,6 +44,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.regex.Pattern;
 import java.util.stream.StreamSupport;
+import java.util.zip.GZIPInputStream;
+import java.util.zip.InflaterInputStream;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.jmeter.protocol.http.control.AuthManager;
 import org.apache.jmeter.protocol.http.control.Authorization;
@@ -52,6 +59,7 @@ import org.apache.jmeter.protocol.http.util.HTTPConstants;
 import org.apache.jmeter.protocol.http.util.HTTPFileArg;
 import org.apache.jmeter.testelement.property.JMeterProperty;
 import org.apache.jmeter.util.JMeterUtils;
+import org.brotli.dec.BrotliInputStream;
 import org.eclipse.jetty.client.AbstractAuthentication;
 import org.eclipse.jetty.client.AuthenticationStore;
 import org.eclipse.jetty.client.BasicAuthentication;
@@ -86,18 +94,31 @@ import org.eclipse.jetty.http.HttpFields.Mutable;
 import org.eclipse.jetty.http.HttpHeader;
 import org.eclipse.jetty.http.HttpStatus;
 import org.eclipse.jetty.http.HttpVersion;
+import org.eclipse.jetty.http.MetaData;
+import org.eclipse.jetty.http2.HTTP2Session;
+import org.eclipse.jetty.http2.api.Session;
 import org.eclipse.jetty.http2.client.HTTP2Client;
 import org.eclipse.jetty.http2.client.transport.HttpClientTransportOverHTTP2;
+import org.eclipse.jetty.http2.frames.Frame;
+import org.eclipse.jetty.http2.frames.GoAwayFrame;
+import org.eclipse.jetty.http2.frames.HeadersFrame;
+import org.eclipse.jetty.http2.frames.ResetFrame;
+import org.eclipse.jetty.http2.frames.SettingsFrame;
 import org.eclipse.jetty.http3.client.HTTP3Client;
 import org.eclipse.jetty.http3.client.HTTP3ClientQuicConfiguration;
 import org.eclipse.jetty.io.ArrayByteBufferPool;
 import org.eclipse.jetty.io.ByteBufferPool;
 import org.eclipse.jetty.io.ClientConnectionFactory;
 import org.eclipse.jetty.io.ClientConnector;
+import org.eclipse.jetty.io.Connection;
 import org.eclipse.jetty.io.Transport;
+import org.eclipse.jetty.io.ssl.SslConnection;
+import org.eclipse.jetty.io.ssl.SslHandshakeListener;
 import org.eclipse.jetty.quic.quiche.client.QuicheClientQuicConfiguration;
 import org.eclipse.jetty.quic.quiche.client.QuicheTransport;
 import org.eclipse.jetty.util.Fields;
+import org.eclipse.jetty.util.component.LifeCycle;
+import org.eclipse.jetty.util.compression.InflaterPool;
 import org.eclipse.jetty.util.ssl.SslContextFactory;
 import org.eclipse.jetty.util.thread.QueuedThreadPool;
 import org.slf4j.Logger;
@@ -114,6 +135,7 @@ public class HTTP2JettyClient {
           HTTPConstants.OPTIONS, HTTPConstants.DELETE));
   private static final Set<String> METHODS_WITH_BODY = new HashSet<>(Arrays
       .asList(HTTPConstants.POST, HTTPConstants.PUT, HTTPConstants.PATCH));
+  private static final Path ALPN_DEBUG_LOG_PATH = resolveAlpnLogPath();
   private static final boolean ADD_CONTENT_TYPE_TO_POST_IF_MISSING = JMeterUtils.getPropDefault(
       "http.post_add_content_type_if_missing", false);
   private static final Pattern PORT_PATTERN = Pattern.compile("\\d+");
@@ -123,6 +145,10 @@ public class HTTP2JettyClient {
   private static final String ALT_SVC_HEADER = "alt-svc";
   private static final String ATTR_HTTP3_ATTEMPTED = "bzm.http3.attempted";
   private static final String ATTR_ORIGIN_KEY = "bzm.http3.origin";
+  private static final String ATTR_REQUEST_HEADERS_SERIALIZED = "bzm.request.headers.serialized";
+  private static final String PROP_SKIP_REDUNDANT_MANUAL_DECODE =
+      "bzm-http2-plugin.skipManualDecodeWhenAdvertised";
+  private static final Path DEBUG_LOG_PATH = resolveDebugLogPath();
   private static final String PROFILE_PROPERTY = "httpJettyClient.profile";
   private static final String PROFILE_BROWSER_LIKE = "browser-like";
   private static final String PROFILE_BROWSER_LIKE_CUSTOM = "browser-like-custom";
@@ -183,6 +209,11 @@ public class HTTP2JettyClient {
   private boolean http1UpgradeRequired;
 
   private ByteBufferPool bufferPool;
+  private CompressionContentDecoderFactory brotliDecoderFactory;
+  private CompressionContentDecoderFactory zstdDecoderFactory;
+  private ContentDecoder.Factory gzipDecoderFactory;
+  private DeflateContentDecoderFactory deflateDecoderFactory;
+  private boolean decoderFactoriesInitialized = false;
   private int quicMaxIdleTimeout = 30000;
   private int quicMaxBidirectionalStreams = 100;
   private int quicMaxUnidirectionalStreams = 100;
@@ -212,10 +243,11 @@ public class HTTP2JettyClient {
   public HTTP2JettyClient(boolean http1UpgradeRequired, String name,
                           HTTP2ClientProfileConfig profileConfig) {
     loadProperties(profileConfig);
-    LOG.info(PLUGIN_BUILD_TAG);
+    lowLevelDebug(PLUGIN_BUILD_TAG);
 
     // Create buffer pool first (needed for both TCP and QUIC connectors)
     this.bufferPool = new ArrayByteBufferPool();
+    ensureDecoderFactoriesInitialized();
 
     ClientConnector clientConnector = createClientConnector(name);
 
@@ -228,17 +260,18 @@ public class HTTP2JettyClient {
           (SslContextFactory.Client) clientConnector.getSslContextFactory();
       if (sslContextFactoryFromConnector != null) {
         sslContextFactoryFromConnector.setProtocol("TLS");
-        LOG.debug("SSL Context Factory: protocol set to TLS");
-        LOG.debug("ALPN protocols will be automatically configured by "
+        lowLevelDebug("SSL Context Factory: protocol set to TLS");
+        lowLevelDebug("ALPN protocols will be automatically configured by "
             + "HttpClientTransportDynamic based on provided connection factories");
       }
     } catch (Exception e) {
-      LOG.debug("Could not set SSL protocol explicitly", e);
+      lowLevelDebug("Could not set SSL protocol explicitly", e);
     }
 
     ClientConnectionFactory.Info http11 = HttpClientConnectionFactory.HTTP11;
 
     HTTP2Client http2Client = new HTTP2Client(clientConnector);
+    enableFrameLoggingIfConfigured(http2Client);
 
     // Add session listener to log SETTINGS frames received from server (for debugging Issue #12071)
     // This helps identify if the server sends a lower SETTINGS_MAX_HEADER_LIST_SIZE
@@ -265,7 +298,7 @@ public class HTTP2JettyClient {
                   // SETTINGS_MAX_HEADER_LIST_SIZE = 0x6
                   Integer maxHeaderListSize = settings.get(0x6);
                   if (maxHeaderListSize != null) {
-                    LOG.info("HTTP/2 SETTINGS frame received from server: "
+                    lowLevelDebug("HTTP/2 SETTINGS frame received from server: "
                         + "SETTINGS_MAX_HEADER_LIST_SIZE={}", maxHeaderListSize);
                     if (maxHeaderListSize < settingsMaxHeaderListSize) {
                       LOG.warn("Server SETTINGS_MAX_HEADER_LIST_SIZE ({}) is lower than "
@@ -280,19 +313,19 @@ public class HTTP2JettyClient {
                   Integer maxConcurrentStreams = settings.get(0x3); // MAX_CONCURRENT_STREAMS
 
                   if (maxFrameSize != null) {
-                    LOG.debug("HTTP/2 SETTINGS: SETTINGS_MAX_FRAME_SIZE={}", maxFrameSize);
+                    lowLevelDebug("HTTP/2 SETTINGS: SETTINGS_MAX_FRAME_SIZE={}", maxFrameSize);
                   }
                   if (initialWindowSize != null) {
-                    LOG.debug("HTTP/2 SETTINGS: SETTINGS_INITIAL_WINDOW_SIZE={}",
+                    lowLevelDebug("HTTP/2 SETTINGS: SETTINGS_INITIAL_WINDOW_SIZE={}",
                         initialWindowSize);
                   }
                   if (maxConcurrentStreams != null) {
-                    LOG.debug("HTTP/2 SETTINGS: SETTINGS_MAX_CONCURRENT_STREAMS={}",
+                    lowLevelDebug("HTTP/2 SETTINGS: SETTINGS_MAX_CONCURRENT_STREAMS={}",
                         maxConcurrentStreams);
                   }
                 }
               } catch (Exception e) {
-                LOG.debug("Could not extract SETTINGS from frame", e);
+                lowLevelDebug("Could not extract SETTINGS from frame", e);
               }
             }
             return null; // Session.Listener methods return void
@@ -302,9 +335,9 @@ public class HTTP2JettyClient {
       java.lang.reflect.Method addSessionListenerMethod =
           http2Client.getClass().getMethod("addSessionListener", sessionListenerClass);
       addSessionListenerMethod.invoke(http2Client, sessionListener);
-      LOG.debug("HTTP2Client: Session listener added to log SETTINGS frames from server");
+      lowLevelDebug("HTTP2Client: Session listener added to log SETTINGS frames from server");
     } catch (Exception e) {
-      LOG.debug("Could not add Session.Listener to HTTP2Client "
+      lowLevelDebug("Could not add Session.Listener to HTTP2Client "
           + "(may not be available in this Jetty version)", e);
     }
 
@@ -314,83 +347,92 @@ public class HTTP2JettyClient {
     // Configure server push (can be disabled for compatibility)
     if (disableServerPush) {
       http2Client.setMaxConcurrentPushedStreams(0);
-      LOG.info("HTTP2Client: Server push disabled for compatibility");
+      lowLevelDebug("HTTP2Client: Server push disabled for compatibility");
     } else {
       http2Client.setMaxConcurrentPushedStreams(maxConcurrentPushedStreams);
     }
+    if (alpnEnabled) {
+      http2Client.setApplicationProtocols(Arrays.asList("h2", "http/1.1"));
+    }
     http2Client.setUseALPN(alpnEnabled);
 
-    // Configure HTTP/2 SETTINGS frame parameters
-    // These parameters are sent in the SETTINGS frame during HTTP/2 connection establishment
-    // Some servers may reject HTTP/2 if these values are not compatible
-    // Using reflection to access methods that may not be available in all Jetty versions
-    // Values can be configured via properties for specific server compatibility
+    // Diagnostic toggle: skip custom HTTP/2 SETTINGS configuration.
+    boolean skipHttp2Settings = Boolean.getBoolean("bzm-http2-plugin.skipHttp2Settings");
+    if (skipHttp2Settings) {
+      lowLevelDebug("HTTP2Client: skipping custom SETTINGS configuration");
+    } else {
+      // Configure HTTP/2 SETTINGS frame parameters
+      // These parameters are sent in the SETTINGS frame during HTTP/2 connection establishment
+      // Some servers may reject HTTP/2 if these values are not compatible
+      // Using reflection to access methods that may not be available in all Jetty versions
+      // Values can be configured via properties for specific server compatibility
 
-    // SETTINGS_INITIAL_WINDOW_SIZE: Initial window size for flow control
-    try {
-      if (hasMethod(http2Client.getClass(), "setInitialStreamWindowSize", int.class)) {
-        http2Client.getClass().getMethod("setInitialStreamWindowSize", int.class)
-            .invoke(http2Client, settingsInitialWindowSize);
-        LOG.info("HTTP2Client: setInitialStreamWindowSize={} (SETTINGS_INITIAL_WINDOW_SIZE)",
-            settingsInitialWindowSize);
+      // SETTINGS_INITIAL_WINDOW_SIZE: Initial window size for flow control
+      try {
+        if (hasMethod(http2Client.getClass(), "setInitialStreamWindowSize", int.class)) {
+          http2Client.getClass().getMethod("setInitialStreamWindowSize", int.class)
+              .invoke(http2Client, settingsInitialWindowSize);
+          lowLevelDebug("HTTP2Client: setInitialStreamWindowSize={} (SETTINGS_INITIAL_WINDOW_SIZE)",
+              settingsInitialWindowSize);
+        }
+      } catch (Exception e) {
+        lowLevelDebug("HTTP2Client: setInitialStreamWindowSize not available", e);
       }
-    } catch (Exception e) {
-      LOG.debug("HTTP2Client: setInitialStreamWindowSize not available", e);
+
+      // SETTINGS_MAX_FRAME_SIZE: Maximum size of a frame
+      try {
+        if (hasMethod(http2Client.getClass(), "setMaxFrameSize", int.class)) {
+          http2Client.getClass().getMethod("setMaxFrameSize", int.class)
+              .invoke(http2Client, settingsMaxFrameSize);
+          lowLevelDebug("HTTP2Client: setMaxFrameSize={} (SETTINGS_MAX_FRAME_SIZE)",
+              settingsMaxFrameSize);
+        }
+      } catch (Exception e) {
+        lowLevelDebug("HTTP2Client: setMaxFrameSize not available", e);
+      }
+
+      // SETTINGS_MAX_CONCURRENT_STREAMS: Maximum number of concurrent streams
+      // Note: 0 means no limit (RFC 7540)
+      try {
+        if (hasMethod(http2Client.getClass(), "setMaxConcurrentStreams", int.class)) {
+          http2Client.getClass().getMethod("setMaxConcurrentStreams", int.class)
+              .invoke(http2Client, settingsMaxConcurrentStreams);
+          lowLevelDebug("HTTP2Client: setMaxConcurrentStreams={} (SETTINGS_MAX_CONCURRENT_STREAMS)",
+              settingsMaxConcurrentStreams);
+        }
+      } catch (Exception e) {
+        lowLevelDebug("HTTP2Client: setMaxConcurrentStreams not available", e);
+      }
+
+      // SETTINGS_MAX_HEADER_LIST_SIZE: Maximum size of header list
+      // Note: 0 means no limit (RFC 7540)
+      try {
+        if (hasMethod(http2Client.getClass(), "setMaxHeaderListSize", int.class)) {
+          http2Client.getClass().getMethod("setMaxHeaderListSize", int.class)
+              .invoke(http2Client, settingsMaxHeaderListSize);
+          lowLevelDebug("HTTP2Client: setMaxHeaderListSize={} (SETTINGS_MAX_HEADER_LIST_SIZE)",
+              settingsMaxHeaderListSize);
+        }
+      } catch (Exception e) {
+        lowLevelDebug("HTTP2Client: setMaxHeaderListSize not available", e);
+      }
+
+      // SETTINGS_HEADER_TABLE_SIZE: Maximum size of header compression table (HPACK)
+      try {
+        if (hasMethod(http2Client.getClass(), "setHeaderTableSize", int.class)) {
+          http2Client.getClass().getMethod("setHeaderTableSize", int.class)
+              .invoke(http2Client, settingsHeaderTableSize);
+          lowLevelDebug("HTTP2Client: setHeaderTableSize={} (SETTINGS_HEADER_TABLE_SIZE)",
+              settingsHeaderTableSize);
+        }
+      } catch (Exception e) {
+        lowLevelDebug("HTTP2Client: setHeaderTableSize not available", e);
+      }
     }
 
-    // SETTINGS_MAX_FRAME_SIZE: Maximum size of a frame
-    try {
-      if (hasMethod(http2Client.getClass(), "setMaxFrameSize", int.class)) {
-        http2Client.getClass().getMethod("setMaxFrameSize", int.class)
-            .invoke(http2Client, settingsMaxFrameSize);
-        LOG.info("HTTP2Client: setMaxFrameSize={} (SETTINGS_MAX_FRAME_SIZE)",
-            settingsMaxFrameSize);
-      }
-    } catch (Exception e) {
-      LOG.debug("HTTP2Client: setMaxFrameSize not available", e);
-    }
-
-    // SETTINGS_MAX_CONCURRENT_STREAMS: Maximum number of concurrent streams
-    // Note: 0 means no limit (RFC 7540)
-    try {
-      if (hasMethod(http2Client.getClass(), "setMaxConcurrentStreams", int.class)) {
-        http2Client.getClass().getMethod("setMaxConcurrentStreams", int.class)
-            .invoke(http2Client, settingsMaxConcurrentStreams);
-        LOG.info("HTTP2Client: setMaxConcurrentStreams={} (SETTINGS_MAX_CONCURRENT_STREAMS)",
-            settingsMaxConcurrentStreams);
-      }
-    } catch (Exception e) {
-      LOG.debug("HTTP2Client: setMaxConcurrentStreams not available", e);
-    }
-
-    // SETTINGS_MAX_HEADER_LIST_SIZE: Maximum size of header list
-    // Note: 0 means no limit (RFC 7540)
-    try {
-      if (hasMethod(http2Client.getClass(), "setMaxHeaderListSize", int.class)) {
-        http2Client.getClass().getMethod("setMaxHeaderListSize", int.class)
-            .invoke(http2Client, settingsMaxHeaderListSize);
-        LOG.info("HTTP2Client: setMaxHeaderListSize={} (SETTINGS_MAX_HEADER_LIST_SIZE)",
-            settingsMaxHeaderListSize);
-      }
-    } catch (Exception e) {
-      LOG.debug("HTTP2Client: setMaxHeaderListSize not available", e);
-    }
-
-    // SETTINGS_HEADER_TABLE_SIZE: Maximum size of header compression table (HPACK)
-    try {
-      if (hasMethod(http2Client.getClass(), "setHeaderTableSize", int.class)) {
-        http2Client.getClass().getMethod("setHeaderTableSize", int.class)
-            .invoke(http2Client, settingsHeaderTableSize);
-        LOG.info("HTTP2Client: setHeaderTableSize={} (SETTINGS_HEADER_TABLE_SIZE)",
-            settingsHeaderTableSize);
-      }
-    } catch (Exception e) {
-      LOG.debug("HTTP2Client: setHeaderTableSize not available", e);
-    }
-
-    LOG.info("HTTP2Client configured: ALPN={}, maxConcurrentPushedStreams={}, "
+    lowLevelDebug("HTTP2Client configured: ALPN={}, maxConcurrentPushedStreams={}, "
         + "http1UpgradeRequired={}", alpnEnabled, maxConcurrentPushedStreams, http1UpgradeRequired);
-    LOG.info("HTTP2Client SETTINGS frame parameters configured "
+    lowLevelDebug("HTTP2Client SETTINGS frame parameters configured "
         + "(via reflection where available)");
     // Note: setProtocols() was removed in Jetty 12.1.5, protocols are configured via ALPN
 
@@ -414,16 +456,16 @@ public class HTTP2JettyClient {
         Transport quicTransport = new QuicheTransport(quicConfig);
         http3 = new CustomClientConnectionFactoryOverHTTP3.HTTP3(http3Client, quicTransport);
 
-        LOG.debug("HTTP/3 and QUIC support enabled");
+        lowLevelDebug("HTTP/3 and QUIC support enabled");
       } catch (Exception e) {
         throw new IllegalStateException(
             "Failed to initialize HTTP/3/QUIC support; dependencies must be available at runtime.",
             e);
       }
     } else if (FORCE_HTTP2_ONLY) {
-      LOG.info("HTTP/3 disabled (forced HTTP/2 only)");
+      lowLevelDebug("HTTP/3 disabled (forced HTTP/2 only)");
     } else {
-      LOG.info("HTTP/3 disabled (profile configuration)");
+      lowLevelDebug("HTTP/3 disabled (profile configuration)");
     }
 
     // If ALPN could not negotiate HTTP2, it tries in the order of protocols indicated
@@ -435,7 +477,8 @@ public class HTTP2JettyClient {
     ClientConnectionFactory.Info[] mainProtocols = buildMainProtocols(http3, http2, http11);
     HttpClientTransport transport = new HttpClientTransportDynamic(clientConnector, mainProtocols);
     mainProtocolsSnapshot = protocolList(mainProtocols);
-    LOG.info("HttpClientTransportDynamic configured with protocols: {}", mainProtocolsSnapshot);
+    lowLevelDebug("HttpClientTransportDynamic configured with protocols: {}",
+        mainProtocolsSnapshot);
 
     configureTransport(transport);
 
@@ -501,6 +544,124 @@ public class HTTP2JettyClient {
 
   public HTTP2JettyClient() {
     this(false, "HttpClient");
+  }
+
+  private void enableFrameLoggingIfConfigured(HTTP2Client http2Client) {
+    if (!LowLevelDebugLog.isEnabled()) {
+      return;
+    }
+    http2Client.addBean(new HTTP2Session.FrameListener() {
+      @Override
+      public void onIncomingFrame(Session session, Frame frame) {
+        logFrame("IN", frame);
+      }
+
+      @Override
+      public void onOutgoingFrame(Session session, Frame frame) {
+        logFrame("OUT", frame);
+      }
+    });
+    lowLevelDebug("HTTP2Client: Frame logging enabled (http2-debug.log)");
+  }
+
+  private void logFrame(String direction, Frame frame) {
+    if (frame == null) {
+      return;
+    }
+    StringBuilder sb = new StringBuilder();
+    sb.append("frame ").append(direction).append(" type=")
+        .append(frame.getClass().getSimpleName());
+    Integer streamId = tryGetInt(frame, "getStreamId");
+    if (streamId != null) {
+      sb.append(" streamId=").append(streamId);
+    }
+    Boolean endStream = tryGetBoolean(frame, "isEndStream");
+    if (endStream != null) {
+      sb.append(" endStream=").append(endStream);
+    }
+    Integer dataLength = tryGetDataLength(frame);
+    if (dataLength != null) {
+      sb.append(" dataLen=").append(dataLength);
+    }
+    if (frame instanceof ResetFrame) {
+      Integer error = tryGetInt(frame, "getError");
+      if (error != null) {
+        sb.append(" error=").append(error);
+      }
+    } else if (frame instanceof GoAwayFrame) {
+      Integer error = tryGetInt(frame, "getError");
+      Integer lastStreamId = tryGetInt(frame, "getLastStreamId");
+      if (lastStreamId != null) {
+        sb.append(" lastStreamId=").append(lastStreamId);
+      }
+      if (error != null) {
+        sb.append(" error=").append(error);
+      }
+    } else if (frame instanceof HeadersFrame) {
+      MetaData metaData = ((HeadersFrame) frame).getMetaData();
+      if (metaData != null) {
+        HttpFields fields = metaData.getHttpFields();
+        if (fields != null && fields.size() > 0) {
+          sb.append(" headers=").append(fields.toString().trim());
+        } else {
+          sb.append(" meta=").append(metaData.toString());
+        }
+      } else {
+        sb.append(" meta=null");
+      }
+    } else if (frame instanceof SettingsFrame) {
+      SettingsFrame settingsFrame = (SettingsFrame) frame;
+      Map<Integer, Integer> settings = settingsFrame.getSettings();
+      if (settings != null && !settings.isEmpty()) {
+        sb.append(" settings=").append(settings);
+      }
+    }
+    debugToFile(sb.toString());
+    lowLevelDebug(sb.toString());
+  }
+
+  private Integer tryGetInt(Object target, String methodName) {
+    if (target == null) {
+      return null;
+    }
+    try {
+      Method method = target.getClass().getMethod(methodName);
+      Object value = method.invoke(target);
+      if (value instanceof Integer) {
+        return (Integer) value;
+      }
+    } catch (Exception ignored) {
+      // Best-effort for diagnostic logging.
+    }
+    return null;
+  }
+
+  private Integer tryGetDataLength(Object target) {
+    Integer dataLength = tryGetInt(target, "getDataLength");
+    if (dataLength != null) {
+      return dataLength;
+    }
+    dataLength = tryGetInt(target, "remaining");
+    if (dataLength != null) {
+      return dataLength;
+    }
+    return tryGetInt(target, "getLength");
+  }
+
+  private Boolean tryGetBoolean(Object target, String methodName) {
+    if (target == null) {
+      return null;
+    }
+    try {
+      Method method = target.getClass().getMethod(methodName);
+      Object value = method.invoke(target);
+      if (value instanceof Boolean) {
+        return (Boolean) value;
+      }
+    } catch (Exception ignored) {
+      // Best-effort for diagnostic logging.
+    }
+    return null;
   }
 
   public void clearBufferPool() {
@@ -655,7 +816,7 @@ public class HTTP2JettyClient {
     }
     if (enableHttp3 && !enableHttp1 && !enableHttp2) {
       http3PriorKnowledgeEnabled = true;
-      LOG.info("HTTP/3 prior knowledge enabled (HTTP/3-only configuration)");
+      lowLevelDebug("HTTP/3 prior knowledge enabled (HTTP/3-only configuration)");
     }
     if (!enableHttp1 && !enableHttp2 && enableHttp3 && !altSvcCacheEnabled) {
       LOG.warn("HTTP/3 enabled but Alt-Svc cache disabled; enabling HTTP/1.1 "
@@ -663,7 +824,7 @@ public class HTTP2JettyClient {
       enableHttp1 = true;
     }
     if (!enableHttp2 && !alpnEnabled) {
-      LOG.info("ALPN disabled; HTTP/2 over TLS will not be attempted");
+      lowLevelDebug("ALPN disabled; HTTP/2 over TLS will not be attempted");
     }
     if (!enableHttp1) {
       protocolErrorFallbackEnabled = false;
@@ -861,37 +1022,33 @@ public class HTTP2JettyClient {
       heExecutorsRegistered = true;
     }
     if (!httpClient.isStarted()) {
-      LOG.info("Starting HttpClient: name={}, http1UpgradeRequired={}",
+      lowLevelDebug("Starting HttpClient: name={}, http1UpgradeRequired={}",
           httpClient.getName(), http1UpgradeRequired);
       httpClient.start();
-      LOG.info("HttpClient started successfully");
-      registerContentDecoders(httpClient);
+      lowLevelDebug("HttpClient started successfully");
     } else {
-      LOG.debug("HttpClient already started");
+      lowLevelDebug("HttpClient already started");
     }
     if (httpClientNoH3 != httpClient && !httpClientNoH3.isStarted()) {
-      LOG.info("Starting HttpClient (no HTTP/3): name={}", httpClientNoH3.getName());
+      lowLevelDebug("Starting HttpClient (no HTTP/3): name={}", httpClientNoH3.getName());
       httpClientNoH3.start();
-      LOG.info("HttpClient (no HTTP/3) started successfully");
-      registerContentDecoders(httpClientNoH3);
+      lowLevelDebug("HttpClient (no HTTP/3) started successfully");
     }
     if (!httpClientHttp1Only.isStarted()) {
-      LOG.info("Starting HttpClient (HTTP/1.1 only): name={}", httpClientHttp1Only.getName());
+      lowLevelDebug("Starting HttpClient (HTTP/1.1 only): name={}", httpClientHttp1Only.getName());
       httpClientHttp1Only.start();
-      LOG.info("HttpClient (HTTP/1.1 only) started successfully");
-      registerContentDecoders(httpClientHttp1Only);
+      lowLevelDebug("HttpClient (HTTP/1.1 only) started successfully");
     }
     if (!httpClientH2cPrior.isStarted()) {
-      LOG.info("Starting HttpClient (H2C prior knowledge): name={}", httpClientH2cPrior.getName());
+      lowLevelDebug("Starting HttpClient (H2C prior knowledge): name={}",
+          httpClientH2cPrior.getName());
       httpClientH2cPrior.start();
-      LOG.info("HttpClient (H2C prior knowledge) started successfully");
-      registerContentDecoders(httpClientH2cPrior);
+      lowLevelDebug("HttpClient (H2C prior knowledge) started successfully");
     }
     if (!httpClientH2cUpgrade.isStarted()) {
-      LOG.info("Starting HttpClient (H2C upgrade): name={}", httpClientH2cUpgrade.getName());
+      lowLevelDebug("Starting HttpClient (H2C upgrade): name={}", httpClientH2cUpgrade.getName());
       httpClientH2cUpgrade.start();
-      LOG.info("HttpClient (H2C upgrade) started successfully");
-      registerContentDecoders(httpClientH2cUpgrade);
+      lowLevelDebug("HttpClient (H2C upgrade) started successfully");
     }
   }
 
@@ -903,14 +1060,14 @@ public class HTTP2JettyClient {
    * @return A new HttpClient configured for HTTP/1.1 only
    */
   private HttpClient createHTTP11OnlyClient(String name) throws Exception {
-    LOG.debug("Creating HTTP/1.1-only client for fallback");
+    lowLevelDebug("Creating HTTP/1.1-only client for fallback");
 
     ClientConnector clientConnector = createClientConnector(name + "-http11-fallback");
 
     // Create transport with ONLY HTTP/1.1 (no HTTP/2)
     ClientConnectionFactory.Info http11 = HttpClientConnectionFactory.HTTP11;
     HttpClientTransport transport = new HttpClientTransportDynamic(clientConnector, http11);
-    LOG.debug("HttpClientTransportDynamic configured with HTTP/1.1 only (fallback mode)");
+    lowLevelDebug("HttpClientTransportDynamic configured with HTTP/1.1 only (fallback mode)");
 
     HttpClient http11Client = new HttpClient(transport);
     http11Client.setUserAgentField(null);
@@ -926,7 +1083,7 @@ public class HTTP2JettyClient {
     // Start the client
     if (!http11Client.isStarted()) {
       http11Client.start();
-      LOG.debug("HTTP/1.1-only fallback client started");
+      lowLevelDebug("HTTP/1.1-only fallback client started");
     }
 
     return http11Client;
@@ -943,8 +1100,10 @@ public class HTTP2JettyClient {
    */
   public HTTPSampleResult retryWithHTTP11Only(HTTP2Sampler sampler, HTTPSampleResult result)
       throws Exception {
-    LOG.warn("Retrying request with HTTP/1.1 only due to protocol_error");
+    lowLevelDebug("Retrying request with HTTP/1.1 only due to protocol_error");
     URL url = result.getURL();
+
+    clearContentDecoders(httpClientHttp1Only);
 
     // Build a new request with the shared HTTP/1.1-only client (keeps auth config)
     Request http11Request = httpClientHttp1Only.newRequest(url.toURI())
@@ -958,14 +1117,16 @@ public class HTTP2JettyClient {
     }
     ensureHostHeader(http11Request, url);
 
+    configureContentDecoders(httpClientHttp1Only, http11Request);
+
     // Copy body if present
     setBody(http11Request, sampler, result);
 
     // Send request
-    LOG.debug("Sending HTTP/1.1 fallback request");
+    lowLevelDebug("Sending HTTP/1.1 fallback request");
     ContentResponse response = http11Request.send();
 
-    LOG.info("HTTP/1.1 fallback request succeeded: status={}, version={}",
+    lowLevelDebug("HTTP/1.1 fallback request succeeded: status={}, version={}",
         response.getStatus(), response.getVersion());
     updateHttp1OnlyCache(http11Request, response);
     updateH2cCache(http11Request, response);
@@ -990,8 +1151,10 @@ public class HTTP2JettyClient {
                                              HTTP2FutureResponseListener originalListener)
       throws InterruptedException, TimeoutException, ExecutionException {
     URI uri = originalRequest.getURI();
-    LOG.info("Retrying request with HTTP/1.1 only: method={}, URI={}",
+    lowLevelDebug("Retrying request with HTTP/1.1 only: method={}, URI={}",
         originalRequest.getMethod(), uri);
+
+    clearContentDecoders(httpClientHttp1Only);
 
     try {
       // Rebuild the request with the shared HTTP/1.1-only client
@@ -1020,16 +1183,18 @@ public class HTTP2JettyClient {
       }
       ensureHostHeader(http11Request, uri);
 
+      configureContentDecoders(httpClientHttp1Only, http11Request);
+
       // Copy body if present
       if (originalRequest.getBody() != null) {
         http11Request.body(originalRequest.getBody());
       }
 
       // Send request and wait for response
-      LOG.debug("Sending HTTP/1.1 fallback request");
+      lowLevelDebug("Sending HTTP/1.1 fallback request");
       ContentResponse response = http11Request.send();
 
-      LOG.info("HTTP/1.1 fallback request succeeded: status={}, version={}",
+      lowLevelDebug("HTTP/1.1 fallback request succeeded: status={}, version={}",
           response.getStatus(), response.getVersion());
 
       return response;
@@ -1042,8 +1207,10 @@ public class HTTP2JettyClient {
   private ContentResponse sendWithH2cPriorKnowledge(Request originalRequest)
       throws InterruptedException, TimeoutException, ExecutionException {
     URI uri = originalRequest.getURI();
-    LOG.info("Retrying request with H2C prior knowledge: method={}, URI={}",
+    lowLevelDebug("Retrying request with H2C prior knowledge: method={}, URI={}",
         originalRequest.getMethod(), uri);
+
+    clearContentDecoders(httpClientH2cPrior);
 
     Request h2cRequest = httpClientH2cPrior.newRequest(uri)
         .method(originalRequest.getMethod())
@@ -1070,6 +1237,7 @@ public class HTTP2JettyClient {
       }
     }
     ensureHostHeader(h2cRequest, uri);
+    configureContentDecoders(httpClientH2cPrior, h2cRequest);
     if (originalRequest.getBody() != null) {
       h2cRequest.body(originalRequest.getBody());
     }
@@ -1100,10 +1268,11 @@ public class HTTP2JettyClient {
 
   private void samplePrepareRequest(Request request,
                                     HTTP2Sampler sampler,
-                                    HTTPSampleResult result) throws IOException {
+                                    HTTPSampleResult result,
+                                    HttpClient client) throws IOException {
 
     URL url = result.getURL();
-    LOG.debug("Preparing request: URL={}, method={}", url, result.getHTTPMethod());
+    lowLevelDebug("Preparing request: URL={}, method={}", url, result.getHTTPMethod());
     setTimeouts(sampler, request);
     request.followRedirects(sampler.getAutoRedirects());
     String method = result.getHTTPMethod();
@@ -1111,7 +1280,15 @@ public class HTTP2JettyClient {
     setHeaders(request, url, sampler.getHeaderManager());
     ensureHostHeader(request, url);
     addPreemptiveAuthorizationHeader(request, url, sampler.getAuthManager());
-    LOG.debug("Headers set, request URI: {}", request.getURI());
+    lowLevelDebug("Headers set, request URI: {}", request.getURI());
+
+    configureContentDecoders(client, request);
+
+    String ae = request.getHeaders() != null
+        ? request.getHeaders().get(HttpHeader.ACCEPT_ENCODING)
+        : null;
+    debugToFile(String.format("prepareRequest: uri=%s accept-encoding=%s client=%s",
+        request.getURI(), ae, client != null ? client.getName() : "null"));
 
     CookieManager cookieManager = sampler.getCookieManager();
     if (cookieManager != null) {
@@ -1154,8 +1331,8 @@ public class HTTP2JettyClient {
                                    JettyCacheManager cacheManager)
       throws IOException {
     http1UpgradeRequired = contentResponse.getVersion() != HttpVersion.HTTP_2;
-    result.setRequestHeaders(buildHeadersString(request.getHeaders()));
-    setResultContentResponse(result, contentResponse, sampler);
+    result.setRequestHeaders(getSerializedRequestHeaders(request, true));
+    setResultContentResponse(result, contentResponse);
     saveCookiesInCookieManager(contentResponse, request.getURI().toURL(),
         sampler.getCookieManager());
 
@@ -1169,15 +1346,16 @@ public class HTTP2JettyClient {
                              HTTP2FutureResponseListener listener)
       throws Exception {
     URL url = result.getURL();
-    LOG.info("Creating async HTTP request: method={}, URL={}", result.getHTTPMethod(), url);
+    lowLevelDebug("Creating async HTTP request: method={}, URL={}", result.getHTTPMethod(), url);
     errorWhenNotSupportedMethod(result.getHTTPMethod());
     setAuthManager(sampler);
-    Request request = buildRequest(result);
-    LOG.debug("Request built: URI={}, method={}", request.getURI(), request.getMethod());
-    samplePrepareRequest(request, sampler, result);
+    RequestContext context = buildRequestContext(result, resolveClientForRequest(sampler, result));
+    Request request = context.request;
+    lowLevelDebug("Request built: URI={}, method={}", request.getURI(), request.getMethod());
+    samplePrepareRequest(request, sampler, result, context.client);
     listener.setRequest(request);
     listener.setFallbackHttp1Client(httpClientHttp1Only);
-    LOG.debug("Request prepared, ready to send");
+    lowLevelDebug("Request prepared, ready to send");
     return request;
 
   }
@@ -1193,31 +1371,50 @@ public class HTTP2JettyClient {
 
   public HTTPSampleResult sample(HTTP2Sampler sampler, HTTPSampleResult result,
                                  boolean areFollowingRedirect, int depth) throws Exception {
-    LOG.debug("=== HTTP2JettyClient.sample() called ===");
-    LOG.debug("Method: {}, URL: {}", result.getHTTPMethod(), result.getURL());
+    lowLevelDebug("=== HTTP2JettyClient.sample() called ===");
+    lowLevelDebug("Method: {}, URL: {}", result.getHTTPMethod(), result.getURL());
 
     errorWhenNotSupportedMethod(result.getHTTPMethod());
     setAuthManager(sampler);
-    Request request = buildRequest(result);
+    RequestContext context = buildRequestContext(result, resolveClientForRequest(sampler, result));
+    Request request = context.request;
 
-    samplePrepareRequest(request, sampler, result);
+    samplePrepareRequest(request, sampler, result, context.client);
 
     JettyCacheManager cacheManager =
         JettyCacheManager.fromCacheManager(sampler.getCacheManager());
     if (requestInCache(cacheManager, request)) {
       return cacheManager.buildCachedSampleResult(result);
     }
-    LOG.debug("=== Creating HTTP2FutureResponseListener ===");
-    LOG.debug("maxBufferSize: {}", maxBufferSize);
+    lowLevelDebug("=== Creating HTTP2FutureResponseListener ===");
+    lowLevelDebug("maxBufferSize: {}", maxBufferSize);
     HTTP2FutureResponseListener listener = new HTTP2FutureResponseListener(maxBufferSize);
-    LOG.debug("=== HTTP2FutureResponseListener created successfully ===");
-    LOG.debug("=== About to call send() ===");
-    ContentResponse contentResponse = send(request, listener);
-    LOG.debug("=== send() returned successfully ===");
+    lowLevelDebug("=== HTTP2FutureResponseListener created successfully ===");
+    listener.setRequest(request);
+    lowLevelDebug("=== About to call send() ===");
+    ContentResponse contentResponse;
+    try {
+      contentResponse = send(request, listener);
+    } catch (TimeoutException e) {
+      if (fallbackEnabled && enableHttp1) {
+        LOG.warn("Timeout during send(), retrying with HTTP/1.1 only");
+        return retryWithHTTP11Only(sampler, result);
+      }
+      throw e;
+    } catch (ExecutionException e) {
+      if (protocolErrorFallbackEnabled && enableHttp1
+          && ProtocolErrorException.isProtocolError(e)) {
+        LOG.warn("Protocol error during send(), retrying with HTTP/1.1 only");
+        return retryWithHTTP11Only(sampler, result);
+      }
+      throw e;
+    }
+    lowLevelDebug("=== send() returned successfully ===");
 
     postContentResponse(sampler, request, result, contentResponse, cacheManager);
     result.setEndTime(listener.getResponseEnd());
 
+    resetSamplerDataBeforeResultProcessing(result);
     return sampler.resultProcessing(areFollowingRedirect, depth, result);
   }
 
@@ -1225,8 +1422,8 @@ public class HTTP2JettyClient {
                                              boolean areFollowingRedirect, int depth,
                                              HTTP2FutureResponseListener listener
   ) throws Exception {
-    LOG.debug("=== sampleFromListener() called ===");
-    LOG.debug("URL: {}", result.getURL());
+    lowLevelDebug("=== sampleFromListener() called ===");
+    lowLevelDebug("URL: {}", result.getURL());
 
     Request request = listener.getRequest();
     try {
@@ -1236,6 +1433,7 @@ public class HTTP2JettyClient {
       postContentResponse(sampler, request, result, contentResponse, cacheManager);
       result.setEndTime(listener.getResponseEnd());
 
+      resetSamplerDataBeforeResultProcessing(result);
       return sampler.resultProcessing(areFollowingRedirect, depth, result);
     } catch (ExecutionException e) {
       LOG.error("=== ExecutionException caught in sampleFromListener() ===");
@@ -1255,21 +1453,23 @@ public class HTTP2JettyClient {
         LOG.warn("Error: {}", retryable.getMessage());
         try {
           ContentResponse retryResponse = retryAfterGoAway(request);
-          LOG.info("Retry after GOAWAY succeeded: status={}, version={}",
+          lowLevelDebug("Retry after GOAWAY succeeded: status={}, version={}",
               retryResponse.getStatus(), retryResponse.getVersion());
           JettyCacheManager cacheManager =
               JettyCacheManager.fromCacheManager(sampler.getCacheManager());
           postContentResponse(sampler, request, result, retryResponse, cacheManager);
           result.setEndTime(listener.getResponseEnd());
+          resetSamplerDataBeforeResultProcessing(result);
           return sampler.resultProcessing(areFollowingRedirect, depth, result);
         } catch (Exception retryException) {
           LOG.error("Retry after GOAWAY failed", retryException);
           if (enableHttp1) {
             try {
-              LOG.info("Retrying request with HTTP/1.1 only after GOAWAY: {}", result.getURL());
+              lowLevelDebug("Retrying request with HTTP/1.1 only after GOAWAY: {}",
+                  result.getURL());
               HTTPSampleResult fallbackResult = retryWithHTTP11Only(sampler, result);
               if (fallbackResult != null && fallbackResult.isSuccessful()) {
-                LOG.info("HTTP/1.1 fallback succeeded: status={}",
+                lowLevelDebug("HTTP/1.1 fallback succeeded: status={}",
                     fallbackResult.getResponseCode());
                 return fallbackResult;
               }
@@ -1292,11 +1492,12 @@ public class HTTP2JettyClient {
         if (enableHttp1) {
           try {
             // Retry with HTTP/1.1 only
-            LOG.info("Retrying request with HTTP/1.1 only: {}", result.getURL());
+            lowLevelDebug("Retrying request with HTTP/1.1 only: {}", result.getURL());
             HTTPSampleResult fallbackResult = retryWithHTTP11Only(sampler, result);
 
             if (fallbackResult != null && fallbackResult.isSuccessful()) {
-              LOG.info("HTTP/1.1 fallback succeeded: status={}", fallbackResult.getResponseCode());
+              lowLevelDebug("HTTP/1.1 fallback succeeded: status={}",
+                  fallbackResult.getResponseCode());
               return fallbackResult;
             } else {
               LOG.warn("HTTP/1.1 fallback returned unsuccessful result");
@@ -1317,25 +1518,29 @@ public class HTTP2JettyClient {
   public ContentResponse send(Request request, HTTP2FutureResponseListener listener)
       throws InterruptedException,
       TimeoutException, ExecutionException {
-    LOG.debug("=== send() called ===");
-    LOG.debug("Request URI: {}", request.getURI());
-    LOG.debug("Listener: {}", listener != null ? listener.getClass().getName() : "null");
+    lowLevelDebug("=== send() called ===");
+    lowLevelDebug("Request URI: {}", request.getURI());
+    lowLevelDebug("Listener: {}", listener != null ? listener.getClass().getName() : "null");
 
     URI uri = request.getURI();
-    LOG.info("Sending request: method={}, URI={}", request.getMethod(), uri);
-
+    lowLevelDebug("Sending request: method={}, URI={}", request.getMethod(), uri);
     if (request.getHeaders() != null) {
       HttpFields hm = request.getHeaders();
       String ae = hm.get("Accept-Encoding");
-      LOG.debug("Request headers: Accept-Encoding={}, total headers={}", ae, hm.size());
+      lowLevelDebug("Request headers: Accept-Encoding={}, total headers={}", ae, hm.size());
     }
-
-    LOG.debug("Sending request via HttpClient (ALPN negotiation will occur during TLS handshake)");
+    lowLevelDebug("Sending request via HttpClient (ALPN negotiation will occur "
+        + "during TLS handshake)");
+    // Diagnostic toggle: bypass listener flow, call request.send() directly.
+    if (Boolean.getBoolean("bzm-http2-plugin.directSend")) {
+      lowLevelDebug("HTTP2Client: using direct request.send() for diagnostics");
+      return request.send();
+    }
     if (shouldUseHappyEyeballs(request)) {
       return sendWithHappyEyeballs(request, listener);
     }
     request.send(listener);
-    LOG.debug("Request sent, waiting for response...");
+    lowLevelDebug("Request sent, waiting for response...");
     try {
       return getContent(listener, request);
     } catch (TimeoutException e) {
@@ -1358,14 +1563,14 @@ public class HTTP2JettyClient {
             retryable.getMessage());
         try {
           ContentResponse retryResponse = retryAfterGoAway(request);
-          LOG.info("Retry after GOAWAY succeeded: status={}, version={}",
+          lowLevelDebug("Retry after GOAWAY succeeded: status={}, version={}",
               retryResponse.getStatus(), retryResponse.getVersion());
           return retryResponse;
         } catch (Exception retryException) {
           LOG.error("Retry after GOAWAY failed", retryException);
           if (enableHttp1) {
             try {
-              LOG.info("Falling back to HTTP/1.1 after GOAWAY retry failure");
+              lowLevelDebug("Falling back to HTTP/1.1 after GOAWAY retry failure");
               return sendWithHTTP11Only(request, listener);
             } catch (Exception fallbackException) {
               LOG.error("HTTP/1.1 fallback after GOAWAY retry failed", fallbackException);
@@ -1383,9 +1588,9 @@ public class HTTP2JettyClient {
             cause != null ? cause.getClass().getName() : "unknown");
         if (enableHttp1) {
           try {
-            LOG.info("Falling back to HTTP/1.1 for URI: {}", request.getURI());
+            lowLevelDebug("Falling back to HTTP/1.1 for URI: {}", request.getURI());
             ContentResponse fallbackResponse = sendWithHTTP11Only(request, listener);
-            LOG.info("HTTP/1.1 fallback succeeded: status={}, version={}",
+            lowLevelDebug("HTTP/1.1 fallback succeeded: status={}, version={}",
                 fallbackResponse.getStatus(), fallbackResponse.getVersion());
             return fallbackResponse;
           } catch (Exception fallbackException) {
@@ -1419,7 +1624,7 @@ public class HTTP2JettyClient {
     URI uri = h3Request.getURI();
     ensureHappyEyeballsExecutors();
     long effectiveDelayMs = computeHappyEyeballsDelayMs(uri);
-    LOG.info("Happy Eyeballs enabled for HTTP/3: origin={}, delayMs={}",
+    lowLevelDebug("Happy Eyeballs enabled for HTTP/3: origin={}, delayMs={}",
         originKey(uri), effectiveDelayMs);
     int timeoutMs = requestTimeout > 0 ? requestTimeout + 2000 : 0;
     AtomicReference<ContentResponse> winner = new AtomicReference<>();
@@ -1488,7 +1693,7 @@ public class HTTP2JettyClient {
       if (resolved.get() || !h2Started.compareAndSet(false, true)) {
         return;
       }
-      LOG.info("Happy Eyeballs starting HTTP/2 ({}): origin={}",
+      lowLevelDebug("Happy Eyeballs starting HTTP/2 ({}): origin={}",
           reason, originKey(uri));
       try {
         h2Request.send(h2Listener);
@@ -1569,31 +1774,31 @@ public class HTTP2JettyClient {
       throws InterruptedException, TimeoutException, ExecutionException {
     long getStart = System.currentTimeMillis();
     int timeoutMs = requestTimeout > 0 ? requestTimeout + 2000 : 0;
-    LOG.debug("Waiting for response with timeout={}ms", timeoutMs);
+    lowLevelDebug("Waiting for response with timeout={}ms", timeoutMs);
 
-    LOG.debug("=== getContent() called ===");
+    lowLevelDebug("=== getContent() called ===");
     String originalRequestUri = originalRequest != null
         ? originalRequest.getURI().toString()
         : "null";
-    LOG.debug("originalRequest: {}", originalRequestUri);
+    lowLevelDebug("originalRequest: {}", originalRequestUri);
 
     try {
       ContentResponse response;
-      LOG.debug("=== Calling listener.get() ===");
+      lowLevelDebug("=== Calling listener.get() ===");
       if (requestTimeout > 0) {
         int extraTime = 2000;
         response = listener.get(requestTimeout + extraTime, TimeUnit.MILLISECONDS);
       } else {
         response = listener.get();
       }
-      LOG.debug("=== listener.get() returned successfully ===");
+      lowLevelDebug("=== listener.get() returned successfully ===");
       long elapsed = System.currentTimeMillis() - getStart;
       if (response != null) {
         int contentLength = response.getContent() != null ? response.getContent().length : 0;
-        LOG.info("Response received: status={}, version={}, elapsed={}ms, contentLength={}",
+        lowLevelDebug("Response received: status={}, version={}, elapsed={}ms, contentLength={}",
             response.getStatus(), response.getVersion(), elapsed, contentLength);
         int headerCount = response.getHeaders() != null ? response.getHeaders().size() : 0;
-        LOG.debug("Response headers: {}", headerCount);
+        lowLevelDebug("Response headers: {}", headerCount);
         if (originalRequest != null && response.getVersion() == HttpVersion.HTTP_3) {
           recordHttp3Success(originalRequest.getURI());
         }
@@ -1624,14 +1829,14 @@ public class HTTP2JettyClient {
             retryable.getMessage());
         try {
           ContentResponse retryResponse = retryAfterGoAway(originalRequest);
-          LOG.info("Retry after GOAWAY succeeded: status={}, version={}",
+          lowLevelDebug("Retry after GOAWAY succeeded: status={}, version={}",
               retryResponse.getStatus(), retryResponse.getVersion());
           return retryResponse;
         } catch (Exception retryException) {
           LOG.error("Retry after GOAWAY failed", retryException);
           if (enableHttp1) {
             try {
-              LOG.info("Falling back to HTTP/1.1 after GOAWAY retry failure");
+              lowLevelDebug("Falling back to HTTP/1.1 after GOAWAY retry failure");
               return sendWithHTTP11Only(originalRequest, listener);
             } catch (Exception fallbackException) {
               LOG.error("HTTP/1.1 fallback after GOAWAY retry failed", fallbackException);
@@ -1649,12 +1854,12 @@ public class HTTP2JettyClient {
             cause != null ? cause.getClass().getName() : "unknown");
         // If we have the original request, try fallback to HTTP/1.1
         if (originalRequest != null && enableHttp1) {
-          LOG.info("Original request available, attempting HTTP/1.1 fallback for URI: {}",
+          lowLevelDebug("Original request available, attempting HTTP/1.1 fallback for URI: {}",
               originalRequest.getURI());
           try {
-            LOG.info("Falling back to HTTP/1.1 for URI: {}", originalRequest.getURI());
+            lowLevelDebug("Falling back to HTTP/1.1 for URI: {}", originalRequest.getURI());
             ContentResponse fallbackResponse = sendWithHTTP11Only(originalRequest, listener);
-            LOG.info("HTTP/1.1 fallback succeeded: status={}, version={}",
+            lowLevelDebug("HTTP/1.1 fallback succeeded: status={}, version={}",
                 fallbackResponse.getStatus(), fallbackResponse.getVersion());
             return fallbackResponse;
           } catch (Exception fallbackException) {
@@ -1669,7 +1874,7 @@ public class HTTP2JettyClient {
               + "(originalRequest is null)");
         }
       } else {
-        LOG.debug("ExecutionException is not a protocol_error, no fallback. Cause: {}",
+        lowLevelDebug("ExecutionException is not a protocol_error, no fallback. Cause: {}",
             cause != null ? cause.getClass().getName() : "null");
       }
       if (fallbackEnabled && enableHttp2 && isHttp3ConnectTimeout(cause)
@@ -1680,7 +1885,7 @@ public class HTTP2JettyClient {
         markHttp3Broken(originalRequest.getURI());
         try {
           ContentResponse fallbackResponse = sendWithHttp2Only(originalRequest);
-          LOG.info("HTTP/2 fallback succeeded: status={}, version={}",
+          lowLevelDebug("HTTP/2 fallback succeeded: status={}, version={}",
               fallbackResponse.getStatus(), fallbackResponse.getVersion());
           return fallbackResponse;
         } catch (Exception fallbackException) {
@@ -1696,62 +1901,191 @@ public class HTTP2JettyClient {
     }
   }
 
-  private void registerContentDecoders(HttpClient client) {
+  private void clearContentDecoders(HttpClient client) {
     ContentDecoder.Factories factories = client.getContentDecoderFactories();
-    if (factories == null) {
+    if (factories != null) {
+      factories.clear();
+    }
+  }
+
+  private void ensureDecoderFactoriesInitialized() {
+    if (decoderFactoriesInitialized) {
       return;
     }
+    decoderFactoriesInitialized = true;
 
-    if (!hasDecoderFactory(factories, "br")) {
+    boolean disableBrotliDecoder = Boolean.parseBoolean(
+        System.getProperty("bzm-http2-plugin.disableBrotliDecoder", "false"));
+    if (disableBrotliDecoder) {
+      lowLevelDebug("Brotli decoder disabled by bzm-http2-plugin.disableBrotliDecoder");
+    } else {
       try {
         BrotliCompression brotli = new BrotliCompression();
         brotli.setByteBufferPool(bufferPool);
-        factories.put(new CompressionContentDecoderFactory(brotli));
-        LOG.info("Registered Brotli content decoder");
+        brotliDecoderFactory = new CompressionContentDecoderFactory(brotli);
+        lowLevelDebug("Initialized Brotli content decoder factory");
       } catch (Throwable t) {
-        LOG.warn("Brotli decoder not available; skipping registration", t);
+        LOG.warn("Brotli decoder not available; skipping factory initialization", t);
       }
     }
 
-    if (!hasDecoderFactory(factories, "zstd")) {
+    boolean disableZstdDecoder = Boolean.parseBoolean(
+        System.getProperty("bzm-http2-plugin.disableZstdDecoder", "false"));
+    if (disableZstdDecoder) {
+      lowLevelDebug("Zstd decoder disabled by bzm-http2-plugin.disableZstdDecoder");
+    } else {
       try {
         ZstandardCompression zstd = new ZstandardCompression();
         zstd.setByteBufferPool(bufferPool);
-        factories.put(new CompressionContentDecoderFactory(zstd));
-        LOG.info("Registered Zstandard content decoder");
+        zstdDecoderFactory = new CompressionContentDecoderFactory(zstd);
+        lowLevelDebug("Initialized Zstandard content decoder factory");
       } catch (Throwable t) {
-        LOG.warn("Zstandard decoder not available; skipping registration", t);
+        LOG.warn("Zstandard decoder not available; skipping factory initialization", t);
       }
     }
 
-    if (!hasDecoderFactory(factories, "gzip")) {
+    boolean disableGzipDecoder = Boolean.parseBoolean(
+        System.getProperty("bzm-http2-plugin.disableGzipDecoder", "false"));
+    if (disableGzipDecoder) {
+      lowLevelDebug("Gzip decoder disabled by bzm-http2-plugin.disableGzipDecoder");
+    } else {
       try {
         GzipCompression gzip = new GzipCompression();
         gzip.setByteBufferPool(bufferPool);
-        factories.put(new CompressionContentDecoderFactory(gzip));
-        LOG.info("Registered Gzip content decoder");
+        // Ensure inflater pool is initialized; missing pool can trigger NPE and stream cancel.
+        InflaterPool inflaterPool = new InflaterPool(1024, true);
+        try {
+          if (inflaterPool instanceof LifeCycle) {
+            ((LifeCycle) inflaterPool).start();
+          }
+        } catch (Exception e) {
+          lowLevelDebug("Failed to start InflaterPool", e);
+        }
+        gzip.setInflaterPool(inflaterPool);
+        gzipDecoderFactory = new CompressionContentDecoderFactory(gzip);
+        lowLevelDebug("Initialized Gzip content decoder factory");
       } catch (Throwable t) {
-        LOG.warn("Gzip decoder not available; skipping registration", t);
+        LOG.warn("Gzip decoder not available; skipping factory initialization", t);
       }
     }
 
-    if (!hasDecoderFactory(factories, "deflate")) {
+    boolean disableDeflateDecoder = Boolean.parseBoolean(
+        System.getProperty("bzm-http2-plugin.disableDeflateDecoder", "false"));
+    if (disableDeflateDecoder) {
+      lowLevelDebug("Deflate decoder disabled by bzm-http2-plugin.disableDeflateDecoder");
+    } else {
       try {
-        factories.put(new DeflateContentDecoderFactory(bufferPool));
-        LOG.info("Registered Deflate content decoder");
+        deflateDecoderFactory = new DeflateContentDecoderFactory(bufferPool);
+        lowLevelDebug("Initialized Deflate content decoder factory");
       } catch (Throwable t) {
-        LOG.warn("Deflate decoder not available; skipping registration", t);
+        LOG.warn("Deflate decoder not available; skipping factory initialization", t);
       }
     }
   }
 
-  private boolean hasDecoderFactory(ContentDecoder.Factories factories, String encoding) {
-    for (ContentDecoder.Factory factory : factories) {
-      if (factory != null && encoding.equalsIgnoreCase(factory.getEncoding())) {
-        return true;
+  private void configureContentDecoders(HttpClient client, Request request) {
+    if (request == null || client == null) {
+      return;
+    }
+    ContentDecoder.Factories factories = client != null ? client.getContentDecoderFactories()
+        : null;
+    if (factories == null) {
+      return;
+    }
+
+    String acceptEncoding = null;
+    HttpFields headers = request.getHeaders();
+    if (headers != null) {
+      acceptEncoding = headers.get(HttpHeader.ACCEPT_ENCODING);
+      if (acceptEncoding == null) {
+        acceptEncoding = headers.get("Accept-Encoding");
+      }
+      if (acceptEncoding == null) {
+        acceptEncoding = headers.get("accept-encoding");
       }
     }
-    return false;
+    if (acceptEncoding == null || acceptEncoding.trim().isEmpty()) {
+      return;
+    }
+
+    if (acceptEncoding.toLowerCase(Locale.ROOT).contains("gzip")) {
+      lowLevelDebug("Configuring decoders for Accept-Encoding: {}", acceptEncoding);
+    }
+
+    boolean addBrotli = false;
+    boolean addZstd = false;
+    boolean addGzip = false;
+    boolean addDeflate = false;
+    for (String token : acceptEncoding.split(",")) {
+      String encoding = token.trim().toLowerCase(Locale.ROOT);
+      int paramsIndex = encoding.indexOf(';');
+      if (paramsIndex >= 0) {
+        encoding = encoding.substring(0, paramsIndex).trim();
+      }
+      switch (encoding) {
+        case "br":
+          addBrotli = true;
+          break;
+        case "zstd":
+          addZstd = true;
+          break;
+        case "gzip":
+        case "x-gzip":
+          addGzip = true;
+          break;
+        case "deflate":
+          addDeflate = true;
+          break;
+        default:
+          break;
+      }
+    }
+
+    ensureDecoderFactoriesInitialized();
+    // Diagnostic toggles: disable specific decoder registrations.
+    boolean disableBrotliDecoder = Boolean.parseBoolean(
+        System.getProperty("bzm-http2-plugin.disableBrotliDecoder", "false"));
+    boolean disableZstdDecoder = Boolean.parseBoolean(
+        System.getProperty("bzm-http2-plugin.disableZstdDecoder", "false"));
+    boolean disableGzipDecoder = Boolean.parseBoolean(
+        System.getProperty("bzm-http2-plugin.disableGzipDecoder", "false"));
+    boolean disableDeflateDecoder = Boolean.parseBoolean(
+        System.getProperty("bzm-http2-plugin.disableDeflateDecoder", "false"));
+
+    if (addBrotli && brotliDecoderFactory != null && !disableBrotliDecoder) {
+      factories.put(brotliDecoderFactory);
+    } else if (addBrotli && disableBrotliDecoder) {
+      lowLevelDebug("Brotli decoder disabled by bzm-http2-plugin.disableBrotliDecoder");
+    }
+    if (addZstd && zstdDecoderFactory != null && !disableZstdDecoder) {
+      factories.put(zstdDecoderFactory);
+    } else if (addZstd && disableZstdDecoder) {
+      lowLevelDebug("Zstd decoder disabled by bzm-http2-plugin.disableZstdDecoder");
+    }
+    if (addGzip && gzipDecoderFactory != null && !disableGzipDecoder) {
+      factories.put(gzipDecoderFactory);
+    } else if (addGzip && disableGzipDecoder) {
+      lowLevelDebug("Gzip decoder disabled by bzm-http2-plugin.disableGzipDecoder");
+    }
+    if (addDeflate && deflateDecoderFactory != null && !disableDeflateDecoder) {
+      factories.put(deflateDecoderFactory);
+    } else if (addDeflate && disableDeflateDecoder) {
+      lowLevelDebug("Deflate decoder disabled by bzm-http2-plugin.disableDeflateDecoder");
+    }
+
+    if (acceptEncoding.toLowerCase(Locale.ROOT).contains("gzip")) {
+      StringBuilder encodings = new StringBuilder();
+      for (ContentDecoder.Factory factory : factories) {
+        if (factory == null) {
+          continue;
+        }
+        if (encodings.length() > 0) {
+          encodings.append(", ");
+        }
+        encodings.append(factory.getEncoding());
+      }
+      lowLevelDebug("Decoder factories registered: {}", encodings);
+    }
   }
 
   private HttpClient selectHttpClient(URI uri) {
@@ -1760,7 +2094,7 @@ public class HTTP2JettyClient {
         return httpClientHttp1Only;
       }
       if (!enableHttp1 && enableHttp2) {
-        LOG.info("HTTP/1.1 disabled; using H2C prior knowledge for origin {}",
+        lowLevelDebug("HTTP/1.1 disabled; using H2C prior knowledge for origin {}",
             originKey(uri));
         return httpClientH2cPrior;
       }
@@ -1770,14 +2104,14 @@ public class HTTP2JettyClient {
           return httpClientHttp1Only;
         }
         if (shouldUseH2cPriorKnowledge(uri)) {
-          LOG.info("H2C prior knowledge enabled for origin {}", originKey(uri));
+          lowLevelDebug("H2C prior knowledge enabled for origin {}", originKey(uri));
           return httpClientH2cPrior;
         }
-        LOG.info("H2C upgrade enabled for origin {}", originKey(uri));
+        lowLevelDebug("H2C upgrade enabled for origin {}", originKey(uri));
         return httpClientH2cUpgrade;
       }
       if (shouldUseH2cPriorKnowledge(uri)) {
-        LOG.info("H2C prior knowledge enabled for origin {}", originKey(uri));
+        lowLevelDebug("H2C prior knowledge enabled for origin {}", originKey(uri));
         return httpClientH2cPrior;
       }
       if (!enableHttp2 && enableHttp1) {
@@ -1787,16 +2121,16 @@ public class HTTP2JettyClient {
     }
     if (FORCE_HTTP2_ONLY) {
       if (enableHttp1 && isHttp1Only(uri)) {
-        LOG.info("HTTP/1.1-only cache hit for origin {}", originKey(uri));
+        lowLevelDebug("HTTP/1.1-only cache hit for origin {}", originKey(uri));
         return httpClientHttp1Only;
       }
       return httpClientNoH3;
     }
     boolean attemptHttp3 = shouldAttemptHttp3(uri);
     if (attemptHttp3) {
-      LOG.info("HTTP/3 enabled for origin {}", originKey(uri));
+      lowLevelDebug("HTTP/3 enabled for origin {}", originKey(uri));
     } else {
-      LOG.debug("HTTP/3 not enabled for origin {}", originKey(uri));
+      lowLevelDebug("HTTP/3 not enabled for origin {}", originKey(uri));
     }
     if (attemptHttp3) {
       return httpClient;
@@ -1805,7 +2139,7 @@ public class HTTP2JettyClient {
       return httpClientHttp1Only;
     }
     if (enableHttp1 && isHttp1Only(uri)) {
-      LOG.info("HTTP/1.1-only cache hit for origin {}", originKey(uri));
+      lowLevelDebug("HTTP/1.1-only cache hit for origin {}", originKey(uri));
       return httpClientHttp1Only;
     }
     return httpClientNoH3;
@@ -1902,7 +2236,7 @@ public class HTTP2JettyClient {
     String value = combined.toString().trim();
     if ("clear".equalsIgnoreCase(value)) {
       ALT_SVC_CACHE.remove(origin);
-      LOG.debug("Alt-Svc cleared for origin {}", origin);
+      lowLevelDebug("Alt-Svc cleared for origin {}", origin);
       return;
     }
     AltSvcEntry entry = parseAltSvc(value);
@@ -1910,7 +2244,7 @@ public class HTTP2JettyClient {
       return;
     }
     ALT_SVC_CACHE.put(origin, entry);
-    LOG.info("Alt-Svc cached for origin {} (h3={}, expiresAt={})",
+    lowLevelDebug("Alt-Svc cached for origin {} (h3={}, expiresAt={})",
         origin, entry.h3, entry.expiresAt);
   }
 
@@ -2012,10 +2346,10 @@ public class HTTP2JettyClient {
       Http1OnlyEntry entry = new Http1OnlyEntry();
       entry.expiresAt = System.currentTimeMillis() + http1OnlyCooldownMs;
       HTTP1_ONLY_CACHE.put(origin, entry);
-      LOG.info("HTTP/1.1-only cache set for origin {} until {}", origin, entry.expiresAt);
+      lowLevelDebug("HTTP/1.1-only cache set for origin {} until {}", origin, entry.expiresAt);
     } else if (version != null) {
       if (HTTP1_ONLY_CACHE.remove(origin) != null) {
-        LOG.debug("HTTP/1.1-only cache cleared for origin {}", origin);
+        lowLevelDebug("HTTP/1.1-only cache cleared for origin {}", origin);
       }
     }
   }
@@ -2037,10 +2371,10 @@ public class HTTP2JettyClient {
       H2cEntry entry = new H2cEntry();
       entry.expiresAt = System.currentTimeMillis() + h2cCacheTtlMs;
       H2C_CACHE.put(origin, entry);
-      LOG.info("H2C cache set for origin {} until {}", origin, entry.expiresAt);
+      lowLevelDebug("H2C cache set for origin {} until {}", origin, entry.expiresAt);
     } else if (version != null) {
       if (H2C_CACHE.remove(origin) != null) {
-        LOG.debug("H2C cache cleared for origin {}", origin);
+        lowLevelDebug("H2C cache cleared for origin {}", origin);
       }
     }
   }
@@ -2056,7 +2390,7 @@ public class HTTP2JettyClient {
     }
     entry.brokenUntil = System.currentTimeMillis() + http3BrokenCooldownMs;
     ALT_SVC_CACHE.put(origin, entry);
-    LOG.info("HTTP/3 marked broken for origin {} until {}", origin, entry.brokenUntil);
+    lowLevelDebug("HTTP/3 marked broken for origin {} until {}", origin, entry.brokenUntil);
   }
 
   private boolean isHttp3ConnectTimeout(Throwable cause) {
@@ -2091,7 +2425,7 @@ public class HTTP2JettyClient {
     for (int attempt = 1; attempt <= maxGoawayRetries; attempt++) {
       try {
         HttpClient retryClient = selectHttpClient(uri);
-        LOG.info("Retrying request after GOAWAY: attempt {}/{} method={}, URI={}, client={}",
+        lowLevelDebug("Retrying request after GOAWAY: attempt {}/{} method={}, URI={}, client={}",
             attempt, maxGoawayRetries, originalRequest.getMethod(), uri, retryClient.getName());
         Request retryRequest = cloneRequest(originalRequest, retryClient);
         ContentResponse response = retryRequest.send();
@@ -2119,7 +2453,7 @@ public class HTTP2JettyClient {
   private ContentResponse sendWithHttp2Only(Request originalRequest)
       throws InterruptedException, TimeoutException, ExecutionException {
     URI uri = originalRequest.getURI();
-    LOG.info("Retrying request without HTTP/3: method={}, URI={}",
+    lowLevelDebug("Retrying request without HTTP/3: method={}, URI={}",
         originalRequest.getMethod(), uri);
     Request request = cloneRequest(originalRequest, httpClientNoH3);
     ContentResponse response = request.send();
@@ -2139,6 +2473,7 @@ public class HTTP2JettyClient {
         throw new ExecutionException("Failed to start HTTP client", e);
       }
     }
+    clearContentDecoders(client);
     Request request = client.newRequest(uri)
         .method(originalRequest.getMethod())
         .timeout(originalRequest.getTimeout(), TimeUnit.MILLISECONDS)
@@ -2159,7 +2494,7 @@ public class HTTP2JettyClient {
     if (originalRequest.getBody() != null) {
       request.body(originalRequest.getBody());
     }
-    registerContentDecoders(client);
+    configureContentDecoders(client, request);
     return request;
   }
 
@@ -2189,6 +2524,75 @@ public class HTTP2JettyClient {
       client.setDestinationIdleTimeout(idleTimeout);
     }
     client.setIdleTimeout(idleTimeout);
+    addConnectionLogging(client);
+  }
+
+  private static void addConnectionLogging(HttpClient client) {
+    client.addBean(new Connection.Listener() {
+      @Override
+      public void onOpened(Connection connection) {
+        logConnection("client", connection);
+      }
+
+      @Override
+      public void onClosed(Connection connection) {
+        logAlpnLine("client connection closed: " + connection.getClass().getName());
+      }
+    });
+  }
+
+  private static void logConnection(String side, Connection connection) {
+    StringBuilder message = new StringBuilder();
+    message.append(side).append(" connection opened: ")
+        .append(connection.getClass().getName());
+    if (connection instanceof SslConnection) {
+      SslConnection sslConnection = (SslConnection) connection;
+      javax.net.ssl.SSLEngine engine = sslConnection.getSSLEngine();
+      String appProtocol = engine.getApplicationProtocol();
+      String sslProtocol = engine.getSession().getProtocol();
+      message.append(" alpn=").append(appProtocol)
+          .append(" tls=").append(sslProtocol);
+      sslConnection.addHandshakeListener(new SslHandshakeListener() {
+        @Override
+        public void handshakeSucceeded(Event event) {
+          javax.net.ssl.SSLEngine handshakeEngine = event.getSSLEngine();
+          String negotiated = handshakeEngine.getApplicationProtocol();
+          String protocol = handshakeEngine.getSession().getProtocol();
+          logAlpnLine(side + " handshake succeeded: alpn=" + negotiated + " tls=" + protocol);
+        }
+
+        @Override
+        public void handshakeFailed(Event event, Throwable failure) {
+          logAlpnLine(side + " handshake failed: "
+              + (failure != null ? failure.getMessage() : "unknown"));
+        }
+      });
+    }
+    logAlpnLine(message.toString());
+  }
+
+  private static void logAlpnLine(String message) {
+    try {
+      Path parent = ALPN_DEBUG_LOG_PATH.getParent();
+      if (parent != null) {
+        Files.createDirectories(parent);
+      }
+      String line = System.currentTimeMillis() + " " + message + System.lineSeparator();
+      Files.write(ALPN_DEBUG_LOG_PATH, line.getBytes(StandardCharsets.UTF_8),
+          StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+    } catch (IOException ignored) {
+      // Best-effort diagnostic logging.
+    }
+  }
+
+  private static Path resolveAlpnLogPath() {
+    Path baseDir = Paths.get(System.getProperty("user.dir", "."));
+    if (baseDir.endsWith("jmeter-http2-plugin")) {
+      return baseDir.resolve("target").resolve("http2-client-alpn.log");
+    }
+    return baseDir.resolve("jmeter-http2-plugin")
+        .resolve("target")
+        .resolve("http2-client-alpn.log");
   }
 
   private ClientConnector createClientConnector(String name) {
@@ -2208,7 +2612,7 @@ public class HTTP2JettyClient {
         sslFromConnector.setProtocol("TLS");
       }
     } catch (Exception e) {
-      LOG.debug("Could not set SSL protocol explicitly for connector {}", name, e);
+      lowLevelDebug("Could not set SSL protocol explicitly for connector {}", name, e);
     }
     connector.setExecutor(resolveExecutor(name));
     connector.setByteBufferPool(this.bufferPool);
@@ -2276,10 +2680,10 @@ public class HTTP2JettyClient {
           sharedThreadPool.setMinThreads(newMinThreads);
           sharedMaxThreads = newMaxThreads;
           sharedMinThreads = newMinThreads;
-          LOG.info("Shared thread pool resized to min={}, max={} (requested min={}, max={})",
+          lowLevelDebug("Shared thread pool resized to min={}, max={} (requested min={}, max={})",
               sharedMinThreads, sharedMaxThreads, requestedMinThreads, requestedMaxThreads);
         } else {
-          LOG.debug("Shared thread pool already initialized with min={}, max={}; "
+          lowLevelDebug("Shared thread pool already initialized with min={}, max={}; "
                   + "requested min={}, max={}",
               sharedMinThreads, sharedMaxThreads, requestedMinThreads, requestedMaxThreads);
         }
@@ -2422,16 +2826,38 @@ public class HTTP2JettyClient {
     }
   }
 
-  private Request buildRequest(HTTPSampleResult result) throws URISyntaxException,
+  private static class RequestContext {
+    private final Request request;
+    private final HttpClient client;
+
+    private RequestContext(Request request, HttpClient client) {
+      this.request = request;
+      this.client = client;
+    }
+  }
+
+  private RequestContext buildRequestContext(HTTPSampleResult result) throws URISyntaxException,
       IllegalArgumentException {
+    HttpClient client = selectHttpClient(result.getURL().toURI());
+    return buildRequestContext(result, client);
+  }
+
+  private RequestContext buildRequestContext(HTTPSampleResult result, HttpClient client)
+      throws URISyntaxException, IllegalArgumentException {
     URL url = result.getURL();
     URI uri = url.toURI();
-    HttpClient client = selectHttpClient(uri);
+    clearContentDecoders(client);
     Request request = client.newRequest(uri);
     if (client == httpClientH2cPrior) {
       request.version(HttpVersion.HTTP_2);
     } else if (client == httpClientH2cUpgrade) {
       request.version(HttpVersion.HTTP_1_1);
+    } else if ("https".equalsIgnoreCase(uri.getScheme())
+        && enableHttp2
+        && !enableHttp1
+        && !enableHttp3) {
+      // Force HTTP/2 when HTTP/1.1 is disabled to avoid mixed-protocol frames.
+      request.version(HttpVersion.HTTP_2);
     }
     boolean http3Attempted = enableHttp3 && client == httpClient && shouldAttemptHttp3(uri);
     request.attribute(ATTR_HTTP3_ATTEMPTED, http3Attempted);
@@ -2440,7 +2866,41 @@ public class HTTP2JettyClient {
     request.onRequestContent(
         (r, c) -> result.setSentBytes(result.getSentBytes() + c.limit()));
     request.onResponseBegin(r -> result.latencyEnd());
-    return request;
+    return new RequestContext(request, client);
+  }
+
+  private HttpClient resolveClientForRequest(HTTP2Sampler sampler, HTTPSampleResult result)
+      throws URISyntaxException {
+    return selectHttpClient(result.getURL().toURI());
+  }
+
+  private boolean requestAdvertisesEncoding(HTTP2Sampler sampler, String encoding) {
+    HeaderManager headerManager = sampler.getHeaderManager();
+    if (headerManager == null) {
+      return false;
+    }
+    return StreamSupport.stream(headerManager.getHeaders().spliterator(), false)
+        .map(prop -> (Header) prop.getObjectValue())
+        .filter(header -> HttpHeader.ACCEPT_ENCODING.is(header.getName()))
+        .map(Header::getValue)
+        .anyMatch(value -> containsEncodingToken(value, encoding));
+  }
+
+  private boolean containsEncodingToken(String headerValue, String encoding) {
+    if (headerValue == null) {
+      return false;
+    }
+    for (String token : headerValue.split(",")) {
+      String normalized = token.trim().toLowerCase(Locale.ROOT);
+      int paramsIndex = normalized.indexOf(';');
+      if (paramsIndex >= 0) {
+        normalized = normalized.substring(0, paramsIndex).trim();
+      }
+      if (encoding.equals(normalized)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   private void setTimeouts(HTTP2Sampler sampler, Request request) {
@@ -2462,18 +2922,29 @@ public class HTTP2JettyClient {
   }
 
   private void setHeaders(Request request, URL url, HeaderManager headerManager) {
+    boolean[] acceptEncodingSeen = new boolean[] {false};
     if (headerManager != null) {
       StreamSupport.stream(headerManager.getHeaders().spliterator(), false)
           .map(prop -> (Header) prop.getObjectValue())
           .filter(header -> (!header.getName().isEmpty()) && (!HTTPConstants.HEADER_CONTENT_LENGTH
               .equalsIgnoreCase(header.getName())))
           .forEach(header -> {
+            if (HttpHeader.ACCEPT_ENCODING.is(header.getName())) {
+              acceptEncodingSeen[0] = true;
+            }
             HttpField jettyHeader = createJettyHeader(header, url);
             HttpFields headers = request.getHeaders();
             if (headers instanceof HttpFields.Mutable) {
               ((HttpFields.Mutable) headers).put(jettyHeader.getName(), jettyHeader.getValue());
             }
           });
+    }
+
+    if (!acceptEncodingSeen[0]) {
+      HttpFields headers = request.getHeaders();
+      if (headers instanceof HttpFields.Mutable) {
+        ((HttpFields.Mutable) headers).remove(HttpHeader.ACCEPT_ENCODING);
+      }
     }
 
     // Filter invalid headers for HTTP/2 (Issue #2788)
@@ -2495,12 +2966,13 @@ public class HTTP2JettyClient {
       if (request.getAttributes().get(HttpUpgrader.PROTOCOL_ATTRIBUTE) == null) {
         request.attribute(HttpUpgrader.PROTOCOL_ATTRIBUTE, "h2c");
       }
-      LOG.debug("Added HTTP/2 cleartext upgrade headers for HTTP connection");
+      lowLevelDebug("Added HTTP/2 cleartext upgrade headers for HTTP connection");
     } else if (!"https".equalsIgnoreCase(url.getProtocol())
         && shouldUseH2cPriorKnowledge(request.getURI())) {
-      LOG.debug("Skipping h2c upgrade headers (prior knowledge enabled)");
+      lowLevelDebug("Skipping h2c upgrade headers (prior knowledge enabled)");
     } else if (http1UpgradeRequired && "https".equalsIgnoreCase(url.getProtocol())) {
-      LOG.debug("Skipping upgrade headers for HTTPS connection (ALPN handles HTTP/2 negotiation)");
+      lowLevelDebug("Skipping upgrade headers for HTTPS connection "
+          + "(ALPN handles HTTP/2 negotiation)");
     }
 
     // Filter invalid headers for HTTP/2 again after upgrade headers (if any)
@@ -2510,7 +2982,7 @@ public class HTTP2JettyClient {
     // Log all headers for debugging HTTP/2 protocol_error
     if (request.getHeaders() != null) {
       HttpFields headers = request.getHeaders();
-      LOG.debug("Request headers configured: total={}, http1UpgradeRequired={}",
+      lowLevelDebug("Request headers configured: total={}, http1UpgradeRequired={}",
           headers.size(), http1UpgradeRequired);
 
       // Log pseudo-headers (HTTP/2 specific) - these are set automatically by Jetty
@@ -2519,13 +2991,13 @@ public class HTTP2JettyClient {
           : uri.getHost() + ":" + (uri.getPort() > 0 ? uri.getPort()
           : ("https".equals(uri.getScheme()) ? 443 : 80));
       String path = uri.getPath() + (uri.getQuery() != null ? "?" + uri.getQuery() : "");
-      LOG.debug("HTTP/2 pseudo-headers (set by Jetty): :method={}, :scheme={}, "
+      lowLevelDebug("HTTP/2 pseudo-headers (set by Jetty): :method={}, :scheme={}, "
           + ":authority={}, :path={}", request.getMethod(), uri.getScheme(), authority, path);
 
       // Log all headers (for debugging)
       if (LOG.isDebugEnabled()) {
         headers.forEach(field -> {
-          LOG.debug("  Header: {} = {}", field.getName(), field.getValue());
+          lowLevelDebug("  Header: {} = {}", field.getName(), field.getValue());
         });
       }
     }
@@ -2667,7 +3139,7 @@ public class HTTP2JettyClient {
         if (connectionValue != null &&
             !connectionValue.contains("Upgrade") &&
             !connectionValue.contains("HTTP2-Settings")) {
-          LOG.debug("Removing invalid Connection header for HTTP/2: {}", connectionValue);
+          lowLevelDebug("Removing invalid Connection header for HTTP/2: {}", connectionValue);
           mutableHeaders.remove(HttpHeader.CONNECTION);
         }
       }
@@ -2678,7 +3150,7 @@ public class HTTP2JettyClient {
         headers.forEach(field -> {
           String name = field.getName();
           if (!name.startsWith(":") && !name.equals(name.toLowerCase())) {
-            LOG.debug("Warning: HTTP/2 header name should be lowercase: {}", name);
+            lowLevelDebug("Warning: HTTP/2 header name should be lowercase: {}", name);
           }
         });
       }
@@ -2724,7 +3196,7 @@ public class HTTP2JettyClient {
       if (cookieManager.getCookieCount() == 0) {
         if (!cookieStore.match(uri).isEmpty()) {
           cookieStore.clear();
-          LOG.debug("Cleared Jetty cookie store because JMeter CookieManager is empty");
+          lowLevelDebug("Cleared Jetty cookie store because JMeter CookieManager is empty");
         }
       } else {
         Set<String> jmeterCookieNames = new HashSet<>();
@@ -2738,7 +3210,7 @@ public class HTTP2JettyClient {
           for (HttpCookie cookie : cookieStore.match(uri)) {
             if (jmeterCookieNames.contains(cookie.getName())) {
               cookieStore.remove(uri, cookie);
-              LOG.debug("Removed cookie '{}' from Jetty store because JMeter overrides it",
+              lowLevelDebug("Removed cookie '{}' from Jetty store because JMeter overrides it",
                   cookie.getName());
             }
           }
@@ -2835,7 +3307,7 @@ public class HTTP2JettyClient {
         // Only one File support in not multipart scenario
         final HTTPFileArg file = sampler.getHTTPFiles()[0];
         if (sampler.getHTTPFiles().length > 1) {
-          LOG.info("Send multiples files is not currently supported, only first file will be "
+          LOG.warn("Send multiples files is not currently supported, only first file will be "
               + "sending");
         }
 
@@ -2907,7 +3379,7 @@ public class HTTP2JettyClient {
   }
 
   private long estimateRequestHeaderBytes(Request request) {
-    String headers = buildHeadersString(request.getHeaders());
+    String headers = getSerializedRequestHeaders(request, false);
     long headersBytes = headers.isEmpty()
         ? 0
         : headers.getBytes(StandardCharsets.UTF_8).length + 1;
@@ -2928,6 +3400,19 @@ public class HTTP2JettyClient {
     long requestLineBytes = requestLine.getBytes(StandardCharsets.UTF_8).length;
 
     return requestLineBytes + headersBytes;
+  }
+
+  private String getSerializedRequestHeaders(Request request, boolean refresh) {
+    if (request == null) {
+      return "";
+    }
+    Object cached = request.getAttributes().get(ATTR_REQUEST_HEADERS_SERIALIZED);
+    if (!refresh && cached instanceof String) {
+      return (String) cached;
+    }
+    String serialized = buildHeadersString(request.getHeaders());
+    request.attribute(ATTR_REQUEST_HEADERS_SERIALIZED, serialized);
+    return serialized;
   }
 
   private String extractMultipartBoundary(MultiPartRequestContent multipartEntityBuilder) {
@@ -3078,8 +3563,19 @@ public class HTTP2JettyClient {
     }
   }
 
-  private void setResultContentResponse(HTTPSampleResult result, ContentResponse contentResponse,
-                                        HTTP2Sampler sampler) throws IOException {
+  private void setResultContentResponse(HTTPSampleResult result,
+                                        ContentResponse contentResponse) throws IOException {
+    if (LowLevelDebugLog.isEnabled()) {
+      int headerCount = contentResponse.getHeaders() != null
+          ? contentResponse.getHeaders().size()
+          : 0;
+      int contentLength = contentResponse.getContent() != null
+          ? contentResponse.getContent().length
+          : 0;
+      debugToFile(String.format("resultContent: uri=%s status=%s headers=%d contentLength=%d",
+          contentResponse.getRequest() != null ? contentResponse.getRequest().getURI() : "null",
+          contentResponse.getStatus(), headerCount, contentLength));
+    }
     String contentType = contentResponse.getHeaders() != null
         ? contentResponse.getHeaders().get(HTTPConstants.HEADER_CONTENT_TYPE)
         : null;
@@ -3088,10 +3584,11 @@ public class HTTP2JettyClient {
       result.setEncodingAndType(contentType);
     }
 
-    // When a resource is cached, the sample result is empty
-    InputStream inputStream = new ByteArrayInputStream(contentResponse.getContent());
-    result.setResponseData(sampler.readResponse(result, inputStream,
-        contentResponse.getContent().length));
+    // Decode compressed payloads when possible even if the request did not advertise
+    // Accept-Encoding (some servers still compress, and JMeter should show decoded body).
+    byte[] responseContent = maybeDecodeCompressedContent(contentResponse);
+    // Avoid an extra stream->byte[] copy; content is already fully buffered.
+    result.setResponseData(responseContent);
 
     if (result.getEndTime() == 0) {
       result.sampleEnd();
@@ -3110,7 +3607,7 @@ public class HTTP2JettyClient {
       result.setRedirectLocation(extractRedirectLocation(contentResponse));
     }
 
-    if (sampler.getAutoRedirects()) {
+    if (contentResponse.getRequest() != null && contentResponse.getRequest().isFollowRedirects()) {
       result.setURL(contentResponse.getRequest().getURI().toURL());
     }
 
@@ -3169,4 +3666,182 @@ public class HTTP2JettyClient {
   public String dump() {
     return httpClient.dump();
   }
+
+  private static Path resolveDebugLogPath() {
+    Path baseDir = Paths.get(System.getProperty("user.dir", "."));
+    if (baseDir.endsWith("jmeter-http2-plugin")) {
+      return baseDir.resolve("target").resolve("http2-debug.log");
+    }
+    return baseDir.resolve("jmeter-http2-plugin")
+        .resolve("target")
+        .resolve("http2-debug.log");
+  }
+
+  private static void debugToFile(String message) {
+    if (!LowLevelDebugLog.isEnabled()) {
+      return;
+    }
+    try {
+      Path parent = DEBUG_LOG_PATH.getParent();
+      if (parent != null) {
+        Files.createDirectories(parent);
+      }
+      String line = System.currentTimeMillis() + " " + message + System.lineSeparator();
+      Files.write(DEBUG_LOG_PATH, line.getBytes(StandardCharsets.UTF_8),
+          StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+    } catch (IOException ignored) {
+      // Intentional: best-effort diagnostic logging.
+    }
+  }
+
+  private void resetSamplerDataBeforeResultProcessing(HTTPSampleResult result) {
+    if (result == null) {
+      return;
+    }
+    // Avoid sampler-data duplication when JMeter/redirect/retry flows process the same result.
+    result.setSamplerData("");
+  }
+
+  private byte[] maybeDecodeCompressedContent(ContentResponse contentResponse) {
+    byte[] content = contentResponse != null ? contentResponse.getContent() : null;
+    if (content == null || content.length == 0 || contentResponse == null
+        || contentResponse.getHeaders() == null) {
+      return content == null ? new byte[0] : content;
+    }
+    String contentEncoding = contentResponse.getHeaders().get(HttpHeader.CONTENT_ENCODING);
+    if (contentEncoding == null || contentEncoding.trim().isEmpty()) {
+      return content;
+    }
+    String encodingToken = normalizeEncodingToken(contentEncoding);
+    if (encodingToken.isEmpty()) {
+      return content;
+    }
+
+    // Fast path (enabled by default): if request already advertised this encoding, Jetty decoders
+    // should have handled it and re-decoding only adds CPU/alloc pressure.
+    boolean skipRedundantManualDecode = Boolean.parseBoolean(
+        System.getProperty(PROP_SKIP_REDUNDANT_MANUAL_DECODE, "true"));
+    if (skipRedundantManualDecode
+        && requestAdvertisedEncoding(contentResponse.getRequest(), encodingToken)) {
+      return content;
+    }
+
+    switch (encodingToken) {
+      case "gzip":
+      case "x-gzip":
+        return decodeGzip(content, contentEncoding);
+      case "deflate":
+        return decodeDeflate(content, contentEncoding);
+      case "br":
+        return decodeBrotli(content, contentEncoding);
+      case "zstd":
+        return decodeZstd(content, contentEncoding);
+      default:
+        return content;
+    }
+  }
+
+  private String normalizeEncodingToken(String headerValue) {
+    if (headerValue == null) {
+      return "";
+    }
+    String token = headerValue.split(",")[0].trim().toLowerCase(Locale.ROOT);
+    int paramsIndex = token.indexOf(';');
+    if (paramsIndex >= 0) {
+      token = token.substring(0, paramsIndex).trim();
+    }
+    return token;
+  }
+
+  private boolean requestAdvertisedEncoding(Request request, String responseEncoding) {
+    if (request == null || request.getHeaders() == null || responseEncoding == null
+        || responseEncoding.isEmpty()) {
+      return false;
+    }
+    String acceptEncoding = request.getHeaders().get(HttpHeader.ACCEPT_ENCODING);
+    if (acceptEncoding == null || acceptEncoding.trim().isEmpty()) {
+      return false;
+    }
+    for (String token : acceptEncoding.split(",")) {
+      String normalized = normalizeEncodingToken(token);
+      if (normalized.isEmpty()) {
+        continue;
+      }
+      if (responseEncoding.equals(normalized)) {
+        return true;
+      }
+      if (("gzip".equals(responseEncoding) || "x-gzip".equals(responseEncoding))
+          && ("gzip".equals(normalized) || "x-gzip".equals(normalized))) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private byte[] decodeGzip(byte[] content, String contentEncoding) {
+    if (content.length < 2 || (content[0] & 0xFF) != 0x1F || (content[1] & 0xFF) != 0x8B) {
+      return content;
+    }
+    try (InputStream input = new GZIPInputStream(new ByteArrayInputStream(content));
+         ByteArrayOutputStream output = new ByteArrayOutputStream(content.length)) {
+      copy(input, output);
+      return output.toByteArray();
+    } catch (IOException e) {
+      lowLevelDebug("Failed to decode gzip content ({}), keeping original bytes",
+          contentEncoding, e);
+      return content;
+    }
+  }
+
+  private byte[] decodeDeflate(byte[] content, String contentEncoding) {
+    try (InputStream input = new InflaterInputStream(new ByteArrayInputStream(content));
+         ByteArrayOutputStream output = new ByteArrayOutputStream(content.length)) {
+      copy(input, output);
+      return output.toByteArray();
+    } catch (IOException e) {
+      lowLevelDebug("Failed to decode deflate content ({}), keeping original bytes",
+          contentEncoding, e);
+      return content;
+    }
+  }
+
+  private byte[] decodeBrotli(byte[] content, String contentEncoding) {
+    try (InputStream input = new BrotliInputStream(new ByteArrayInputStream(content));
+         ByteArrayOutputStream output = new ByteArrayOutputStream(content.length)) {
+      copy(input, output);
+      return output.toByteArray();
+    } catch (IOException e) {
+      lowLevelDebug("Failed to decode brotli content ({}), keeping original bytes",
+          contentEncoding, e);
+      return content;
+    }
+  }
+
+  private byte[] decodeZstd(byte[] content, String contentEncoding) {
+    if (content.length < 4
+        || (content[0] & 0xFF) != 0x28
+        || (content[1] & 0xFF) != 0xB5
+        || (content[2] & 0xFF) != 0x2F
+        || (content[3] & 0xFF) != 0xFD) {
+      return content;
+    }
+    try (InputStream input = new ZstdInputStream(new ByteArrayInputStream(content));
+         ByteArrayOutputStream output = new ByteArrayOutputStream(content.length)) {
+      copy(input, output);
+      return output.toByteArray();
+    } catch (IOException e) {
+      lowLevelDebug("Failed to decode zstd content ({}), keeping original bytes",
+          contentEncoding, e);
+      return content;
+    }
+  }
+
+  private void copy(InputStream input, ByteArrayOutputStream output) throws IOException {
+    byte[] buffer = new byte[8192];
+    int read;
+    while ((read = input.read(buffer)) != -1) {
+      output.write(buffer, 0, read);
+    }
+  }
 }
+
