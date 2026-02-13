@@ -10,6 +10,7 @@ import java.net.URI;
 import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import org.apache.jmeter.protocol.http.sampler.HTTPSampleResult;
@@ -55,14 +56,13 @@ public class HTTP3HappyEyeballsIntegrationTest extends HTTP2TestBase {
     Server h3Server = null;
 
     try {
+      clearClientProtocolCaches();
       JMeterUtils.setProperty("httpJettyClient.enableHttp1", "false");
       JMeterUtils.setProperty("httpJettyClient.enableHttp2", "true");
       JMeterUtils.setProperty("httpJettyClient.enableHttp3", "true");
       JMeterUtils.setProperty("httpJettyClient.altSvcCacheEnabled", "true");
       JMeterUtils.setProperty("httpJettyClient.http3PriorKnowledge", "false");
-      // Use a larger base delay so the race outcome is deterministic across
-      // environments where HTTP/3 startup/handshake can be slower.
-      JMeterUtils.setProperty("httpJettyClient.happyEyeballsDelayMs", "600");
+      JMeterUtils.setProperty("httpJettyClient.happyEyeballsDelayMs", "200");
       JMeterUtils.setProperty("httpJettyClient.fallbackEnabled", "true");
 
       AtomicInteger h2Requests = new AtomicInteger();
@@ -86,6 +86,9 @@ public class HTTP3HappyEyeballsIntegrationTest extends HTTP2TestBase {
         HTTPSampleResult first = sample(client, sampler, url);
         assertThat(first.isSuccessful()).isTrue();
         assertThat(first.getResponseHeaders()).startsWith("HTTP/2");
+
+        long effectiveDelay = computeHappyEyeballsDelay(client, url.toURI());
+        assertThat(effectiveDelay).isEqualTo(100L);
 
         HTTPSampleResult second = sample(client, sampler, url);
         assertThat(second.isSuccessful()).isTrue();
@@ -125,6 +128,7 @@ public class HTTP3HappyEyeballsIntegrationTest extends HTTP2TestBase {
     Server h3Server = null;
 
     try {
+      clearClientProtocolCaches();
       JMeterUtils.setProperty("httpJettyClient.enableHttp1", "false");
       JMeterUtils.setProperty("httpJettyClient.enableHttp2", "true");
       JMeterUtils.setProperty("httpJettyClient.enableHttp3", "true");
@@ -219,6 +223,7 @@ public class HTTP3HappyEyeballsIntegrationTest extends HTTP2TestBase {
     Server h3Server = null;
 
     try {
+      clearClientProtocolCaches();
       JMeterUtils.setProperty("httpJettyClient.enableHttp1", "false");
       JMeterUtils.setProperty("httpJettyClient.enableHttp2", "true");
       JMeterUtils.setProperty("httpJettyClient.enableHttp3", "true");
@@ -393,6 +398,22 @@ public class HTTP3HappyEyeballsIntegrationTest extends HTTP2TestBase {
         "computeHappyEyeballsDelayMs", URI.class);
     method.setAccessible(true);
     return (long) method.invoke(client, uri);
+  }
+
+  private void clearClientProtocolCaches() throws Exception {
+    clearStaticMap("ALT_SVC_CACHE");
+    clearStaticMap("HTTP1_ONLY_CACHE");
+    clearStaticMap("H2C_CACHE");
+  }
+
+  @SuppressWarnings("unchecked")
+  private void clearStaticMap(String fieldName) throws Exception {
+    java.lang.reflect.Field field = HTTP2JettyClient.class.getDeclaredField(fieldName);
+    field.setAccessible(true);
+    Map<Object, Object> map = (Map<Object, Object>) field.get(null);
+    if (map != null) {
+      map.clear();
+    }
   }
 
   private void stopServer(Server server) {
