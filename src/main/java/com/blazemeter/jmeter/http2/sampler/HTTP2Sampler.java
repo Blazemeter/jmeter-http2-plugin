@@ -568,6 +568,32 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
     return errorResult(e, result);
   }
 
+  /**
+   * Copies Jetty/ALPN/protocol flags from this sampler onto an embedded-resource child sampler so
+   * child requests obey the same profile as the parent. Without this, a fresh {@link HTTP2Sampler}
+   * falls back to default profile semantics (typically HTTP/1.1 enabled), which incorrectly applies
+   * the global HTTP/1.1-only origin cache ({@link HTTP2JettyClient}) even when the parent has
+   * HTTP/1.1 explicitly disabled (e.g. HTTP/2-only mode).
+   */
+  private void copyJettyProtocolSettingsToEmbeddedSampler(HTTP2Sampler embedded) {
+    embedded.setProfile(getProfile());
+    embedded.setEnableHttp3(getEnableHttp3());
+    embedded.setEnableHttp2(getEnableHttp2());
+    embedded.setEnableHttp1(getEnableHttp1());
+    embedded.setAlpnEnabled(getAlpnEnabled());
+    embedded.setFallbackEnabled(getFallbackEnabled());
+    embedded.setProtocolErrorFallbackEnabled(getProtocolErrorFallbackEnabled());
+    embedded.setAltSvcCacheEnabled(getAltSvcCacheEnabled());
+    embedded.setHttp1OnlyCacheEnabled(getHttp1OnlyCacheEnabled());
+    embedded.setH2cCacheEnabled(getH2cCacheEnabled());
+    embedded.setHttp2PriorKnowledgeEnabled(getHttp2PriorKnowledgeEnabled());
+    embedded.setHappyEyeballsDelayMs(getHappyEyeballsDelayMs());
+    embedded.setHttp3BrokenCooldownMs(getHttp3BrokenCooldownMs());
+    embedded.setHttp1OnlyCooldownMs(getHttp1OnlyCooldownMs());
+    embedded.setH2cCacheTtlMs(getH2cCacheTtlMs());
+    embedded.setHttp1UpgradeEnabled(isHttp1UpgradeEnabled());
+  }
+
   private HTTP2JettyClient buildClient() throws Exception {
     HTTP2ClientKey connectionKey = buildConnectionKey();
     HTTP2JettyClient client = new HTTP2JettyClient(isHttp1UpgradeEnabled(),
@@ -874,12 +900,12 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
             }
 
             HTTP2Sampler h2s = new HTTP2Sampler();
+            copyJettyProtocolSettingsToEmbeddedSampler(h2s);
             h2s.setMethod("GET");
             h2s.setSyncRequest(!isConcurrentDwn);
             h2s.setProtocol(url.getProtocol());
             h2s.setDomain(url.getHost());
             h2s.setPort(url.getPort());
-            h2s.setHttp1UpgradeEnabled(isHttp1UpgradeEnabled());
             h2s.setFollowRedirects(true);
             h2s.setAutoRedirects(true);
             if (url.getQuery() == null) {

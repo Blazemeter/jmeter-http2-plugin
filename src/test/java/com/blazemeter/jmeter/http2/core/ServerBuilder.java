@@ -72,6 +72,11 @@ public class ServerBuilder {
   public static final String SERVER_PATH_200_EMBEDDED = "/test/embedded";
   /** HTML with several same-origin images to stress concurrent embedded downloads. */
   public static final String SERVER_PATH_200_EMBEDDED_MANY = "/test/embedded-many";
+  /**
+   * HTML whose embedded asset points at another HTTPS origin ({@code https://localhost:{port}/test/image.png}).
+   * Requires {@link #withCrossOriginEmbeddedAssetPort(int)} when building the server.
+   */
+  public static final String SERVER_PATH_200_EMBEDDED_CROSS_ORIGIN = "/test/embedded-cross-origin";
   public static final String SERVER_PATH_200_FILE_SENT = "/test/file";
   public static final String SERVER_PATH_BIG_RESPONSE = "/test/big-response";
   public static final String SERVER_PATH_400 = "/test/400";
@@ -106,6 +111,8 @@ public class ServerBuilder {
   private boolean clientAuth;
   private boolean isBasicAuth;
   private boolean isDigestAuth;
+  /** Optional port for {@link #SERVER_PATH_200_EMBEDDED_CROSS_ORIGIN}; {@code -1} if unset. */
+  private int crossOriginEmbeddedAssetPort = -1;
 
   public ServerBuilder() {
     httpsConfig.addCustomizer(new SecureRequestCustomizer());
@@ -148,6 +155,15 @@ public class ServerBuilder {
 
   public ServerBuilder withDigestAuth() {
     this.isDigestAuth = true;
+    return this;
+  }
+
+  /**
+   * Enables {@link #SERVER_PATH_200_EMBEDDED_CROSS_ORIGIN} to reference an asset on {@code localhost}
+   * at the given HTTPS port.
+   */
+  public ServerBuilder withCrossOriginEmbeddedAssetPort(int assetOriginPortHttps) {
+    this.crossOriginEmbeddedAssetPort = assetOriginPortHttps;
     return this;
   }
 
@@ -308,6 +324,18 @@ public class ServerBuilder {
             resp.getWriter().write(MULTI_IMAGE_HTML_TEMPLATE);
             resp.addHeader(HTTPConstants.EXPIRES,
                 "Sat, 25 Sep 2041 00:00:00 GMT");
+            break;
+          case SERVER_PATH_200_EMBEDDED_CROSS_ORIGIN:
+            if (crossOriginEmbeddedAssetPort < 0) {
+              resp.sendError(HttpStatus.NOT_FOUND_404,
+                  "Cross-origin embedded port not configured");
+              break;
+            }
+            resp.setStatus(HttpStatus.OK_200);
+            resp.setContentType(MimeTypes.MIME_TEXT_HTML + ";" + StandardCharsets.UTF_8.name());
+            resp.getWriter().write("<!DOCTYPE html><html><body><img src='" + HTTPConstants.PROTOCOL_HTTPS
+                + "://" + HOST_NAME + ":" + crossOriginEmbeddedAssetPort + SERVER_IMAGE
+                + "'/></body></html>");
             break;
           case SERVER_IMAGE_0:
           case SERVER_IMAGE_1:
