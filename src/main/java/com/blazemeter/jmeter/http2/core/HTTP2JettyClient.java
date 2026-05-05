@@ -498,7 +498,8 @@ public class HTTP2JettyClient {
     }
     ClientConnector http1Connector = createClientConnector(name + "-http1");
     HttpClientTransport http1Transport = new HttpClientTransportDynamic(http1Connector, http11);
-    configureTransport(http1Transport);
+    // HTTP/1.1 has no multiplexing (Jetty rejects a 2nd in-flight exchange per connection).
+    configureTransport(http1Transport, 1);
     this.httpClientHttp1Only = new HttpClient(http1Transport);
     configureHttpClient(this.httpClientHttp1Only, http1Connector);
 
@@ -2693,12 +2694,21 @@ public class HTTP2JettyClient {
   }
 
   private void configureTransport(HttpClientTransport transport) {
+    configureTransport(transport, maxRequestsPerConnection);
+  }
+
+  /**
+   * @param maxMultiplex max concurrent exchanges per connection (HTTP/2/3); use {@code 1} for
+   *     HTTP/1-only transports so parallel requests open extra TCP connections instead of
+   *     failing with "Pipelined requests not supported".
+   */
+  private void configureTransport(HttpClientTransport transport, int maxMultiplex) {
     transport.setConnectionPoolFactory((destination) -> {
       MultiplexConnectionPool mcp = new MultiplexConnectionPool(
           destination,
           destination.getHttpClient().getMaxConnectionsPerDestination(),
-          maxRequestsPerConnection);
-      mcp.setInitialMaxMultiplex(maxRequestsPerConnection);
+          maxMultiplex);
+      mcp.setInitialMaxMultiplex(maxMultiplex);
       return mcp;
     });
   }

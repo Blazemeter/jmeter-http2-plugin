@@ -53,6 +53,11 @@ public class ServerBuilder {
   public static final int SERVER_PORT = 6666;
   public static final String SERVER_RESPONSE = "Hello World!";
   public static final String SERVER_IMAGE = "/test/image.png";
+  public static final String SERVER_IMAGE_0 = "/test/image-0.png";
+  public static final String SERVER_IMAGE_1 = "/test/image-1.png";
+  public static final String SERVER_IMAGE_2 = "/test/image-2.png";
+  public static final String SERVER_IMAGE_3 = "/test/image-3.png";
+  public static final String SERVER_IMAGE_4 = "/test/image-4.png";
   public static final String SERVER_PATH = "/test";
   public static final String SERVER_PATH_SET_COOKIES = "/test/set-cookies";
   public static final String SERVER_PATH_USE_COOKIES = "/test/use-cookies";
@@ -65,6 +70,8 @@ public class ServerBuilder {
   public static final String SERVER_PATH_200_BROTLI = "/test/brotli";
   public static final String SERVER_PATH_200_ZSTD = "/test/zstd";
   public static final String SERVER_PATH_200_EMBEDDED = "/test/embedded";
+  /** HTML with several same-origin images to stress concurrent embedded downloads. */
+  public static final String SERVER_PATH_200_EMBEDDED_MANY = "/test/embedded-many";
   public static final String SERVER_PATH_200_FILE_SENT = "/test/file";
   public static final String SERVER_PATH_BIG_RESPONSE = "/test/big-response";
   public static final String SERVER_PATH_400 = "/test/400";
@@ -74,6 +81,10 @@ public class ServerBuilder {
   public static final String SERVER_PATH_DELETE_DATA = "/test/delete";
   public static final String BASIC_HTML_TEMPLATE = "<!DOCTYPE html><html><head><title>Page "
       + "Title</title></head><body><div><img src='image.png'></div></body></html>";
+  public static final String MULTI_IMAGE_HTML_TEMPLATE = "<!DOCTYPE html><html><body>"
+      + "<img src='image-0.png'/><img src='image-1.png'/><img src='image-2.png'/>"
+      + "<img src='image-3.png'/><img src='image-4.png'/>"
+      + "</body></html>";
   public static final byte[] BINARY_RESPONSE_BODY = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
   private static final byte[] GZIP_RESPONSE_BODY = buildGzipResponseBody();
   private static final byte[] DEFLATE_RESPONSE_BODY = buildDeflateResponseBody();
@@ -291,6 +302,20 @@ public class ServerBuilder {
             resp.getWriter().write(BASIC_HTML_TEMPLATE);
             resp.addHeader(HTTPConstants.EXPIRES,
                 "Sat, 25 Sep 2041 00:00:00 GMT");
+            break;
+          case SERVER_PATH_200_EMBEDDED_MANY:
+            resp.setContentType(MimeTypes.MIME_TEXT_HTML + ";" + StandardCharsets.UTF_8.name());
+            resp.getWriter().write(MULTI_IMAGE_HTML_TEMPLATE);
+            resp.addHeader(HTTPConstants.EXPIRES,
+                "Sat, 25 Sep 2041 00:00:00 GMT");
+            break;
+          case SERVER_IMAGE_0:
+          case SERVER_IMAGE_1:
+          case SERVER_IMAGE_2:
+          case SERVER_IMAGE_3:
+          case SERVER_IMAGE_4:
+            resp.setContentType("image/png");
+            resp.getOutputStream().write(new byte[] {1, 2, 3, 4, 5});
             break;
           case SERVER_IMAGE:
             resp.getOutputStream().write(new byte[] {1, 2, 3, 4, 5});
