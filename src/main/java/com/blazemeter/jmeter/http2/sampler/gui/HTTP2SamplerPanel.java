@@ -1,15 +1,26 @@
 package com.blazemeter.jmeter.http2.sampler.gui;
 
 import java.awt.BorderLayout;
+import java.awt.Component;
+import java.awt.Container;
 import java.awt.Dimension;
+import java.awt.FlowLayout;
+import java.awt.GridBagConstraints;
+import java.awt.GridBagLayout;
+import java.awt.Insets;
+import java.awt.LayoutManager;
 import javax.swing.BorderFactory;
+import javax.swing.JButton;
 import javax.swing.JCheckBox;
 import javax.swing.JComboBox;
+import javax.swing.JComponent;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JPasswordField;
 import javax.swing.JTabbedPane;
+import javax.swing.JTextArea;
 import javax.swing.JTextField;
+import javax.swing.SwingUtilities;
 import javax.swing.border.Border;
 import javax.swing.event.ChangeListener;
 import org.apache.jmeter.gui.util.HorizontalPanel;
@@ -20,6 +31,24 @@ import org.apache.jmeter.util.JMeterUtils;
 import org.apache.jorphan.gui.JLabeledTextField;
 
 public class HTTP2SamplerPanel extends JPanel {
+
+  /**
+   * UrlConfigGui uses very wide columns (e.g. path=80, domain=40) and pins the redirect/options
+   * row with {@code setMinimumSize(getPreferredSize())}, which forces horizontal scroll in JMeter's
+   * property panel instead of reflowing when the window is narrowed.
+   */
+  private static final int RESPONSIVE_TEXTFIELD_MAX_COLS = 26;
+
+  private static final int RESPONSIVE_TEXTAREA_MAX_COLS = 36;
+
+  /**
+   * Flow panels wider than this are treated as "option bars" that should wrap/shrink with the
+   * viewport (JMeter UrlConfigGui redirect checkboxes row).
+   */
+  private static final int FLOW_BAR_REFLOW_MIN_PREFERRED_WIDTH = 360;
+
+  private static final String PROFILE_COMBO_PROTOTYPE =
+      "Browser-compatible (Other Browsers)";
 
   private static final String PROFILE_BROWSER_LIKE = "browser-like";
   private static final String PROFILE_BROWSER_LIKE_CUSTOM = "browser-like-custom";
@@ -41,9 +70,14 @@ public class HTTP2SamplerPanel extends JPanel {
       PROFILE_LEGACY,
       PROFILE_BROWSER_LIKE_CUSTOM
   };
+  private static final int URL_CONFIG_TABLE_VIEWPORT_MIN_ROWS = 3;
+  private static final int URL_CONFIG_TABLE_VIEWPORT_MAX_ROWS = 6;
+
   private JTabbedPane tabbedPane;
   private int selectedTabIndex = 0;
   private UrlConfigGui urlConfigGui;
+  private AdaptiveTabbedPaneHeightHost urlConfigPostTabHost;
+  private AdaptiveTabbedPaneHeightHost outerTabHost;
   private final JTextField connectTimeOutField = new JTextField(10);
   private final JTextField responseTimeOutField = new JTextField(10);
   private final JTextField proxySchemeField = new JTextField(5);
@@ -87,15 +121,57 @@ public class HTTP2SamplerPanel extends JPanel {
     add(createTabbedConfigPane(isSampler));
   }
 
-  private JTabbedPane createTabbedConfigPane(boolean isSampler) {
+  private JPanel createTabbedConfigPane(boolean isSampler) {
     tabbedPane = new JTabbedPane();
     ChangeListener tabChangeListener = e -> selectedTabIndex = tabbedPane.getSelectedIndex();
     tabbedPane.addChangeListener(tabChangeListener);
+    final AdaptiveTabbedPaneHeightHost[] outerRef = new AdaptiveTabbedPaneHeightHost[1];
+    Runnable refreshOuterOnly = () -> SwingUtilities.invokeLater(() -> {
+      AdaptiveTabbedPaneHeightHost outer = outerRef[0];
+      if (outer != null) {
+        outer.sync();
+        AdaptiveTabbedPaneHeightHost.revalidateAncestors(outer);
+      }
+    });
     urlConfigGui = new UrlConfigGui(isSampler, true, true);
+    applyResponsiveSizingTree(urlConfigGui);
+    urlConfigPostTabHost = AdaptiveTabbedPaneHeightHost.wrapUrlConfigPostTabsIfPresent(urlConfigGui,
+        refreshOuterOnly);
+    PostContentTabSwitchFeedback.installIfApplicable(urlConfigGui);
     tabbedPane.add(JMeterUtils.getResString("web_testing_basic"), urlConfigGui);
     final JPanel advancedPanel = createAdvancedConfigPanel();
+    applyResponsiveSizingTree(advancedPanel);
     tabbedPane.add(JMeterUtils.getResString("web_testing_advanced"), advancedPanel);
-    return tabbedPane;
+    outerTabHost = new AdaptiveTabbedPaneHeightHost(tabbedPane, null);
+    outerRef[0] = outerTabHost;
+    UrlConfigTableViewportSizer.install(urlConfigGui, URL_CONFIG_TABLE_VIEWPORT_MIN_ROWS,
+        URL_CONFIG_TABLE_VIEWPORT_MAX_ROWS, this::refreshAdaptiveTabHeightsOnly);
+    return outerTabHost;
+  }
+
+  private void refreshAdaptiveTabHeightsOnly() {
+    SwingUtilities.invokeLater(() -> SwingUtilities.invokeLater(() -> {
+      if (urlConfigPostTabHost != null) {
+        urlConfigPostTabHost.sync();
+      }
+      if (outerTabHost != null) {
+        outerTabHost.sync();
+        AdaptiveTabbedPaneHeightHost.revalidateAncestors(outerTabHost);
+      }
+    }));
+  }
+
+  /**
+   * Re-run table viewport sizing and adaptive tab heights after UrlConfigGui data is loaded or
+   * cleared.
+   */
+  public void refreshUrlConfigLayoutAfterDataChange() {
+    if (urlConfigGui == null) {
+      return;
+    }
+    UrlConfigTableViewportSizer.refresh(urlConfigGui, URL_CONFIG_TABLE_VIEWPORT_MIN_ROWS,
+        URL_CONFIG_TABLE_VIEWPORT_MAX_ROWS);
+    refreshAdaptiveTabHeightsOnly();
   }
 
   private Border makeBorder() {
@@ -116,9 +192,9 @@ public class HTTP2SamplerPanel extends JPanel {
     JPanel behaviorPanel = new VerticalPanel();
     behaviorPanel.setBorder(BorderFactory.createTitledBorder("Client Behavior"));
 
-    JPanel profilePanel = new HorizontalPanel();
-    profilePanel.add(new JLabel("Profile"));
-    profilePanel.add(profileSelector);
+    JPanel profilePanel = new JPanel(new BorderLayout(5, 0));
+    profilePanel.add(new JLabel("Profile"), BorderLayout.WEST);
+    profilePanel.add(profileSelector, BorderLayout.CENTER);
     behaviorPanel.add(profilePanel);
 
     JPanel protocolPanel = new VerticalPanel();
@@ -152,6 +228,8 @@ public class HTTP2SamplerPanel extends JPanel {
     timingPanel.add(h2cCacheTtlField);
     behaviorPanel.add(timingPanel);
 
+    profileSelector.setPrototypeDisplayValue(PROFILE_COMBO_PROTOTYPE);
+    relaxHorizontalMinimumWidth(profileSelector);
     profileSelector.addActionListener(e -> updateProfileControls());
     enableHttp1Check.addActionListener(e -> handleProtocolToggle(enableHttp1Check));
     enableHttp2Check.addActionListener(e -> handleProtocolToggle(enableHttp2Check));
@@ -163,13 +241,21 @@ public class HTTP2SamplerPanel extends JPanel {
   }
 
   private JPanel createTimeOutPanel() {
-    JPanel timeOutPanel = new HorizontalPanel();
+    JPanel timeOutPanel = new JPanel(new GridBagLayout());
     timeOutPanel.setBorder(BorderFactory.createTitledBorder(
         JMeterUtils.getResString("web_server_timeout_title")));
+    GridBagConstraints gbc = new GridBagConstraints();
+    gbc.gridy = 0;
+    gbc.fill = GridBagConstraints.HORIZONTAL;
+    gbc.weightx = 0.5;
+    gbc.insets = new Insets(0, 0, 0, 5);
+    gbc.gridx = 0;
     timeOutPanel.add(createPanelWithLabelForField(connectTimeOutField,
-        JMeterUtils.getResString("web_server_timeout_connect")));
+        JMeterUtils.getResString("web_server_timeout_connect")), gbc);
+    gbc.gridx = 1;
+    gbc.insets = new Insets(0, 5, 0, 0);
     timeOutPanel.add(createPanelWithLabelForField(responseTimeOutField,
-        JMeterUtils.getResString("web_server_timeout_response")));
+        JMeterUtils.getResString("web_server_timeout_response")), gbc);
     return timeOutPanel;
   }
 
@@ -179,7 +265,113 @@ public class HTTP2SamplerPanel extends JPanel {
     JPanel panel = new JPanel(new BorderLayout(5, 0));
     panel.add(label, BorderLayout.WEST);
     panel.add(field, BorderLayout.CENTER);
+    relaxHorizontalMinimumWidth(panel);
     return panel;
+  }
+
+  private static void relaxHorizontalMinimumWidth(JComponent component) {
+    Dimension min = component.getMinimumSize();
+    component.setMinimumSize(new Dimension(0, min.height));
+  }
+
+  /**
+   * Makes third-party (JMeter UrlConfigGui) and heavy Swing widgets friendlier to narrow
+   * viewports by capping column-based preferred widths and clearing artificial minimum widths.
+   * Visits children first so parent {@link FlowLayout} sizes reflect updated text fields.
+   */
+  private static void applyResponsiveSizingTree(Component root) {
+    if (root instanceof Container) {
+      for (Component child : ((Container) root).getComponents()) {
+        applyResponsiveSizingTree(child);
+      }
+    }
+
+    if (root instanceof JTextField) {
+      JTextField tf = (JTextField) root;
+      if (tf.getColumns() > RESPONSIVE_TEXTFIELD_MAX_COLS) {
+        tf.setColumns(RESPONSIVE_TEXTFIELD_MAX_COLS);
+      }
+      relaxHorizontalMinimumWidth(tf);
+    } else if (root instanceof JTextArea) {
+      JTextArea ta = (JTextArea) root;
+      if (ta.getColumns() > RESPONSIVE_TEXTAREA_MAX_COLS) {
+        ta.setColumns(RESPONSIVE_TEXTAREA_MAX_COLS);
+      }
+      relaxHorizontalMinimumWidth(ta);
+    } else if (root instanceof JComboBox) {
+      relaxHorizontalMinimumWidth((JComboBox<?>) root);
+    } else if (root instanceof JPanel) {
+      JPanel jp = (JPanel) root;
+      LayoutManager lm = jp.getLayout();
+      if (lm instanceof FlowLayout) {
+        Dimension min = jp.getMinimumSize();
+        jp.setMinimumSize(new Dimension(0, min.height));
+        reflowWideSingleRowFlowBar(jp);
+      }
+    }
+
+    if (root instanceof JComponent) {
+      String className = root.getClass().getName();
+      if (className.endsWith("JLabeledTextField") || className.endsWith("JLabeledChoice")) {
+        relaxHorizontalMinimumWidth((JComponent) root);
+      }
+    }
+  }
+
+  /**
+   * UrlConfigGui pins a single FlowLayout row of redirect/multipart checkboxes; its preferred
+   * width is the sum of all toggles and forces horizontal scrolling. Re-layout as a 2-column grid.
+   */
+  private static void reflowWideSingleRowFlowBar(JPanel panel) {
+    int n = panel.getComponentCount();
+    if (n < 4 || n > 8) {
+      return;
+    }
+    if (!looksLikeJMeterToggleOptionBar(panel)) {
+      return;
+    }
+    for (Component child : panel.getComponents()) {
+      if (child instanceof JButton) {
+        return;
+      }
+    }
+    if (panel.getPreferredSize().width < FLOW_BAR_REFLOW_MIN_PREFERRED_WIDTH) {
+      return;
+    }
+    Component[] children = panel.getComponents();
+    panel.removeAll();
+    panel.setLayout(new GridBagLayout());
+    GridBagConstraints gbc = new GridBagConstraints();
+    gbc.anchor = GridBagConstraints.WEST;
+    gbc.insets = new Insets(0, 0, 4, 16);
+    int col = 0;
+    int row = 0;
+    final int lastColIndex = 1;
+    for (Component child : children) {
+      gbc.gridx = col;
+      gbc.gridy = row;
+      panel.add(child, gbc);
+      col++;
+      if (col > lastColIndex) {
+        col = 0;
+        row++;
+      }
+    }
+    relaxHorizontalMinimumWidth(panel);
+  }
+
+  private static boolean looksLikeJMeterToggleOptionBar(JPanel panel) {
+    boolean hasPlainCheckBox = false;
+    for (Component child : panel.getComponents()) {
+      if (child instanceof JCheckBox) {
+        hasPlainCheckBox = true;
+      }
+      String childClass = child.getClass().getName();
+      if (childClass.endsWith("JBooleanPropertyEditor")) {
+        return true;
+      }
+    }
+    return hasPlainCheckBox && panel.getComponentCount() >= 4;
   }
 
   private JPanel createProxyPanel() {
@@ -191,7 +383,7 @@ public class HTTP2SamplerPanel extends JPanel {
   }
 
   private JPanel createProxyServerPanel() {
-    JPanel proxyServerPanel = new HorizontalPanel();
+    JPanel proxyServerPanel = new JPanel(new BorderLayout(5, 0));
     proxyServerPanel.add(createPanelWithLabelForField(proxySchemeField, JMeterUtils.getResString(
         "web_proxy_scheme")), BorderLayout.WEST);
     proxyServerPanel.add(createPanelWithLabelForField(proxyHostField, JMeterUtils.getResString(
@@ -202,7 +394,7 @@ public class HTTP2SamplerPanel extends JPanel {
   }
 
   private JPanel createEmbeddedResourcesPanel() {
-    final JPanel embeddedResourcesPanel = new HorizontalPanel();
+    JPanel embeddedResourcesPanel = new JPanel(new BorderLayout(5, 0));
     embeddedResourcesPanel.setBorder(BorderFactory
         .createTitledBorder(BorderFactory.createEtchedBorder(),
             JMeterUtils.getResString("web_testing_retrieve_title")));
@@ -212,10 +404,12 @@ public class HTTP2SamplerPanel extends JPanel {
         new Dimension(10, (int) concurrentPoolField.getPreferredSize().getHeight()));
     concurrentPoolField.setMaximumSize(
         new Dimension(30, (int) concurrentPoolField.getPreferredSize().getHeight()));
-    embeddedResourcesPanel.add(retrieveEmbeddedResourcesCheckBox);
-    embeddedResourcesPanel.add(concurrentDownloadCheckBox);
-    embeddedResourcesPanel.add(concurrentPoolField);
-    embeddedResourcesPanel.add(embeddedResourcesRegexField);
+    JPanel leftControls = new HorizontalPanel();
+    leftControls.add(retrieveEmbeddedResourcesCheckBox);
+    leftControls.add(concurrentDownloadCheckBox);
+    leftControls.add(concurrentPoolField);
+    embeddedResourcesPanel.add(leftControls, BorderLayout.WEST);
+    embeddedResourcesPanel.add(embeddedResourcesRegexField, BorderLayout.CENTER);
     return embeddedResourcesPanel;
   }
 
@@ -359,6 +553,7 @@ public class HTTP2SamplerPanel extends JPanel {
 
   public void resetFields() {
     urlConfigGui.clear();
+    refreshUrlConfigLayoutAfterDataChange();
     http1Upgrade.setSelected(false);
     setProfile(PROFILE_BROWSER_LIKE);
     setSelectedTabIndex(0);
