@@ -15,4 +15,3 @@ bzt -o modules.jmeter.path=$JMETER_PATH -o modules.jmeter.version=$JMETER_VERSIO
 cd $JMETER_PATH/lib/ext/
 rm $JARS
 exit $ERROR
-

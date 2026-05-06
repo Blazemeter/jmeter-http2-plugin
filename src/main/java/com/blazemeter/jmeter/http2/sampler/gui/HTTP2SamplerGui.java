@@ -83,7 +83,26 @@ public class HTTP2SamplerGui extends AbstractSamplerGui {
       http2Sampler.setProxyPass(http2SamplerPanel.getProxyPass());
       http2Sampler.setProperty("version", getPluginVersion());
       http2SamplerPanel.getUrlConfigGui().modifyTestElement(http2Sampler);
+      http2Sampler.setUiTabIndex(http2SamplerPanel.getSelectedTabIndex());
       http2Sampler.setHttp1UpgradeEnabled(http2SamplerPanel.isHttp1UpgradeSelected());
+      String profile = http2SamplerPanel.getProfile();
+      http2Sampler.setProfile(profile);
+      http2Sampler.setEnableHttp3(http2SamplerPanel.isEnableHttp3Selected());
+      http2Sampler.setEnableHttp2(http2SamplerPanel.isEnableHttp2Selected());
+      http2Sampler.setEnableHttp1(http2SamplerPanel.isEnableHttp1Selected());
+      http2Sampler.setAlpnEnabled(http2SamplerPanel.isAlpnEnabledSelected());
+      http2Sampler.setFallbackEnabled(http2SamplerPanel.isFallbackEnabledSelected());
+      http2Sampler.setProtocolErrorFallbackEnabled(
+          http2SamplerPanel.isProtocolErrorFallbackSelected());
+      http2Sampler.setAltSvcCacheEnabled(http2SamplerPanel.isAltSvcCacheSelected());
+      http2Sampler.setHttp1OnlyCacheEnabled(http2SamplerPanel.isHttp1OnlyCacheSelected());
+      http2Sampler.setH2cCacheEnabled(http2SamplerPanel.isH2cCacheSelected());
+      http2Sampler.setHttp2PriorKnowledgeEnabled(
+          http2SamplerPanel.isHttp2PriorKnowledgeSelected());
+      http2Sampler.setHappyEyeballsDelayMs(http2SamplerPanel.getHappyEyeballsDelayMs());
+      http2Sampler.setHttp3BrokenCooldownMs(http2SamplerPanel.getHttp3BrokenCooldownMs());
+      http2Sampler.setHttp1OnlyCooldownMs(http2SamplerPanel.getHttp1OnlyCooldownMs());
+      http2Sampler.setH2cCacheTtlMs(http2SamplerPanel.getH2cCacheTtlMs());
     }
   }
 
@@ -118,7 +137,39 @@ public class HTTP2SamplerGui extends AbstractSamplerGui {
       http2SamplerPanel.setProxyUser(http2Sampler.getPropertyAsString(HTTPSamplerBase.PROXYUSER));
       http2SamplerPanel.setProxyPass(http2Sampler.getPropertyAsString(HTTPSamplerBase.PROXYPASS));
       http2SamplerPanel.getUrlConfigGui().configure(http2Sampler);
+      String profile = http2Sampler.getProfile();
+      http2SamplerPanel.setProfile(profile);
+      http2SamplerPanel.applyProfileDefaultsFor(profile);
       http2SamplerPanel.setHttp1UpgradeSelected(http2Sampler.isHttp1UpgradeEnabled());
+      http2SamplerPanel.setEnableHttp3Selected(http2Sampler.getEnableHttp3());
+      http2SamplerPanel.setEnableHttp2Selected(http2Sampler.getEnableHttp2());
+      http2SamplerPanel.setEnableHttp1Selected(http2Sampler.getEnableHttp1());
+      http2SamplerPanel.setAlpnEnabledSelected(http2Sampler.getAlpnEnabled());
+      http2SamplerPanel.setFallbackEnabledSelected(http2Sampler.getFallbackEnabled());
+      http2SamplerPanel.setProtocolErrorFallbackSelected(
+          http2Sampler.getProtocolErrorFallbackEnabled());
+      http2SamplerPanel.setAltSvcCacheSelected(http2Sampler.getAltSvcCacheEnabled());
+      http2SamplerPanel.setHttp1OnlyCacheSelected(http2Sampler.getHttp1OnlyCacheEnabled());
+      http2SamplerPanel.setH2cCacheSelected(http2Sampler.getH2cCacheEnabled());
+      http2SamplerPanel.setHttp2PriorKnowledgeSelected(
+          http2Sampler.getHttp2PriorKnowledgeEnabled());
+      Long happyEyeballsDelay = http2Sampler.getHappyEyeballsDelayMs();
+      if (happyEyeballsDelay != null) {
+        http2SamplerPanel.setHappyEyeballsDelayMs(happyEyeballsDelay);
+      }
+      Long http3BrokenCooldown = http2Sampler.getHttp3BrokenCooldownMs();
+      if (http3BrokenCooldown != null) {
+        http2SamplerPanel.setHttp3BrokenCooldownMs(http3BrokenCooldown);
+      }
+      Long http1OnlyCooldown = http2Sampler.getHttp1OnlyCooldownMs();
+      if (http1OnlyCooldown != null) {
+        http2SamplerPanel.setHttp1OnlyCooldownMs(http1OnlyCooldown);
+      }
+      Long h2cCacheTtl = http2Sampler.getH2cCacheTtlMs();
+      if (h2cCacheTtl != null) {
+        http2SamplerPanel.setH2cCacheTtlMs(h2cCacheTtl);
+      }
+      http2SamplerPanel.setSelectedTabIndex(http2Sampler.getUiTabIndex());
     }
   }
 

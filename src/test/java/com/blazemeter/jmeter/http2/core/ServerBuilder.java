@@ -3,17 +3,23 @@ package com.blazemeter.jmeter.http2.core;
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.List;
 import java.util.function.Consumer;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
+import java.util.zip.DeflaterOutputStream;
 import java.util.zip.GZIPOutputStream;
+import org.eclipse.jetty.compression.brotli.BrotliCompression;
+import org.eclipse.jetty.compression.zstandard.ZstandardCompression;
+import org.eclipse.jetty.io.ArrayByteBufferPool;
+import org.eclipse.jetty.io.ByteBufferPool;
 import jodd.net.MimeTypes;
 import org.apache.jmeter.protocol.http.util.HTTPConstants;
 import org.eclipse.jetty.alpn.server.ALPNServerConnectionFactory;
@@ -21,12 +27,13 @@ import org.eclipse.jetty.http.HttpStatus;
 import org.eclipse.jetty.http2.server.HTTP2CServerConnectionFactory;
 import org.eclipse.jetty.http2.server.HTTP2ServerConnectionFactory;
 import org.eclipse.jetty.security.Authenticator;
-import org.eclipse.jetty.security.ConstraintMapping;
-import org.eclipse.jetty.security.ConstraintSecurityHandler;
+import org.eclipse.jetty.security.Constraint;
+import org.eclipse.jetty.security.SecurityHandler;
 import org.eclipse.jetty.security.HashLoginService;
 import org.eclipse.jetty.security.UserStore;
 import org.eclipse.jetty.security.authentication.BasicAuthenticator;
 import org.eclipse.jetty.security.authentication.DigestAuthenticator;
+import org.eclipse.jetty.util.security.Credential;
 import org.eclipse.jetty.server.ConnectionFactory;
 import org.eclipse.jetty.server.HttpConfiguration;
 import org.eclipse.jetty.server.HttpConnectionFactory;
@@ -34,11 +41,10 @@ import org.eclipse.jetty.server.SecureRequestCustomizer;
 import org.eclipse.jetty.server.Server;
 import org.eclipse.jetty.server.ServerConnector;
 import org.eclipse.jetty.server.SslConnectionFactory;
-import org.eclipse.jetty.servlet.ServletContextHandler;
-import org.eclipse.jetty.servlet.ServletHolder;
+import org.eclipse.jetty.ee10.servlet.ServletContextHandler;
+import org.eclipse.jetty.ee10.servlet.ServletHolder;
 import org.eclipse.jetty.util.component.LifeCycle;
-import org.eclipse.jetty.util.security.Constraint;
-import org.eclipse.jetty.util.security.Password;
+import org.eclipse.jetty.http.pathmap.PathSpec;
 import org.eclipse.jetty.util.ssl.SslContextFactory;
 
 public class ServerBuilder {
@@ -47,6 +53,11 @@ public class ServerBuilder {
   public static final int SERVER_PORT = 6666;
   public static final String SERVER_RESPONSE = "Hello World!";
   public static final String SERVER_IMAGE = "/test/image.png";
+  public static final String SERVER_IMAGE_0 = "/test/image-0.png";
+  public static final String SERVER_IMAGE_1 = "/test/image-1.png";
+  public static final String SERVER_IMAGE_2 = "/test/image-2.png";
+  public static final String SERVER_IMAGE_3 = "/test/image-3.png";
+  public static final String SERVER_IMAGE_4 = "/test/image-4.png";
   public static final String SERVER_PATH = "/test";
   public static final String SERVER_PATH_SET_COOKIES = "/test/set-cookies";
   public static final String SERVER_PATH_USE_COOKIES = "/test/use-cookies";
@@ -55,21 +66,40 @@ public class ServerBuilder {
   public static final String SERVER_PATH_200 = "/test/200";
   public static final String SERVER_PATH_SLOW = "/test/slow";
   public static final String SERVER_PATH_200_GZIP = "/test/gzip";
+  public static final String SERVER_PATH_200_DEFLATE = "/test/deflate";
+  public static final String SERVER_PATH_200_BROTLI = "/test/brotli";
+  public static final String SERVER_PATH_200_ZSTD = "/test/zstd";
   public static final String SERVER_PATH_200_EMBEDDED = "/test/embedded";
+  /** HTML with several same-origin images to stress concurrent embedded downloads. */
+  public static final String SERVER_PATH_200_EMBEDDED_MANY = "/test/embedded-many";
+  /**
+   * HTML whose embedded asset points at another HTTPS origin ({@code https://localhost:{port}/test/image.png}).
+   * Requires {@link #withCrossOriginEmbeddedAssetPort(int)} when building the server.
+   */
+  public static final String SERVER_PATH_200_EMBEDDED_CROSS_ORIGIN = "/test/embedded-cross-origin";
   public static final String SERVER_PATH_200_FILE_SENT = "/test/file";
   public static final String SERVER_PATH_BIG_RESPONSE = "/test/big-response";
   public static final String SERVER_PATH_400 = "/test/400";
   public static final String SERVER_PATH_302 = "/test/302";
   public static final String SERVER_PATH_200_WITH_BODY = "/test/body";
+  public static final String SERVER_PATH_JSON_ONLY = "/test/json-only";
   public static final String SERVER_PATH_DELETE_DATA = "/test/delete";
   public static final String BASIC_HTML_TEMPLATE = "<!DOCTYPE html><html><head><title>Page "
       + "Title</title></head><body><div><img src='image.png'></div></body></html>";
+  public static final String MULTI_IMAGE_HTML_TEMPLATE = "<!DOCTYPE html><html><body>"
+      + "<img src='image-0.png'/><img src='image-1.png'/><img src='image-2.png'/>"
+      + "<img src='image-3.png'/><img src='image-4.png'/>"
+      + "</body></html>";
   public static final byte[] BINARY_RESPONSE_BODY = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
+  private static final byte[] GZIP_RESPONSE_BODY = buildGzipResponseBody();
+  private static final byte[] DEFLATE_RESPONSE_BODY = buildDeflateResponseBody();
+  private static final AtomicInteger GZIP_REQUEST_COUNT = new AtomicInteger();
   public static final String AUTH_USERNAME = "username";
   public static final String AUTH_PASSWORD = "password";
   public static final String AUTH_REALM = "realm";
   public static final String KEYSTORE_PASSWORD = "storepwd";
   public static final int BIG_BUFFER_SIZE = 4 * 1024 * 1024;
+  private static final ByteBufferPool COMPRESSION_BUFFER_POOL = new ArrayByteBufferPool();
 
   private boolean ALPN;
   private final TeardownableServer server = new TeardownableServer();
@@ -81,6 +111,8 @@ public class ServerBuilder {
   private boolean clientAuth;
   private boolean isBasicAuth;
   private boolean isDigestAuth;
+  /** Optional port for {@link #SERVER_PATH_200_EMBEDDED_CROSS_ORIGIN}; {@code -1} if unset. */
+  private int crossOriginEmbeddedAssetPort = -1;
 
   public ServerBuilder() {
     httpsConfig.addCustomizer(new SecureRequestCustomizer());
@@ -126,6 +158,15 @@ public class ServerBuilder {
     return this;
   }
 
+  /**
+   * Enables {@link #SERVER_PATH_200_EMBEDDED_CROSS_ORIGIN} to reference an asset on {@code localhost}
+   * at the given HTTPS port.
+   */
+  public ServerBuilder withCrossOriginEmbeddedAssetPort(int assetOriginPortHttps) {
+    this.crossOriginEmbeddedAssetPort = assetOriginPortHttps;
+    return this;
+  }
+
   public TeardownableServer buildServer() {
 
     ALPNServerConnectionFactory alpn = new ALPNServerConnectionFactory();
@@ -150,15 +191,20 @@ public class ServerBuilder {
 
     server.addConnector(connector);
 
-    ServletContextHandler context = new ServletContextHandler(server, "/", true, false);
+    // In Jetty 12, ServletContextHandler constructor changed
+    ServletContextHandler context = new ServletContextHandler(ServletContextHandler.SESSIONS);
+    context.setContextPath("/");
+    server.setHandler(context);
     context.addServlet(new ServletHolder(buildServlet()), SERVER_PATH + "/*");
 
     if (isBasicAuth) {
-      configureAuthHandler(server, new BasicAuthenticator(), Constraint.__BASIC_AUTH);
+      // In Jetty 12, Constraint.__BASIC_AUTH is replaced by using BasicAuthenticator directly
+      configureAuthHandler(server, new BasicAuthenticator(), "BASIC");
       return server;
     }
     if (isDigestAuth) {
-      configureAuthHandler(server, new DigestAuthenticator(), Constraint.__DIGEST_AUTH);
+      // In Jetty 12, Constraint.__DIGEST_AUTH is replaced by using DigestAuthenticator directly
+      configureAuthHandler(server, new DigestAuthenticator(), "DIGEST");
     }
     return server;
   }
@@ -177,7 +223,7 @@ public class ServerBuilder {
     ServerConnector connector =
         new ServerConnector(server, 1, 1,
             connectionFactories.toArray(new ConnectionFactory[0]));
-    connector.setPort(SERVER_PORT);
+    connector.setPort(0);
     connector.setReusePort(false);
     return connector;
   }
@@ -238,12 +284,24 @@ public class ServerBuilder {
             break;
           case SERVER_PATH_302:
             resp.addHeader(HTTPConstants.HEADER_LOCATION,
-                "https://localhost:" + SERVER_PORT + SERVER_PATH_200);
+                "https://localhost:" + req.getLocalPort() + SERVER_PATH_200);
             resp.setStatus(HttpStatus.FOUND_302);
             break;
           case SERVER_PATH_200_WITH_BODY:
             String bodyRequest = req.getReader().lines().collect(Collectors.joining());
             resp.getWriter().write(bodyRequest);
+            break;
+          case SERVER_PATH_JSON_ONLY:
+            String contentType = req.getContentType();
+            if (contentType == null || !contentType.toLowerCase().startsWith("application/json")) {
+              resp.setStatus(HttpStatus.UNSUPPORTED_MEDIA_TYPE_415);
+              resp.setContentType("text/html; charset=utf-8");
+              resp.getWriter().write("Unsupported Media Type");
+              break;
+            }
+            resp.setStatus(HttpStatus.OK_200);
+            resp.setContentType("application/json");
+            resp.getWriter().write("{\"ok\":true}");
             break;
           case SERVER_PATH_SET_COOKIES:
             resp.addHeader(HTTPConstants.HEADER_SET_COOKIE,
@@ -261,6 +319,32 @@ public class ServerBuilder {
             resp.addHeader(HTTPConstants.EXPIRES,
                 "Sat, 25 Sep 2041 00:00:00 GMT");
             break;
+          case SERVER_PATH_200_EMBEDDED_MANY:
+            resp.setContentType(MimeTypes.MIME_TEXT_HTML + ";" + StandardCharsets.UTF_8.name());
+            resp.getWriter().write(MULTI_IMAGE_HTML_TEMPLATE);
+            resp.addHeader(HTTPConstants.EXPIRES,
+                "Sat, 25 Sep 2041 00:00:00 GMT");
+            break;
+          case SERVER_PATH_200_EMBEDDED_CROSS_ORIGIN:
+            if (crossOriginEmbeddedAssetPort < 0) {
+              resp.sendError(HttpStatus.NOT_FOUND_404,
+                  "Cross-origin embedded port not configured");
+              break;
+            }
+            resp.setStatus(HttpStatus.OK_200);
+            resp.setContentType(MimeTypes.MIME_TEXT_HTML + ";" + StandardCharsets.UTF_8.name());
+            resp.getWriter().write("<!DOCTYPE html><html><body><img src='" + HTTPConstants.PROTOCOL_HTTPS
+                + "://" + HOST_NAME + ":" + crossOriginEmbeddedAssetPort + SERVER_IMAGE
+                + "'/></body></html>");
+            break;
+          case SERVER_IMAGE_0:
+          case SERVER_IMAGE_1:
+          case SERVER_IMAGE_2:
+          case SERVER_IMAGE_3:
+          case SERVER_IMAGE_4:
+            resp.setContentType("image/png");
+            resp.getOutputStream().write(new byte[] {1, 2, 3, 4, 5});
+            break;
           case SERVER_IMAGE:
             resp.getOutputStream().write(new byte[] {1, 2, 3, 4, 5});
           case SERVER_PATH_200_FILE_SENT:
@@ -269,10 +353,39 @@ public class ServerBuilder {
             resp.getOutputStream().write(requestBody);
             break;
           case SERVER_PATH_200_GZIP:
+            GZIP_REQUEST_COUNT.incrementAndGet();
             resp.addHeader("Content-Encoding", "gzip");
-            GZIPOutputStream gzipOutputStream = new GZIPOutputStream(resp.getOutputStream());
-            gzipOutputStream.write(BINARY_RESPONSE_BODY);
-            gzipOutputStream.close();
+            resp.addHeader("X-Gzip-Req-Protocol", req.getProtocol());
+            resp.addHeader("Connection", "close");
+            resp.setContentLength(GZIP_RESPONSE_BODY.length);
+            resp.getOutputStream().write(GZIP_RESPONSE_BODY);
+            resp.flushBuffer();
+            resp.getOutputStream().close();
+            break;
+          case SERVER_PATH_200_DEFLATE:
+            resp.addHeader("Content-Encoding", "deflate");
+            resp.setContentLength(DEFLATE_RESPONSE_BODY.length);
+            resp.getOutputStream().write(DEFLATE_RESPONSE_BODY);
+            resp.flushBuffer();
+            resp.getOutputStream().close();
+            break;
+          case SERVER_PATH_200_BROTLI:
+            resp.addHeader("Content-Encoding", "br");
+            BrotliCompression brotliCompression = new BrotliCompression();
+            brotliCompression.setByteBufferPool(COMPRESSION_BUFFER_POOL);
+            try (java.io.OutputStream brotliOutputStream =
+                brotliCompression.newEncoderOutputStream(resp.getOutputStream())) {
+              brotliOutputStream.write(BINARY_RESPONSE_BODY);
+            }
+            break;
+          case SERVER_PATH_200_ZSTD:
+            resp.addHeader("Content-Encoding", "zstd");
+            ZstandardCompression zstdCompression = new ZstandardCompression();
+            zstdCompression.setByteBufferPool(COMPRESSION_BUFFER_POOL);
+            try (java.io.OutputStream zstdOutputStream =
+                zstdCompression.newEncoderOutputStream(resp.getOutputStream())) {
+              zstdOutputStream.write(BINARY_RESPONSE_BODY);
+            }
             break;
           case SERVER_PATH_DELETE_DATA:
             resp.setStatus(HttpStatus.OK_200);
@@ -286,40 +399,69 @@ public class ServerBuilder {
     };
   }
 
-
-  private void configureAuthHandler(Server server, Authenticator authenticator,
-                                    String mechanism) {
-    ConstraintSecurityHandler securityHandler = new ConstraintSecurityHandler();
-    String[] roles = new String[] {"can-access"};
-    securityHandler.setAuthenticator(authenticator);
-    securityHandler.setConstraintMappings(
-        Collections.singletonList(buildConstraintMapping(mechanism, roles)));
-    securityHandler.setRealmName(AUTH_REALM);
-    securityHandler.setLoginService(buildLoginService(roles));
-    securityHandler.setHandler(server.getHandler());
-    server.setHandler(securityHandler);
+  private static byte[] buildGzipResponseBody() {
+    try (ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+         GZIPOutputStream gzipOutputStream = new GZIPOutputStream(outputStream)) {
+      gzipOutputStream.write(BINARY_RESPONSE_BODY);
+      gzipOutputStream.finish();
+      return outputStream.toByteArray();
+    } catch (IOException e) {
+      throw new ExceptionInInitializerError(e);
+    }
   }
 
-  private ConstraintMapping buildConstraintMapping(String mechanism, String[] roles) {
-    Constraint constraint = new Constraint();
-    constraint.setName(mechanism);
-    constraint.setAuthenticate(true);
-    constraint.setRoles(roles);
+  private static byte[] buildDeflateResponseBody() {
+    try (ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+         DeflaterOutputStream deflateOutputStream = new DeflaterOutputStream(outputStream)) {
+      deflateOutputStream.write(BINARY_RESPONSE_BODY);
+      deflateOutputStream.finish();
+      return outputStream.toByteArray();
+    } catch (IOException e) {
+      throw new ExceptionInInitializerError(e);
+    }
+  }
 
-    ConstraintMapping ret = new ConstraintMapping();
-    ret.setPathSpec("/*");
-    ret.setConstraint(constraint);
-    return ret;
+
+  // In Jetty 12, security APIs changed:
+  // - ConstraintSecurityHandler → SecurityHandler.PathMapped
+  // - ConstraintMapping → Use PathMapped.put() with PathSpec and Constraint
+  // - Constraint is now an interface with static factory methods from()
+  // - Password → Credential.getCredential()
+  private void configureAuthHandler(Server server, Authenticator authenticator,
+                                   String mechanism) {
+    SecurityHandler.PathMapped securityHandler = new SecurityHandler.PathMapped();
+    String[] roles = new String[] {"can-access"};
+    
+    // Create constraint using Constraint.from() with roles
+    // In Jetty 12, when roles are specified, must use SPECIFIC_ROLE, not KNOWN_ROLE
+    Constraint constraint = Constraint.from(Constraint.Transport.ANY, 
+        Constraint.Authorization.SPECIFIC_ROLE, 
+        java.util.Set.of(roles));
+    
+    // Use PathSpec to map constraint to all paths
+    PathSpec pathSpec = PathSpec.from("/*");
+    securityHandler.put(pathSpec, constraint);
+    
+    securityHandler.setAuthenticator(authenticator);
+    securityHandler.setRealmName(AUTH_REALM);
+    securityHandler.setLoginService(buildLoginService(roles));
+    
+    // Get the current handler and wrap it with security
+    org.eclipse.jetty.server.Handler currentHandler = server.getHandler();
+    securityHandler.setHandler(currentHandler);
+    server.setHandler(securityHandler);
   }
 
   private HashLoginService buildLoginService(String[] roles) {
     UserStore userStore = new UserStore();
-    userStore.addUser(AUTH_USERNAME, new Password(AUTH_PASSWORD), roles);
+    // In Jetty 12, Password is replaced by Credential.getCredential()
+    Credential credential = Credential.getCredential(AUTH_PASSWORD);
+    userStore.addUser(AUTH_USERNAME, credential, roles);
 
-    HashLoginService ret = new HashLoginService();
-    ret.setName(AUTH_REALM);
-    ret.setUserStore(userStore);
-    return ret;
+    HashLoginService loginService = new HashLoginService();
+    loginService.setName(AUTH_REALM);
+    loginService.setUserStore(userStore);
+    return loginService;
   }
 
   public static class TeardownableServer extends Server {
@@ -352,7 +494,3 @@ public class ServerBuilder {
     }
   }
 }
-
-
-
-
