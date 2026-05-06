@@ -28,7 +28,7 @@ public class HTTP2ControllerGUI extends AbstractControllerGui {
 
   @Override
   public String getStaticLabel() {
-    return "bzm - HTTP2 Async Controller";
+    return "bzm - HTTP Async Controller";
   }
 
   @Override

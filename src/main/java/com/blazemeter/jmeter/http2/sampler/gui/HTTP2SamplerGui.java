@@ -30,7 +30,7 @@ public class HTTP2SamplerGui extends AbstractSamplerGui {
       jmxSaver.registerConverter(new HTTP2SamplerConverter(jmxSaver.getMapper()),
           XStream.PRIORITY_VERY_HIGH);
     } catch (IllegalAccessException | NoSuchFieldException e) {
-      LOG.error("Error while creating HTTP2 jmx converter", e);
+      LOG.error("Error while creating BlazeMeter HTTP jmx converter", e);
     }
   }
 
@@ -48,7 +48,7 @@ public class HTTP2SamplerGui extends AbstractSamplerGui {
 
   @Override
   public String getStaticLabel() {
-    return "bzm - HTTP2 Sampler";
+    return "bzm - HTTP Sampler";
   }
 
   @Override

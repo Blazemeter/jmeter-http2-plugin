@@ -16,8 +16,8 @@ _**IMPORTANT:** Java 17 required_
 
 2. Create a Thread Group.
 
-3. Add the HTTP2 Sampler (Add-> Sampler-> bzm - HTTP2 Sampler).
-
+3. Add the HTTP Sampler (Add-> Sampler-> bzm - HTTP Sampler).
+s
 ![](docs/addHTTP2Sampler.png)
 
 After that you can add timers, assertions, listeners, etc.
