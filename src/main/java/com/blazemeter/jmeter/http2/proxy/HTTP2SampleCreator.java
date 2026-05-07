@@ -20,7 +20,13 @@ import org.slf4j.LoggerFactory;
 
 public class HTTP2SampleCreator extends AbstractSamplerCreator {
 
-  private static final String PROXY_ENABLED = "HTTP2Sampler.proxy_enabled";
+  /**
+   * Controls whether this creator participates in JMeter's HTTP(S) Test Script Recorder. When
+   * {@code true} (default), the standard HTTP sampler path is used for recorded samples; when
+   * {@code false}, recorded traffic is built as {@link HTTP2Sampler} elements.
+   */
+  public static final String PROXY_ENABLED = "HTTP2Sampler.proxy_enabled"; // $NON-NLS-1$
+
   private static final Logger LOG = LoggerFactory.getLogger(HTTP2SampleCreator.class);
 
   private static final SamplerCreator DEFAULT_SAMPLER_CREATOR = new DefaultSamplerCreator();
@@ -31,7 +37,8 @@ public class HTTP2SampleCreator extends AbstractSamplerCreator {
   public String[] getManagedContentTypes() {
     if (proxyEnabled) {
       LOG.info("BlazeMeter's HTTP is enabled by default for Proxy Recording.");
-      LOG.info("Disable BlazeMeter HTTP for Proxy Recording with property {}=false", PROXY_ENABLED);
+      LOG.info("Disable BlazeMeter HTTP for Proxy Recording with property {}=false",
+          PROXY_ENABLED);
       return ArrayUtils.EMPTY_STRING_ARRAY;
     }
     lowLevelDebug("getManagedContentTypes()");
