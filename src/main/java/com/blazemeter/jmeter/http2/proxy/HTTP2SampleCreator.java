@@ -1,5 +1,6 @@
 package com.blazemeter.jmeter.http2.proxy;
 
+import static com.blazemeter.jmeter.http2.core.LowLevelDebugLog.lowLevelDebug;
 import static org.apache.jmeter.util.JMeterUtils.getPropDefault;
 
 import com.blazemeter.jmeter.http2.sampler.HTTP2Sampler;
@@ -24,16 +25,16 @@ public class HTTP2SampleCreator extends AbstractSamplerCreator {
 
   private static final SamplerCreator DEFAULT_SAMPLER_CREATOR = new DefaultSamplerCreator();
 
-  private final boolean proxyEnabled = getPropDefault(PROXY_ENABLED, false);
+  private final boolean proxyEnabled = getPropDefault(PROXY_ENABLED, true);
 
   @Override
   public String[] getManagedContentTypes() {
-    if (!proxyEnabled) {
-      LOG.info("HTTP2 Sample disable by default for proxy recording");
-      LOG.info("Enable HTTP2 for proxy recording with property {}=true", PROXY_ENABLED);
+    if (proxyEnabled) {
+      LOG.info("BlazeMeter's HTTP is enabled by default for Proxy Recording.");
+      LOG.info("Disable BlazeMeter HTTP for Proxy Recording with property {}=false", PROXY_ENABLED);
       return ArrayUtils.EMPTY_STRING_ARRAY;
     }
-    LOG.debug("getManagedContentTypes()");
+    lowLevelDebug("getManagedContentTypes()");
     String[] contentTypes = new String[] {
         "text/plain", "text/html", "text/xml", "application/xhtml+xml", "application/octet-stream",
         "application/x-www-form-urlencoded",
@@ -57,16 +58,16 @@ public class HTTP2SampleCreator extends AbstractSamplerCreator {
         contentTypesList.add(contentType + ";charset=" + charset);
       }
     }
-    LOG.debug(contentTypesList.toArray().toString());
+    lowLevelDebug("managed content types: {}", contentTypesList);
     return contentTypesList.toArray(new String[0]);
   }
 
   @Override
   public HTTPSamplerBase createSampler(HttpRequestHdr httpRequestHdr, Map<String, String> map,
                                        Map<String, String> map1) {
-    LOG.debug("createSampler()");
+    lowLevelDebug("createSampler()");
 
-    LOG.debug(httpRequestHdr.getUrl());
+    lowLevelDebug("url: {}", httpRequestHdr.getUrl());
 
     HTTP2Sampler sampler = new HTTP2Sampler();
 
@@ -83,10 +84,10 @@ public class HTTP2SampleCreator extends AbstractSamplerCreator {
   @Override
   public void populateSampler(HTTPSamplerBase httpSamplerBase, HttpRequestHdr httpRequestHdr,
                               Map<String, String> map, Map<String, String> map1) throws Exception {
-    LOG.debug("populateSampler()");
+    lowLevelDebug("populateSampler()");
     // Force the default sampler gui to HTTP2
-    LOG.debug(httpRequestHdr.getUrl());
-    LOG.debug(httpRequestHdr.getRawPostData().toString());
+    lowLevelDebug("url: {}", httpRequestHdr.getUrl());
+    lowLevelDebug("raw post data: {}", httpRequestHdr.getRawPostData());
 
     // In Jetty 12, Brotli compression is now supported
     // We no longer need to remove "br" from Accept-Encoding header

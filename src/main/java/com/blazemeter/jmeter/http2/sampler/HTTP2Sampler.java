@@ -166,7 +166,7 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
   }
 
   private void initializeDefaults() {
-    setName("HTTP2 Sampler");
+    setName("bzm - HTTP Sampler");
     setMethod(HTTPConstants.GET);
     setArguments(new Arguments());
     this.syncRequest = getPropertyAsBoolean(SYNC_REQUEST, true);

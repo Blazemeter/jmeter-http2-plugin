@@ -13,12 +13,12 @@ public class ProtocolErrorException extends IOException {
   private final String originalMessage;
 
   public ProtocolErrorException(String message) {
-    super("HTTP/2 protocol_error: " + message);
+    super("HTTP protocol_error: " + message);
     this.originalMessage = message;
   }
 
   public ProtocolErrorException(String message, Throwable cause) {
-    super("HTTP/2 protocol_error: " + message, cause);
+    super("HTTP protocol_error: " + message, cause);
     this.originalMessage = message;
   }
 
