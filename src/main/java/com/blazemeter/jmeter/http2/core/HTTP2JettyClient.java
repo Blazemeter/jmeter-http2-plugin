@@ -5,6 +5,7 @@ import static com.blazemeter.jmeter.http2.core.LowLevelDebugLog.lowLevelDebug;
 import com.blazemeter.jmeter.http2.core.jetty.custom.http2.CustomClientConnectionFactoryOverHTTP2;
 import com.blazemeter.jmeter.http2.core.jetty.custom.http3.CustomClientConnectionFactoryOverHTTP3;
 import com.blazemeter.jmeter.http2.sampler.HTTP2Sampler;
+import com.blazemeter.jmeter.http2.util.BzmHttpPluginProperties;
 import com.github.luben.zstd.ZstdInputStream;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -707,52 +708,52 @@ public class HTTP2JettyClient {
     ProfileDefaults defaults = resolveProfileDefaults(profileConfig);
     requestTimeout = JMeterUtils.getPropDefault("HTTPSampler.response_timeout", 0);
     byteBufferPoolFactor =
-        JMeterUtils.getPropDefault("httpJettyClient.byteBufferPoolFactor", byteBufferPoolFactor);
+        Integer.parseInt(BzmHttpPluginProperties.getPropDefault(
+            "httpJettyClient.byteBufferPoolFactor", String.valueOf(byteBufferPoolFactor)));
     maxBufferSize =
-        Integer.parseInt(JMeterUtils.getPropDefault("httpJettyClient.maxBufferSize",
+        Integer.parseInt(BzmHttpPluginProperties.getPropDefault("httpJettyClient.maxBufferSize",
             String.valueOf(2 * 1024 * 1024)));
     minThreads = Integer
-        .parseInt(JMeterUtils.getPropDefault("httpJettyClient.minThreads",
+        .parseInt(BzmHttpPluginProperties.getPropDefault("httpJettyClient.minThreads",
             String.valueOf(minThreads)));
-    maxThreadsConfigured =
-        JMeterUtils.getJMeterProperties().containsKey("httpJettyClient.maxThreads");
+    maxThreadsConfigured = BzmHttpPluginProperties.isDefined("httpJettyClient.maxThreads");
     maxThreads = Integer
-        .parseInt(JMeterUtils.getPropDefault("httpJettyClient.maxThreads",
+        .parseInt(BzmHttpPluginProperties.getPropDefault("httpJettyClient.maxThreads",
             String.valueOf(maxThreads)));
     maxRequestsQueuedPerDestination = Integer
-        .parseInt(JMeterUtils.getPropDefault("httpJettyClient.maxRequestsQueuedPerDestination",
+        .parseInt(BzmHttpPluginProperties.getPropDefault("httpJettyClient.maxRequestsQueuedPerDestination",
             String.valueOf(maxRequestsQueuedPerDestination)));
     maxRequestsPerConnection = Integer
-        .parseInt(JMeterUtils.getPropDefault("httpJettyClient.maxRequestsPerConnection",
+        .parseInt(BzmHttpPluginProperties.getPropDefault("httpJettyClient.maxRequestsPerConnection",
             String.valueOf(maxRequestsPerConnection)));
     maxConcurrentPushedStreams = Integer
-        .parseInt(JMeterUtils.getPropDefault("httpJettyClient.maxConcurrentPushedStreams",
+        .parseInt(BzmHttpPluginProperties.getPropDefault("httpJettyClient.maxConcurrentPushedStreams",
             String.valueOf(maxConcurrentPushedStreams)));
     maxConnectionsPerDestination =
         Integer.parseInt(
-            JMeterUtils.getPropDefault("httpJettyClient.maxConnectionsPerDestination",
+            BzmHttpPluginProperties.getPropDefault("httpJettyClient.maxConnectionsPerDestination",
                 String.valueOf(maxConnectionsPerDestination)));
     strictEventOrdering =
-        Boolean.parseBoolean(JMeterUtils.getPropDefault("httpJettyClient.strictEventOrdering",
+        Boolean.parseBoolean(BzmHttpPluginProperties.getPropDefault("httpJettyClient.strictEventOrdering",
             String.valueOf(strictEventOrdering)));
     removeIdleDestinations =
-        Boolean.parseBoolean(JMeterUtils.getPropDefault("httpJettyClient.removeIdleDestinations",
+        Boolean.parseBoolean(BzmHttpPluginProperties.getPropDefault("httpJettyClient.removeIdleDestinations",
             String.valueOf(removeIdleDestinations)));
     idleTimeout =
-        Integer.parseInt(JMeterUtils.getPropDefault("httpJettyClient.idleTimeout",
+        Integer.parseInt(BzmHttpPluginProperties.getPropDefault("httpJettyClient.idleTimeout",
             String.valueOf(idleTimeout)));
-    sharedThreadPoolEnabled = JMeterUtils.getPropDefault("httpJettyClient.sharedThreadPool", false);
+    sharedThreadPoolEnabled = BzmHttpPluginProperties.getPropDefault("httpJettyClient.sharedThreadPool", false);
     if (sharedThreadPoolEnabled && !maxThreadsConfigured) {
       maxThreads = 500;
     }
     quicMaxIdleTimeout = Integer
-        .parseInt(JMeterUtils.getPropDefault("httpJettyClient.quicMaxIdleTimeout",
+        .parseInt(BzmHttpPluginProperties.getPropDefault("httpJettyClient.quicMaxIdleTimeout",
             String.valueOf(quicMaxIdleTimeout)));
     quicMaxBidirectionalStreams = Integer
-        .parseInt(JMeterUtils.getPropDefault("httpJettyClient.quicMaxBidirectionalStreams",
+        .parseInt(BzmHttpPluginProperties.getPropDefault("httpJettyClient.quicMaxBidirectionalStreams",
             String.valueOf(quicMaxBidirectionalStreams)));
     quicMaxUnidirectionalStreams = Integer
-        .parseInt(JMeterUtils.getPropDefault("httpJettyClient.quicMaxUnidirectionalStreams",
+        .parseInt(BzmHttpPluginProperties.getPropDefault("httpJettyClient.quicMaxUnidirectionalStreams",
             String.valueOf(quicMaxUnidirectionalStreams)));
     enableHttp3 = getBooleanProp("httpJettyClient.enableHttp3",
         profileConfig != null ? profileConfig.getEnableHttp3() : null,
@@ -781,9 +782,10 @@ public class HTTP2JettyClient {
         profileConfig != null ? profileConfig.getH2cCacheEnabled() : null,
         defaults.h2cCacheEnabled);
     protocolErrorFallbackEnabled = resolveProtocolErrorFallback(defaults, profileConfig);
-    goawayRetryEnabled = Boolean.parseBoolean(JMeterUtils.getPropDefault(
-        "httpJettyClient.goawayRetryEnabled", "true"));
-    maxGoawayRetries = Integer.parseInt(JMeterUtils.getPropDefault(
+    goawayRetryEnabled =
+        Boolean.parseBoolean(BzmHttpPluginProperties.getPropDefault(
+            "httpJettyClient.goawayRetryEnabled", "true"));
+    maxGoawayRetries = Integer.parseInt(BzmHttpPluginProperties.getPropDefault(
         "httpJettyClient.maxGoawayRetries", String.valueOf(maxGoawayRetries)));
     if (maxGoawayRetries < 0) {
       maxGoawayRetries = 0;
@@ -801,14 +803,15 @@ public class HTTP2JettyClient {
     http2PriorKnowledgeEnabled = getBooleanProp("httpJettyClient.http2PriorKnowledge",
         profileConfig != null ? profileConfig.getHttp2PriorKnowledgeEnabled() : null,
         defaults.http2PriorKnowledgeEnabled);
-    http3PriorKnowledgeEnabled = Boolean.parseBoolean(JMeterUtils.getPropDefault(
+    http3PriorKnowledgeEnabled = Boolean.parseBoolean(BzmHttpPluginProperties.getPropDefault(
         "httpJettyClient.http3PriorKnowledge", "false"));
     happyEyeballsDelayMs = getLongProp("httpJettyClient.happyEyeballsDelayMs",
         profileConfig != null ? profileConfig.getHappyEyeballsDelayMs() : null,
         defaults.happyEyeballsDelayMs);
     // Default reduced to 4096 (Issue #12071)
-    settingsMaxHeaderListSize = Integer.parseInt(JMeterUtils.getPropDefault(
-        "httpJettyClient.settingsMaxHeaderListSize", "4096"));
+    settingsMaxHeaderListSize =
+        Integer.parseInt(BzmHttpPluginProperties.getPropDefault(
+            "httpJettyClient.settingsMaxHeaderListSize", "4096"));
 
     if (!enableHttp1 && !enableHttp2 && !enableHttp3) {
       LOG.warn("All protocols disabled via configuration; enabling HTTP/1.1 "
@@ -836,8 +839,9 @@ public class HTTP2JettyClient {
     if (overrideValue != null) {
       return overrideValue;
     }
-    if (JMeterUtils.getJMeterProperties().containsKey(key)) {
-      return Boolean.parseBoolean(JMeterUtils.getJMeterProperties().getProperty(key));
+    String raw = BzmHttpPluginProperties.resolveRaw(key);
+    if (raw != null) {
+      return Boolean.parseBoolean(raw);
     }
     return defaultValue;
   }
@@ -846,8 +850,12 @@ public class HTTP2JettyClient {
     if (overrideValue != null) {
       return overrideValue;
     }
-    if (JMeterUtils.getJMeterProperties().containsKey(key)) {
-      return Long.parseLong(JMeterUtils.getJMeterProperties().getProperty(key));
+    String raw = BzmHttpPluginProperties.resolveRaw(key);
+    if (raw != null) {
+      String trimmed = raw.trim();
+      if (!trimmed.isEmpty()) {
+        return Long.parseLong(trimmed);
+      }
     }
     return defaultValue;
   }
@@ -857,14 +865,13 @@ public class HTTP2JettyClient {
     if (profileConfig != null && profileConfig.getProtocolErrorFallbackEnabled() != null) {
       return profileConfig.getProtocolErrorFallbackEnabled();
     }
-    if (JMeterUtils.getJMeterProperties()
-        .containsKey("httpJettyClient.protocolErrorFallbackEnabled")) {
-      return Boolean.parseBoolean(JMeterUtils.getJMeterProperties()
-          .getProperty("httpJettyClient.protocolErrorFallbackEnabled"));
+    String fb = BzmHttpPluginProperties.resolveRaw("httpJettyClient.protocolErrorFallbackEnabled");
+    if (fb != null) {
+      return Boolean.parseBoolean(fb);
     }
-    if (JMeterUtils.getJMeterProperties().containsKey("httpJettyClient.disableFallback")) {
-      return !Boolean.parseBoolean(JMeterUtils.getJMeterProperties()
-          .getProperty("httpJettyClient.disableFallback"));
+    String df = BzmHttpPluginProperties.resolveRaw("httpJettyClient.disableFallback");
+    if (df != null) {
+      return !Boolean.parseBoolean(df);
     }
     return defaults.protocolErrorFallbackEnabled;
   }
@@ -872,9 +879,9 @@ public class HTTP2JettyClient {
   private ProfileDefaults resolveProfileDefaults(HTTP2ClientProfileConfig profileConfig) {
     String profile = profileConfig != null ? profileConfig.getProfile() : null;
     if (profile == null || profile.trim().isEmpty()) {
-      String rawProfile = JMeterUtils.getJMeterProperties()
-          .getProperty(PROFILE_PROPERTY, PROFILE_BROWSER_LIKE);
-      profile = rawProfile == null ? PROFILE_BROWSER_LIKE : rawProfile;
+      String rawProfile =
+          BzmHttpPluginProperties.getPropDefault(PROFILE_PROPERTY, PROFILE_BROWSER_LIKE).trim();
+      profile = rawProfile.isEmpty() ? PROFILE_BROWSER_LIKE : rawProfile;
     }
     profile = profile.trim().toLowerCase(Locale.ROOT);
     switch (profile) {
@@ -2810,8 +2817,8 @@ public class HTTP2JettyClient {
     AuthenticationStore authenticationStoreH2cUpgrade =
         httpClientH2cUpgrade.getAuthenticationStore();
     String authName = auth.getMechanism().name();
-    if (authName.equals(AuthManager.Mechanism.BASIC.name()) && JMeterUtils.getPropDefault(
-        "httpJettyClient.auth.preemptive", false)) {
+    if (authName.equals(AuthManager.Mechanism.BASIC.name())
+        && BzmHttpPluginProperties.getPropDefault("httpJettyClient.auth.preemptive", false)) {
       BasicAuthentication.BasicResult result =
           new BasicAuthentication.BasicResult(URI.create(auth.getURL()), auth.getUser(),
               auth.getPass());
@@ -3059,7 +3066,7 @@ public class HTTP2JettyClient {
     if (request == null || url == null || authManager == null) {
       return;
     }
-    if (!JMeterUtils.getPropDefault("httpJettyClient.auth.preemptive", false)) {
+    if (!BzmHttpPluginProperties.getPropDefault("httpJettyClient.auth.preemptive", false)) {
       return;
     }
     HttpFields headers = request.getHeaders();

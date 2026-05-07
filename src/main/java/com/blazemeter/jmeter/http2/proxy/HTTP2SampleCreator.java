@@ -1,10 +1,10 @@
 package com.blazemeter.jmeter.http2.proxy;
 
 import static com.blazemeter.jmeter.http2.core.LowLevelDebugLog.lowLevelDebug;
-import static org.apache.jmeter.util.JMeterUtils.getPropDefault;
 
 import com.blazemeter.jmeter.http2.sampler.HTTP2Sampler;
 import com.blazemeter.jmeter.http2.sampler.gui.HTTP2SamplerGui;
+import com.blazemeter.jmeter.http2.util.BzmHttpPluginProperties;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Map;
@@ -20,25 +20,24 @@ import org.slf4j.LoggerFactory;
 
 public class HTTP2SampleCreator extends AbstractSamplerCreator {
 
-  /**
-   * Controls whether this creator participates in JMeter's HTTP(S) Test Script Recorder. When
-   * {@code true} (default), the standard HTTP sampler path is used for recorded samples; when
-   * {@code false}, recorded traffic is built as {@link HTTP2Sampler} elements.
-   */
+  /** Resolved with {@link BzmHttpPluginProperties} (effective key {@code blazemeter.http.*}). */
   public static final String PROXY_ENABLED = "HTTP2Sampler.proxy_enabled"; // $NON-NLS-1$
 
   private static final Logger LOG = LoggerFactory.getLogger(HTTP2SampleCreator.class);
 
   private static final SamplerCreator DEFAULT_SAMPLER_CREATOR = new DefaultSamplerCreator();
 
-  private final boolean proxyEnabled = getPropDefault(PROXY_ENABLED, true);
+  private final boolean proxyEnabled =
+      BzmHttpPluginProperties.getPropDefault(PROXY_ENABLED, true);
 
   @Override
   public String[] getManagedContentTypes() {
     if (proxyEnabled) {
-      LOG.info("BlazeMeter's HTTP is enabled by default for Proxy Recording.");
-      LOG.info("Disable BlazeMeter HTTP for Proxy Recording with property {}=false",
-          PROXY_ENABLED);
+      LOG.info(
+          "HTTP(S) Test Script Recorder is recording with the standard HTTP sampler.");
+      LOG.info(
+          "To record with BlazeMeter HTTP: Tools → BlazeMeter HTTP → Enable Recording "
+              + "in JMeter Proxy Recorder (restart when prompted).");
       return ArrayUtils.EMPTY_STRING_ARRAY;
     }
     lowLevelDebug("getManagedContentTypes()");
