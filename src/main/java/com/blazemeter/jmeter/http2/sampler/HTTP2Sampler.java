@@ -224,7 +224,8 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
       if (http1UpgradeEnabled && !profileInferenceWarningLogged) {
         LOG.warn(
             "Profile not set; inferring 'legacy' because HTTP/1 upgrade is enabled. "
-                + "Consider setting Profile explicitly (Client Behavior panel) to avoid ambiguity.");
+                + "Consider setting Profile explicitly (Client Behavior panel) to avoid "
+                + "ambiguity.");
         profileInferenceWarningLogged = true;
       }
       return http1UpgradeEnabled ? "legacy" : "browser-like";

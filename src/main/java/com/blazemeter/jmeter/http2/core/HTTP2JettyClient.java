@@ -720,40 +720,49 @@ public class HTTP2JettyClient {
     maxThreads = Integer
         .parseInt(BzmHttpPluginProperties.getPropDefault("httpJettyClient.maxThreads",
             String.valueOf(maxThreads)));
-    maxRequestsQueuedPerDestination = Integer
-        .parseInt(BzmHttpPluginProperties.getPropDefault("httpJettyClient.maxRequestsQueuedPerDestination",
+    maxRequestsQueuedPerDestination =
+        Integer.parseInt(BzmHttpPluginProperties.getPropDefault(
+            "httpJettyClient.maxRequestsQueuedPerDestination",
             String.valueOf(maxRequestsQueuedPerDestination)));
-    maxRequestsPerConnection = Integer
-        .parseInt(BzmHttpPluginProperties.getPropDefault("httpJettyClient.maxRequestsPerConnection",
+    maxRequestsPerConnection =
+        Integer.parseInt(BzmHttpPluginProperties.getPropDefault(
+            "httpJettyClient.maxRequestsPerConnection",
             String.valueOf(maxRequestsPerConnection)));
-    maxConcurrentPushedStreams = Integer
-        .parseInt(BzmHttpPluginProperties.getPropDefault("httpJettyClient.maxConcurrentPushedStreams",
+    maxConcurrentPushedStreams =
+        Integer.parseInt(BzmHttpPluginProperties.getPropDefault(
+            "httpJettyClient.maxConcurrentPushedStreams",
             String.valueOf(maxConcurrentPushedStreams)));
     maxConnectionsPerDestination =
-        Integer.parseInt(
-            BzmHttpPluginProperties.getPropDefault("httpJettyClient.maxConnectionsPerDestination",
-                String.valueOf(maxConnectionsPerDestination)));
+        Integer.parseInt(BzmHttpPluginProperties.getPropDefault(
+            "httpJettyClient.maxConnectionsPerDestination",
+            String.valueOf(maxConnectionsPerDestination)));
     strictEventOrdering =
-        Boolean.parseBoolean(BzmHttpPluginProperties.getPropDefault("httpJettyClient.strictEventOrdering",
+        Boolean.parseBoolean(BzmHttpPluginProperties.getPropDefault(
+            "httpJettyClient.strictEventOrdering",
             String.valueOf(strictEventOrdering)));
     removeIdleDestinations =
-        Boolean.parseBoolean(BzmHttpPluginProperties.getPropDefault("httpJettyClient.removeIdleDestinations",
+        Boolean.parseBoolean(BzmHttpPluginProperties.getPropDefault(
+            "httpJettyClient.removeIdleDestinations",
             String.valueOf(removeIdleDestinations)));
     idleTimeout =
-        Integer.parseInt(BzmHttpPluginProperties.getPropDefault("httpJettyClient.idleTimeout",
+        Integer.parseInt(BzmHttpPluginProperties.getPropDefault(
+            "httpJettyClient.idleTimeout",
             String.valueOf(idleTimeout)));
-    sharedThreadPoolEnabled = BzmHttpPluginProperties.getPropDefault("httpJettyClient.sharedThreadPool", false);
+    sharedThreadPoolEnabled =
+        BzmHttpPluginProperties.getPropDefault("httpJettyClient.sharedThreadPool", false);
     if (sharedThreadPoolEnabled && !maxThreadsConfigured) {
       maxThreads = 500;
     }
     quicMaxIdleTimeout = Integer
         .parseInt(BzmHttpPluginProperties.getPropDefault("httpJettyClient.quicMaxIdleTimeout",
             String.valueOf(quicMaxIdleTimeout)));
-    quicMaxBidirectionalStreams = Integer
-        .parseInt(BzmHttpPluginProperties.getPropDefault("httpJettyClient.quicMaxBidirectionalStreams",
+    quicMaxBidirectionalStreams =
+        Integer.parseInt(BzmHttpPluginProperties.getPropDefault(
+            "httpJettyClient.quicMaxBidirectionalStreams",
             String.valueOf(quicMaxBidirectionalStreams)));
-    quicMaxUnidirectionalStreams = Integer
-        .parseInt(BzmHttpPluginProperties.getPropDefault("httpJettyClient.quicMaxUnidirectionalStreams",
+    quicMaxUnidirectionalStreams =
+        Integer.parseInt(BzmHttpPluginProperties.getPropDefault(
+            "httpJettyClient.quicMaxUnidirectionalStreams",
             String.valueOf(quicMaxUnidirectionalStreams)));
     enableHttp3 = getBooleanProp("httpJettyClient.enableHttp3",
         profileConfig != null ? profileConfig.getEnableHttp3() : null,
