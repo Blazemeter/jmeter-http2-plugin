@@ -95,7 +95,11 @@ public final class BzmHttpPluginProperties {
     if (raw == null) {
       return defaultValue;
     }
-    return Boolean.parseBoolean(raw);
+    String trimmed = StringUtils.trimToEmpty(raw);
+    if (trimmed.isEmpty()) {
+      return defaultValue;
+    }
+    return Boolean.parseBoolean(trimmed);
   }
 
   /**

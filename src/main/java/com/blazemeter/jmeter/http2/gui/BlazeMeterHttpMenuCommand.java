@@ -28,6 +28,7 @@ import javax.swing.JMenuItem;
 import javax.swing.JOptionPane;
 import javax.swing.JTree;
 import javax.swing.MenuElement;
+import javax.swing.SwingUtilities;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.jmeter.gui.GuiPackage;
 import org.apache.jmeter.gui.action.AbstractActionWithNoRunningTest;
@@ -55,20 +56,25 @@ public class BlazeMeterHttpMenuCommand
 
   private static final Logger LOG = LoggerFactory.getLogger(BlazeMeterHttpMenuCommand.class);
 
-  /** Action command registered with {@link ActionRouter}; internal name, not shown in the UI. */
+  /**
+   * Action command for {@link ActionRouter}; internal id, not UI text.
+   */
   private static final String ACTION_PROXY_TOGGLE = "bzm_http2_proxy_recording_toggle";
 
   private static final String ACTION_MIGRATE_ALL =
       "bzm_http2_migrate_all_http_samplers";
 
+  /**
+   * Routed through {@link ActionRouter}; identical id for tree popup migrate item.
+   */
   private static final String ACTION_MIGRATE_SELECTED =
       "bzm_http2_migrate_selected_http_samplers";
 
   private static final String ROOT_MENU_LABEL = "BlazeMeter HTTP";
   private static final String LABEL_ENABLE_PROXY_RECORDING =
-      "Enable Recording in JMeter Proxy Recorder";
+      "Enable Recording with HTTP(S) Test Script Recorder";
   private static final String LABEL_DISABLE_PROXY_RECORDING =
-      "Disable Recording in JMeter Proxy Recorder";
+      "Disable Recording with HTTP(S) Test Script Recorder";
 
   private static final String LABEL_MIGRATE_ENTIRE_PLAN =
       "Migrate Entire Test Plan (HTTP Request → BlazeMeter HTTP)…";
@@ -78,18 +84,45 @@ public class BlazeMeterHttpMenuCommand
   private static final String DIALOG_TITLE = "BlazeMeter HTTP";
 
   /**
-   * One log per machine under {@code java.io.tmpdir}: truncated whenever a GUI restart is
-   * initiated (no unbounded append across unrelated runs).
+   * Unified restart log under {@code java.io.tmpdir}: truncated on each GUI
+   * restart only (bounded across unrelated runs).
    */
-  private static final String RESTART_LOG_BASENAME = "bzm-http2-jmeter-restart.log";
+  private static final String RESTART_LOG_BASENAME =
+      "bzm-http2-jmeter-restart.log";
 
-  /** Overwritten each restart — command list for {@link BlazeMeterJmeterRestartRelay}. */
-  private static final String RESTART_ARGV_BASENAME = "bzm-http2-jmeter-restart.argv";
+  /**
+   * Argv payload for {@link BlazeMeterJmeterRestartRelay};
+   * rewritten on each GUI restart attempt.
+   */
+  private static final String RESTART_ARGV_BASENAME =
+      "bzm-http2-jmeter-restart.argv";
 
   private static final Set<String> ACTION_NAMES = Set.of(
       ACTION_PROXY_TOGGLE,
       ACTION_MIGRATE_ALL,
       ACTION_MIGRATE_SELECTED);
+
+  /** Grep-friendly marker that this plugin JAR loaded and hooks were scheduled. */
+  private static final String PLUGIN_LOAD_LOG_PREFIX = "[bzm http2 plugin] ";
+
+  static {
+    LOG.info(
+        PLUGIN_LOAD_LOG_PREFIX.concat(
+            "BlazeMeter HTTP classes loaded; scheduling tree/UI hooks on EDT."));
+    SwingUtilities.invokeLater(
+        ProxyRecorderSamplerTypeUi::installRecorderUiHookOnce);
+    SwingUtilities.invokeLater(
+        HttpRequestMigrateTreePopupSupport::installHookOnce);
+  }
+
+  /**
+   * Tree popup entry point; returns the migrate-selected action command string.
+   *
+   * @return migrate-selected action command string.
+   */
+  static String migrateSelectedActionCommand() {
+    return ACTION_MIGRATE_SELECTED;
+  }
 
   @Override
   public Set<String> getActionNames() {
@@ -112,7 +145,8 @@ public class BlazeMeterHttpMenuCommand
 
   private void doProxyToggle() {
     boolean current =
-        BzmHttpPluginProperties.getPropDefault(HTTP2SampleCreator.PROXY_ENABLED, true);
+        BzmHttpPluginProperties.getPropDefault(
+            HTTP2SampleCreator.PROXY_ENABLED, HTTP2SampleCreator.PROXY_ENABLED_DEFAULT);
     boolean next = !current;
 
     String binDir = JMeterUtils.getJMeterBinDir();
@@ -129,6 +163,11 @@ public class BlazeMeterHttpMenuCommand
           userProperties, HTTP2SampleCreator.PROXY_ENABLED, Boolean.toString(next));
       BzmHttpPluginProperties.syncRuntime(
           HTTP2SampleCreator.PROXY_ENABLED, Boolean.toString(next));
+      LOG.info(
+          "{} updated to {} (default if unset: {}).",
+          HTTP2SampleCreator.PROXY_ENABLED,
+          next,
+          HTTP2SampleCreator.PROXY_ENABLED_DEFAULT);
     } catch (IOException ex) {
       LOG.error("Could not write {}", userProperties.getAbsolutePath(), ex);
       JMeterUtils.reportErrorToUser("Could not update user.properties: " + ex.getMessage(),
@@ -574,7 +613,8 @@ public class BlazeMeterHttpMenuCommand
       return new JMenuItem[0];
     }
     boolean proxyEnabled =
-        BzmHttpPluginProperties.getPropDefault(HTTP2SampleCreator.PROXY_ENABLED, true);
+        BzmHttpPluginProperties.getPropDefault(
+            HTTP2SampleCreator.PROXY_ENABLED, HTTP2SampleCreator.PROXY_ENABLED_DEFAULT);
 
     JMenu root = new JMenu(ROOT_MENU_LABEL);
     ActionRouter router = ActionRouter.getInstance();
