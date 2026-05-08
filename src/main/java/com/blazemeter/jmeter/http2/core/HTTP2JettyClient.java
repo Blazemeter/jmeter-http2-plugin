@@ -148,7 +148,7 @@ public class HTTP2JettyClient {
   private static final String ATTR_ORIGIN_KEY = "bzm.http3.origin";
   private static final String ATTR_REQUEST_HEADERS_SERIALIZED = "bzm.request.headers.serialized";
   private static final String PROP_SKIP_REDUNDANT_MANUAL_DECODE =
-      "bzm-http2-plugin.skipManualDecodeWhenAdvertised";
+      "blazemeter.http.skipManualDecodeWhenAdvertised";
   private static final Path DEBUG_LOG_PATH = resolveDebugLogPath();
   private static final String PROFILE_PROPERTY = "httpJettyClient.profile";
   private static final String PROFILE_BROWSER_LIKE = "browser-like";
@@ -358,7 +358,7 @@ public class HTTP2JettyClient {
     http2Client.setUseALPN(alpnEnabled);
 
     // Diagnostic toggle: skip custom HTTP/2 SETTINGS configuration.
-    boolean skipHttp2Settings = Boolean.getBoolean("bzm-http2-plugin.skipHttp2Settings");
+    boolean skipHttp2Settings = Boolean.getBoolean("blazemeter.http.skipHttp2Settings");
     if (skipHttp2Settings) {
       lowLevelDebug("HTTP2Client: skipping custom SETTINGS configuration");
     } else {
@@ -1549,7 +1549,7 @@ public class HTTP2JettyClient {
     lowLevelDebug("Sending request via HttpClient (ALPN negotiation will occur "
         + "during TLS handshake)");
     // Diagnostic toggle: bypass listener flow, call request.send() directly.
-    if (Boolean.getBoolean("bzm-http2-plugin.directSend")) {
+    if (Boolean.getBoolean("blazemeter.http.directSend")) {
       lowLevelDebug("HTTP2Client: using direct request.send() for diagnostics");
       return request.send();
     }
@@ -1932,9 +1932,9 @@ public class HTTP2JettyClient {
     decoderFactoriesInitialized = true;
 
     boolean disableBrotliDecoder = Boolean.parseBoolean(
-        System.getProperty("bzm-http2-plugin.disableBrotliDecoder", "false"));
+        System.getProperty("blazemeter.http.disableBrotliDecoder", "false"));
     if (disableBrotliDecoder) {
-      lowLevelDebug("Brotli decoder disabled by bzm-http2-plugin.disableBrotliDecoder");
+      lowLevelDebug("Brotli decoder disabled by blazemeter.http.disableBrotliDecoder");
     } else {
       try {
         BrotliCompression brotli = new BrotliCompression();
@@ -1947,9 +1947,9 @@ public class HTTP2JettyClient {
     }
 
     boolean disableZstdDecoder = Boolean.parseBoolean(
-        System.getProperty("bzm-http2-plugin.disableZstdDecoder", "false"));
+        System.getProperty("blazemeter.http.disableZstdDecoder", "false"));
     if (disableZstdDecoder) {
-      lowLevelDebug("Zstd decoder disabled by bzm-http2-plugin.disableZstdDecoder");
+      lowLevelDebug("Zstd decoder disabled by blazemeter.http.disableZstdDecoder");
     } else {
       try {
         ZstandardCompression zstd = new ZstandardCompression();
@@ -1962,9 +1962,9 @@ public class HTTP2JettyClient {
     }
 
     boolean disableGzipDecoder = Boolean.parseBoolean(
-        System.getProperty("bzm-http2-plugin.disableGzipDecoder", "false"));
+        System.getProperty("blazemeter.http.disableGzipDecoder", "false"));
     if (disableGzipDecoder) {
-      lowLevelDebug("Gzip decoder disabled by bzm-http2-plugin.disableGzipDecoder");
+      lowLevelDebug("Gzip decoder disabled by blazemeter.http.disableGzipDecoder");
     } else {
       try {
         GzipCompression gzip = new GzipCompression();
@@ -1987,9 +1987,9 @@ public class HTTP2JettyClient {
     }
 
     boolean disableDeflateDecoder = Boolean.parseBoolean(
-        System.getProperty("bzm-http2-plugin.disableDeflateDecoder", "false"));
+        System.getProperty("blazemeter.http.disableDeflateDecoder", "false"));
     if (disableDeflateDecoder) {
-      lowLevelDebug("Deflate decoder disabled by bzm-http2-plugin.disableDeflateDecoder");
+      lowLevelDebug("Deflate decoder disabled by blazemeter.http.disableDeflateDecoder");
     } else {
       try {
         deflateDecoderFactory = new DeflateContentDecoderFactory(bufferPool);
@@ -2061,33 +2061,33 @@ public class HTTP2JettyClient {
     ensureDecoderFactoriesInitialized();
     // Diagnostic toggles: disable specific decoder registrations.
     boolean disableBrotliDecoder = Boolean.parseBoolean(
-        System.getProperty("bzm-http2-plugin.disableBrotliDecoder", "false"));
+        System.getProperty("blazemeter.http.disableBrotliDecoder", "false"));
     boolean disableZstdDecoder = Boolean.parseBoolean(
-        System.getProperty("bzm-http2-plugin.disableZstdDecoder", "false"));
+        System.getProperty("blazemeter.http.disableZstdDecoder", "false"));
     boolean disableGzipDecoder = Boolean.parseBoolean(
-        System.getProperty("bzm-http2-plugin.disableGzipDecoder", "false"));
+        System.getProperty("blazemeter.http.disableGzipDecoder", "false"));
     boolean disableDeflateDecoder = Boolean.parseBoolean(
-        System.getProperty("bzm-http2-plugin.disableDeflateDecoder", "false"));
+        System.getProperty("blazemeter.http.disableDeflateDecoder", "false"));
 
     if (addBrotli && brotliDecoderFactory != null && !disableBrotliDecoder) {
       factories.put(brotliDecoderFactory);
     } else if (addBrotli && disableBrotliDecoder) {
-      lowLevelDebug("Brotli decoder disabled by bzm-http2-plugin.disableBrotliDecoder");
+      lowLevelDebug("Brotli decoder disabled by blazemeter.http.disableBrotliDecoder");
     }
     if (addZstd && zstdDecoderFactory != null && !disableZstdDecoder) {
       factories.put(zstdDecoderFactory);
     } else if (addZstd && disableZstdDecoder) {
-      lowLevelDebug("Zstd decoder disabled by bzm-http2-plugin.disableZstdDecoder");
+      lowLevelDebug("Zstd decoder disabled by blazemeter.http.disableZstdDecoder");
     }
     if (addGzip && gzipDecoderFactory != null && !disableGzipDecoder) {
       factories.put(gzipDecoderFactory);
     } else if (addGzip && disableGzipDecoder) {
-      lowLevelDebug("Gzip decoder disabled by bzm-http2-plugin.disableGzipDecoder");
+      lowLevelDebug("Gzip decoder disabled by blazemeter.http.disableGzipDecoder");
     }
     if (addDeflate && deflateDecoderFactory != null && !disableDeflateDecoder) {
       factories.put(deflateDecoderFactory);
     } else if (addDeflate && disableDeflateDecoder) {
-      lowLevelDebug("Deflate decoder disabled by bzm-http2-plugin.disableDeflateDecoder");
+      lowLevelDebug("Deflate decoder disabled by blazemeter.http.disableDeflateDecoder");
     }
 
     if (acceptEncoding.toLowerCase(Locale.ROOT).contains("gzip")) {

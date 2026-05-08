@@ -27,7 +27,7 @@ import org.junit.Test;
 public class HTTP2JettyClientDecodeBenchmarkTest extends HTTP2TestBase {
 
   private static final String PROP_SKIP_REDUNDANT_DECODE =
-      "bzm-http2-plugin.skipManualDecodeWhenAdvertised";
+      "blazemeter.http.skipManualDecodeWhenAdvertised";
 
   @BeforeClass
   public static void setupClass() {

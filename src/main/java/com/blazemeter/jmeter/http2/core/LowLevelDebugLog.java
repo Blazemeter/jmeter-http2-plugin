@@ -10,7 +10,7 @@ import org.slf4j.LoggerFactory;
  */
 public final class LowLevelDebugLog {
 
-  public static final String LOW_LEVEL_LOG_PROPERTY = "bzm-http2-plugin.lowLevelLog";
+  public static final String LOW_LEVEL_LOG_PROPERTY = "blazemeter.http.lowLevelLog";
   private static final StackWalker CALLER_WALKER =
       StackWalker.getInstance(StackWalker.Option.RETAIN_CLASS_REFERENCE);
   private static final ConcurrentMap<Class<?>, Logger> LOGGER_CACHE = new ConcurrentHashMap<>();
