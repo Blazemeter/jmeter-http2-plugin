@@ -2,8 +2,7 @@ package com.blazemeter.jmeter.http2.proxy;
 
 import static com.blazemeter.jmeter.http2.core.LowLevelDebugLog.lowLevelDebug;
 
-import com.blazemeter.jmeter.http2.sampler.HTTP2Sampler;
-import com.blazemeter.jmeter.http2.sampler.gui.HTTP2SamplerGui;
+import com.blazemeter.jmeter.http2.sampler.BlazeMeterHttpSamplerFactory;
 import com.blazemeter.jmeter.http2.util.BzmHttpPluginProperties;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -14,7 +13,6 @@ import org.apache.jmeter.protocol.http.proxy.DefaultSamplerCreator;
 import org.apache.jmeter.protocol.http.proxy.HttpRequestHdr;
 import org.apache.jmeter.protocol.http.proxy.SamplerCreator;
 import org.apache.jmeter.protocol.http.sampler.HTTPSamplerBase;
-import org.apache.jmeter.testelement.TestElement;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -75,23 +73,14 @@ public class HTTP2SampleCreator extends AbstractSamplerCreator {
 
     lowLevelDebug("url: {}", httpRequestHdr.getUrl());
 
-    HTTP2Sampler sampler = new HTTP2Sampler();
-
-    sampler.setProperty(TestElement.GUI_CLASS, HTTP2SamplerGui.class.getName());
-
-    // Defaults
-    sampler.setHttp1UpgradeEnabled(false);
-    sampler.setFollowRedirects(false);
-    sampler.setUseKeepAlive(true);
-
-    return sampler;
+    return BlazeMeterHttpSamplerFactory.newSamplerForProxyRecording();
   }
 
   @Override
   public void populateSampler(HTTPSamplerBase httpSamplerBase, HttpRequestHdr httpRequestHdr,
                               Map<String, String> map, Map<String, String> map1) throws Exception {
     lowLevelDebug("populateSampler()");
-    // Force the default sampler gui to HTTP2
+    // GUI/test-element classes match BlazeMeterHttpSamplerFactory (shared with Tools migration).
     lowLevelDebug("url: {}", httpRequestHdr.getUrl());
     lowLevelDebug("raw post data: {}", httpRequestHdr.getRawPostData());
 
