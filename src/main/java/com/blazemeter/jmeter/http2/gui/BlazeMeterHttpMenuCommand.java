@@ -64,9 +64,7 @@ public class BlazeMeterHttpMenuCommand
   private static final String ACTION_MIGRATE_ALL =
       "bzm_http2_migrate_all_http_samplers";
 
-  /**
-   * Routed through {@link ActionRouter}; identical id for tree popup migrate item.
-   */
+  /** Routed through {@link ActionRouter} for Tools menu migrate-selected. */
   private static final String ACTION_MIGRATE_SELECTED =
       "bzm_http2_migrate_selected_http_samplers";
 
@@ -108,20 +106,9 @@ public class BlazeMeterHttpMenuCommand
   static {
     LOG.info(
         PLUGIN_LOAD_LOG_PREFIX.concat(
-            "BlazeMeter HTTP classes loaded; scheduling tree/UI hooks on EDT."));
+            "BlazeMeter HTTP classes loaded; scheduling recorder GUI hook on EDT."));
     SwingUtilities.invokeLater(
         ProxyRecorderSamplerTypeUi::installRecorderUiHookOnce);
-    SwingUtilities.invokeLater(
-        HttpRequestMigrateTreePopupSupport::installHookOnce);
-  }
-
-  /**
-   * Tree popup entry point; returns the migrate-selected action command string.
-   *
-   * @return migrate-selected action command string.
-   */
-  static String migrateSelectedActionCommand() {
-    return ACTION_MIGRATE_SELECTED;
   }
 
   @Override
