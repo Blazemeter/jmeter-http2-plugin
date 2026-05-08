@@ -26,14 +26,21 @@ import org.slf4j.LoggerFactory;
  * recording uses BlazeMeter ({@link HTTP2SampleCreator#isBlazeMeterProxyRecorderActive()}).
  * The Type implementation combo stays enabled and untouched (no tooltip).
  *
- * <p>Walks {@link ProxyControlGui} (no reflection); bundle label
- * {@link JMeterUtils#getResString(String)} for the Type row.
+ * <p>Applies to the stock {@linkplain ProxyControlGui}
+ * (HTTP(S) Test Script Recorder) and to third-party subclasses that may not match
+ * {@code instanceof ProxyControlGui} across JMeter/plugin class loaders, for example
+ * {@code CorrelationProxyControlGui} (Automatic Correlation Recorder). Those are
+ * recognized by superclass FQCN chain and/or simple class name, without compile-time
+ * dependency on the correlation plugin.</p>
+ *
+ * <p>Walks {@link Container} trees; bundle label {@link JMeterUtils#getResString(String)}
+ * keys the Type row when present.
  *
  * <p>Patches run <em>after</em> {@link EditCommand} for the tree-driven
  * {@link org.apache.jmeter.gui.action.ActionNames#EDIT} action, so
  * {@link GuiPackage#updateCurrentGui()} / {@code configure} have finished.
  *
- * <p>Same {@link ProxyControlGui} is often reused ({@code configure} may reset
+ * <p>The same recorder panel instance is often reused ({@code configure} may reset
  * widgets).
  *
  * <p>At default log (INFO): hook install, Type label note failures;
@@ -55,6 +62,17 @@ public final class ProxyRecorderSamplerTypeUi {
 
   /** Log line prefix for grep in jmeter.log. */
   private static final String LOG_PREFIX = "[bzm proxy recorder Type UI] ";
+
+  /**
+   * FQCN of {@link ProxyControlGui}; used only for string compares on superclass
+   * chains (optional correlation-recorder GUIs loaded in another loader).
+   */
+  private static final String JMETER_PROXY_CONTROL_GUI_CLASS_NAME =
+      ProxyControlGui.class.getName();
+
+  /** Simple name of correlation recorder GUI (BlazeMeter plugin; not on our classpath). */
+  private static final String CORRELATION_PROXY_CONTROL_GUI_SIMPLE_NAME =
+      "CorrelationProxyControlGui";
 
   /** Bundle key: label beside the recorder implementation combo. */
   private static final String PROXY_SAMPLER_TYPE_KEY =
@@ -118,16 +136,16 @@ public final class ProxyRecorderSamplerTypeUi {
 
   /**
    * After {@link ActionRouter} handling and post-{@link EditCommand} layout,
-   * defer {@link #maybePatchIfProxyGui}.
+   * defer {@link #maybePatchIfRecorderSamplerTypeCompatGui}.
    */
   private static void schedulePatchAfterEditCommand() {
     SwingUtilities.invokeLater(
-        ProxyRecorderSamplerTypeUi::maybePatchIfProxyGui);
+        ProxyRecorderSamplerTypeUi::maybePatchIfRecorderSamplerTypeCompatGui);
   }
 
   /**
    * Registers one post-{@link EditCommand} hook: refresh Type UI when the main
-   * panel is {@link ProxyControlGui}.
+   * panel is {@link ProxyControlGui} or a compatible subclass loaded elsewhere.
    */
   public static void installRecorderUiHookOnce() {
     if (!RECORDER_UI_HOOK_INSTALLED.compareAndSet(false, true)) {
@@ -153,32 +171,70 @@ public final class ProxyRecorderSamplerTypeUi {
         });
   }
 
-  /** If recorder GUI is visible, apply BlazeMeter Type label suffix when relevant. */
-  static void maybePatchIfProxyGui() {
+  /**
+   * If the recorder or correlation-recorder panel is visible, apply BlazeMeter Type
+   * label suffix when relevant.
+   */
+  static void maybePatchIfRecorderSamplerTypeCompatGui() {
     GuiPackage gp = GuiPackage.getInstance();
     if (gp == null) {
       logDebug("GuiPackage null; skip.");
       return;
     }
-    Object gui = gp.getCurrentGui();
-    if (!(gui instanceof ProxyControlGui)) {
+    Object guiObj = gp.getCurrentGui();
+    Container recorderRoot = recorderSamplerTypePanelRoot(guiObj);
+    if (recorderRoot == null) {
       logDebug(
-          "currentGui is not ProxyControlGui (actual={}); skip.",
-          gui == null ? "null" : gui.getClass().getName());
+          "currentGui is not recorder/correlation Type panel (actual={}); skip.",
+          guiObj == null ? "null" : guiObj.getClass().getName());
       return;
     }
     logDebug(
-        "currentGui is ProxyControlGui; scanning for implementation combo.");
-    applyRecorderSamplerTypeRestrictions((ProxyControlGui) gui);
+        "currentGui recorder-compatible ({}); scanning for implementation combo.",
+        recorderRoot.getClass().getName());
+    applyRecorderSamplerTypeRestrictions(recorderRoot);
+  }
+
+  /**
+   * Resolves editor root panels that reuse the recorder "Type" + implementation combo
+   * ({@linkplain ProxyControlGui} and similar), including correlation plugins not
+   * assignable via {@code instanceof ProxyControlGui}.
+   */
+  private static Container recorderSamplerTypePanelRoot(final Object guiObj) {
+    if (!(guiObj instanceof Container)) {
+      return null;
+    }
+    Container c = (Container) guiObj;
+    if (guiObj instanceof ProxyControlGui) {
+      return c;
+    }
+    Class<?> clazz = guiObj.getClass();
+    if (CORRELATION_PROXY_CONTROL_GUI_SIMPLE_NAME.equals(clazz.getSimpleName())) {
+      return c;
+    }
+    if (hasSuperclassWithName(clazz, JMETER_PROXY_CONTROL_GUI_CLASS_NAME)) {
+      return c;
+    }
+    return null;
+  }
+
+  private static boolean hasSuperclassWithName(
+      final Class<?> start, final String fqcn) {
+    for (Class<?> z = start; z != null; z = z.getSuperclass()) {
+      if (fqcn.equals(z.getName())) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /**
    * Re-applies recorder UI tweaks whenever this panel is current (repeatable).
    *
-   * @param proxyGui recorder panel shown in main editor area.
+   * @param recorderPanel recorder (or correlation) panel in main editor area.
    */
   private static void applyRecorderSamplerTypeRestrictions(
-      final ProxyControlGui proxyGui) {
+      final Container recorderPanel) {
     final boolean blazeMeterOn =
         HTTP2SampleCreator.isBlazeMeterProxyRecorderActive();
     String rawTypeLabel = JMeterUtils.getResString(PROXY_SAMPLER_TYPE_KEY);
@@ -199,9 +255,9 @@ public final class ProxyRecorderSamplerTypeUi {
             HTTP2SampleCreator.PROXY_ENABLED, HTTP2SampleCreator.PROXY_ENABLED_DEFAULT),
         HTTP2SampleCreator.PROXY_ENABLED_DEFAULT,
         blazeMeterOn);
-    List<JComboBox<?>> comboBoxes = collectComboBoxes(proxyGui);
+    List<JComboBox<?>> comboBoxes = collectComboBoxes(recorderPanel);
     logDebug(
-        "Found {} JComboBox under ProxyControlGui.",
+        "Found {} JComboBox under recorder panel.",
         comboBoxes.size());
     for (int i = 0; i < comboBoxes.size(); i++) {
       JComboBox<?> cb = comboBoxes.get(i);
@@ -231,7 +287,7 @@ public final class ProxyRecorderSamplerTypeUi {
         expectedTypeLabel.isEmpty()
             ? findLabelBefore(samplerTypeCombo)
             : findMatchingTypeLabel(
-                proxyGui, expectedTypeLabel, samplerTypeCombo);
+                recorderPanel, expectedTypeLabel, samplerTypeCombo);
 
     if (!blazeMeterOn) {
       if (typeLabel != null) {
