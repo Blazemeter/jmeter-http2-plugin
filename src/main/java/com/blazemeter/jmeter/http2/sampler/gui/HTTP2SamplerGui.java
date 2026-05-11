@@ -5,9 +5,13 @@ import com.blazemeter.jmeter.http2.sampler.HTTP2Sampler;
 import com.blazemeter.jmeter.http2.sampler.HTTP2SamplerConverter;
 import com.thoughtworks.xstream.XStream;
 import java.awt.BorderLayout;
+import java.awt.Dimension;
+import java.awt.Rectangle;
 import java.io.IOException;
 import java.lang.reflect.Field;
 import java.util.Properties;
+import javax.swing.Scrollable;
+import javax.swing.SwingConstants;
 import org.apache.jmeter.protocol.http.sampler.HTTPSamplerBase;
 import org.apache.jmeter.samplers.gui.AbstractSamplerGui;
 import org.apache.jmeter.save.SaveService;
@@ -15,7 +19,7 @@ import org.apache.jmeter.testelement.TestElement;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class HTTP2SamplerGui extends AbstractSamplerGui {
+public class HTTP2SamplerGui extends AbstractSamplerGui implements Scrollable {
 
   private static final Logger LOG = LoggerFactory.getLogger(HTTP2SamplerGui.class);
   private static final String PLUGIN_REPOSITORY_URL = "https://github.com/Blazemeter/jmeter-http2"
@@ -30,7 +34,7 @@ public class HTTP2SamplerGui extends AbstractSamplerGui {
       jmxSaver.registerConverter(new HTTP2SamplerConverter(jmxSaver.getMapper()),
           XStream.PRIORITY_VERY_HIGH);
     } catch (IllegalAccessException | NoSuchFieldException e) {
-      LOG.error("Error while creating HTTP2 jmx converter", e);
+      LOG.error("Error while creating BlazeMeter HTTP jmx converter", e);
     }
   }
 
@@ -48,7 +52,7 @@ public class HTTP2SamplerGui extends AbstractSamplerGui {
 
   @Override
   public String getStaticLabel() {
-    return "bzm - HTTP2 Sampler";
+    return "bzm - HTTP Sampler";
   }
 
   @Override
@@ -137,6 +141,7 @@ public class HTTP2SamplerGui extends AbstractSamplerGui {
       http2SamplerPanel.setProxyUser(http2Sampler.getPropertyAsString(HTTPSamplerBase.PROXYUSER));
       http2SamplerPanel.setProxyPass(http2Sampler.getPropertyAsString(HTTPSamplerBase.PROXYPASS));
       http2SamplerPanel.getUrlConfigGui().configure(http2Sampler);
+      http2SamplerPanel.refreshUrlConfigLayoutAfterDataChange();
       String profile = http2Sampler.getProfile();
       http2SamplerPanel.setProfile(profile);
       http2SamplerPanel.applyProfileDefaultsFor(profile);
@@ -177,5 +182,37 @@ public class HTTP2SamplerGui extends AbstractSamplerGui {
   public void clearGui() {
     super.clearGui();
     http2SamplerPanel.resetFields();
+  }
+
+  /**
+   * JMeter shows sampler settings inside a {@link javax.swing.JScrollPane}. Without this contract,
+   * the viewport keeps the widest preferred width ever seen, so shrinking the main window leaves a
+   * useless horizontal scrollbar. Tracking viewport width reflows the panel when the frame narrows.
+   */
+  @Override
+  public Dimension getPreferredScrollableViewportSize() {
+    return getPreferredSize();
+  }
+
+  @Override
+  public int getScrollableUnitIncrement(Rectangle visibleRect, int orientation, int direction) {
+    return orientation == SwingConstants.VERTICAL
+        ? Math.max(1, visibleRect.height / 10)
+        : Math.max(1, visibleRect.width / 10);
+  }
+
+  @Override
+  public int getScrollableBlockIncrement(Rectangle visibleRect, int orientation, int direction) {
+    return orientation == SwingConstants.VERTICAL ? visibleRect.height : visibleRect.width;
+  }
+
+  @Override
+  public boolean getScrollableTracksViewportWidth() {
+    return true;
+  }
+
+  @Override
+  public boolean getScrollableTracksViewportHeight() {
+    return false;
   }
 }
