@@ -4,7 +4,7 @@ modules:
     version: "4.0"
     detect-plugins: false
     properties:
-      search_paths: ./lib/ext
+      search_paths: ./lib
       log_level: DEBUG
   console:
     disable: true
