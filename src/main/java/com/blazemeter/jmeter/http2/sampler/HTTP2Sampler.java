@@ -7,6 +7,7 @@ import com.blazemeter.jmeter.http2.core.HTTP2ClientProfileConfig;
 import com.blazemeter.jmeter.http2.core.HTTP2FutureResponseListener;
 import com.blazemeter.jmeter.http2.core.HTTP2JettyClient;
 import com.blazemeter.jmeter.http2.core.ProtocolErrorException;
+import com.blazemeter.jmeter.http2.util.BzmHttpPluginProperties;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.github.benmanes.caffeine.cache.LoadingCache;
 import com.helger.commons.annotation.VisibleForTesting;
@@ -142,8 +143,8 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
   }
 
   private final transient Callable<HTTP2JettyClient> clientFactory;
-  private final boolean dumpAtThreadEnd = getPropDefault(
-      "httpJettyClient.DumpAtThreadEnd", false);
+  private final boolean dumpAtThreadEnd =
+      BzmHttpPluginProperties.getPropDefault("httpJettyClient.DumpAtThreadEnd", false);
   private boolean syncRequest = true;
   private HTTP2FutureResponseListener asyncListener;
   private int maxBufferSize;
@@ -166,7 +167,7 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
   }
 
   private void initializeDefaults() {
-    setName("HTTP2 Sampler");
+    setName("bzm - HTTP Sampler");
     setMethod(HTTPConstants.GET);
     setArguments(new Arguments());
     this.syncRequest = getPropertyAsBoolean(SYNC_REQUEST, true);
@@ -204,7 +205,7 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
 
   public boolean isHttp1UpgradeEnabled() {
     return getPropertyAsBoolean(HTTP1_UPGRADE_PROPERTY,
-        getPropDefault(H2C_UPGRADE_DEFAULT_PROPERTY, false));
+        BzmHttpPluginProperties.getPropDefault(H2C_UPGRADE_DEFAULT_PROPERTY, false));
   }
 
   @Override
@@ -222,9 +223,9 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
       boolean http1UpgradeEnabled = isHttp1UpgradeEnabled();
       if (http1UpgradeEnabled && !profileInferenceWarningLogged) {
         LOG.warn(
-            "Profile not set; inferring 'legacy' because {} is enabled. "
-                + "Consider setting {} explicitly to avoid ambiguity.",
-            HTTP1_UPGRADE_PROPERTY, PROFILE_PROPERTY);
+            "Profile not set; inferring 'legacy' because HTTP/1 upgrade is enabled. "
+                + "Consider setting Profile explicitly (Client Behavior panel) to avoid "
+                + "ambiguity.");
         profileInferenceWarningLogged = true;
       }
       return http1UpgradeEnabled ? "legacy" : "browser-like";
@@ -409,7 +410,7 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
   @Override
   protected HTTPSampleResult sample(URL url, String method, boolean areFollowingRedirect,
                                     int depth) {
-    LOG.trace("=== HTTP2Sampler.sample() ENTRY ===");
+    LOG.trace("=== sample() ENTRY ===");
     LOG.trace("URL: {}, method: {}, depth: {}", url, method, depth);
     try {
       HTTP2JettyClient client = clientFactory.call();
@@ -458,7 +459,7 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
       HTTP2Controller.registerAsyncSampleResult(this, errorResult, this.asyncListener);
       return isAsyncParentSampleEnabled() ? null : errorResult;
     } catch (Exception e) {
-      LOG.error("HTTP2Sampler.sample() failed", e);
+      LOG.error("BlazeMeter HTTP sample failed", e);
 
       Throwable cause = e.getCause();
       String causeInfo = cause != null
@@ -478,11 +479,10 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
           LOG.warn("HTTP/2 protocol_error detected and fallback is DISABLED. "
               + "Request will fail.");
           LOG.warn("Error: {}", cause != null ? cause.getMessage() : e.getMessage());
-          LOG.warn("To enable fallback, set httpJettyClient.protocolErrorFallbackEnabled=true "
-              + "or httpJettyClient.disableFallback=false in jmeter.properties");
+          LOG.warn("To enable fallback, set blazemeter.http.protocolErrorFallbackEnabled=true "
+              + "or blazemeter.http.disableFallback=false in user.properties or jmeter.properties");
         } else {
-          LOG.warn("HTTP/2 protocol_error detected in HTTP2Sampler! "
-              + "Attempting fallback to HTTP/1.1");
+          LOG.warn("HTTP/2 protocol_error detected. Attempting fallback to HTTP/1.1");
           LOG.warn("Error: {}", cause != null ? cause.getMessage() : e.getMessage());
 
           try {
@@ -521,12 +521,16 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
   }
 
   private boolean isProtocolErrorFallbackEnabled() {
-    if (JMeterUtils.getJMeterProperties()
-        .containsKey("httpJettyClient.protocolErrorFallbackEnabled")) {
-      return Boolean.parseBoolean(JMeterUtils.getJMeterProperties()
-          .getProperty("httpJettyClient.protocolErrorFallbackEnabled"));
+    String fb =
+        BzmHttpPluginProperties.resolveRaw("httpJettyClient.protocolErrorFallbackEnabled");
+    if (fb != null) {
+      return Boolean.parseBoolean(fb);
     }
-    return !Boolean.parseBoolean(getPropDefault("httpJettyClient.disableFallback", "false"));
+    String df = BzmHttpPluginProperties.resolveRaw("httpJettyClient.disableFallback");
+    if (df != null) {
+      return !Boolean.parseBoolean(df);
+    }
+    return true;
   }
 
   protected Request sampleAsync(HTTPSampleResult result, HTTP2FutureResponseListener listener)
@@ -1103,7 +1107,7 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
       try {
         LOG.debug(client.dump());
       } catch (Exception e) {
-        LOG.error("Error while dump HTTP2JettyClient", e);
+        LOG.error("Error while dumping BlazeMeter HTTP client state", e);
       }
     }
   }
