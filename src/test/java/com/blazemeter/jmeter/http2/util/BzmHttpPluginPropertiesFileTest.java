@@ -52,4 +52,21 @@ public class BzmHttpPluginPropertiesFileTest {
     assertTrue(text.contains("baz=qux"));
     assertFalse(text.contains("httpJettyClient.proxy_enabled"));
   }
+
+  @Test
+  public void persistRemovesLegacyHttp2AsyncControllerLineAndWritesPreferredKey() throws Exception {
+    File f = folder.newFile("user3.properties");
+    Files.write(f.toPath(),
+        "http2AsyncController.limitMaxParallel=true\nfoo=z\n".getBytes(StandardCharsets.ISO_8859_1));
+
+    BzmHttpPluginProperties.persistControllerUserProperty(
+        f, "http2AsyncController.limitMaxParallel", "false");
+
+    String text =
+        Files.readAllLines(f.toPath(), StandardCharsets.ISO_8859_1).stream()
+            .collect(Collectors.joining("\n"));
+    assertTrue(text.contains("blazemeter.http.controller.limitMaxParallel=false"));
+    assertTrue(text.contains("foo=z"));
+    assertFalse(text.contains("http2AsyncController.limitMaxParallel"));
+  }
 }
