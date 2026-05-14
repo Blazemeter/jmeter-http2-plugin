@@ -27,7 +27,6 @@ Install this plugin via **Plugins Manager** when possible. Start from the prereq
 2. Open the **Available Plugins** tab and search for **BlazeMeter HTTP**.
 3. Select it, click **Apply Changes and Restart JMeter**, and wait for the install to finish.
 
-Dependencies required by the plugin should be resolved by Plugins Manager alongside the main JAR.
 
 ## Updating
 
@@ -196,7 +195,7 @@ By default, the size of downloaded resources is limited to 2 MB (2,097,152 bytes
 
 **HTTP/2 multiplexing** means many requests can share **one TLS/TCP connection** as separate streams—the Jetty stack does this whenever negotiation selects HTTP/2.
 
-**Overlapping sampler execution** (several BlazeMeter HTTP samplers in progress at once **within one thread iteration**) requires **`bzm - HTTP Async Controller`**. Its default in-flight ceiling (when **Limit max number of parallel executions** is off) follows **`blazemeter.http.maxConcurrentAsyncInController`** (default **100**); when limiting is enabled, **`blazemeter.http.controller.maxConcurrentAsyncInController`** is stored on the controller from the GUI. Tune **`blazemeter.http.maxRequestsPerConnection`** (default **100**) for Jetty concurrency per pooled connection.
+**Overlapping sampler execution** (several BlazeMeter HTTP samplers in progress at once **within one thread iteration**) requires **`bzm - HTTP Async Controller`**. The concurrent cap follows **`blazemeter.http.maxConcurrentAsyncInController`** (default **100**) whenever **Limit max number of parallel executions** is unchecked. When limiting is checked, saves persist **Max parallel** as **`blazemeter.http.controller.maxConcurrentAsyncInController`**; unchecking restores the global cap at runtime whether or not stale values linger in the saved plan (see considerations under **HTTP Async Controller** below). Tune **`blazemeter.http.maxRequestsPerConnection`** (default **100**) for Jetty concurrency per pooled connection.
 
 > **IMPORTANT:** Outside **`bzm - HTTP Async Controller`**, a Thread Group still runs BlazeMeter HTTP samplers **one after another** (the sampler returns before JMeter proceeds). That sequential **test-plan** pacing is orthogonal to HTTP/2 **transport** multiplexing.
 
@@ -208,7 +207,7 @@ Add **`bzm - HTTP Async Controller`** (**Add -> Logic Controller -> bzm - HTTP A
 
 **Considerations**:
 
-1. **Concurrency cap**: The JMeter property **`blazemeter.http.maxConcurrentAsyncInController`** sets the default ceiling (**100**) used when **Limit max number of parallel executions** is **unchecked**. When that limit is enabled in the UI, the cap is stored on the controller under **`blazemeter.http.controller.maxConcurrentAsyncInController`**.
+1. **Concurrency cap**: **`blazemeter.http.maxConcurrentAsyncInController`** sets the ceiling (**default 100**) used when **Limit max number of parallel executions** is **unchecked**. With limiting **checked**, **Max parallel** is written to **`blazemeter.http.controller.maxConcurrentAsyncInController`** when you save the controller; disabling the checkbox without rechecking limits does **not** clear that serialized field via the GUI, but the unchecked path still uses the global default at runtime.
 2. Elements within the Async Controller that are not BlazeMeter HTTP samplers act as synchronization points for all asynchronous requests that occurred before them. Before those elements execute, the controller waits for all such requests to complete.
 3. Listeners such as **View Results Tree** process whichever samples finish first, so the displayed order may not match the Test Plan order.
 4. Parent sample (**Generate Parent Sample**): **`blazemeter.http.controller.generateParentSample`** persists the UI toggle; child BlazeMeter HTTP results attach as **sub-results** of that aggregated sample. Optionally set this key in **`user.properties`** / **`jmeter.properties`** as the default for **new** controllers when the `.jmx` has no explicit value.
@@ -240,14 +239,14 @@ Most names documented below are **JMeter properties**: place them in **`user.pro
 Layout:
 
 - **`blazemeter.http.*`** governs BlazeMeter HTTP client defaults—profiles, protocol toggles, pooling, QUIC, caches, auth, concurrency caps unrelated to persisted controller checkbox state, embedded resources knobs, etc.
-- **`blazemeter.http.controller.*`** survives **inside each `bzm - HTTP Async Controller` element** in the `.jmx` whenever you toggle that controller’s options (see **HTTP Async Controller property names**, below).
+- **`blazemeter.http.controller.*`** survives **inside each `bzm - HTTP Async Controller` element** in the `.jmx` for options the GUI persists (checkboxes and fields that participate in saves—see **HTTP Async Controller property names**, below).
 
 **Construction-time globals** versus **serialized controller fields**:
 
 | Source | Applies when |
 |---|---|
 | **`blazemeter.http.controller.generateParentSample`** in **`user.properties` / `jmeter.properties`** | **New controllers** lacking an explicit value on the `.jmx` inherit this boolean default. |
-| **`blazemeter.http.maxConcurrentAsyncInController`** | Defines the concurrent ceiling whenever **Limit max number of parallel executions** is unchecked; flipping that checkbox persists **`blazemeter.http.controller.maxConcurrentAsyncInController`** instead. |
+| **`blazemeter.http.maxConcurrentAsyncInController`** | Concurrent ceiling whenever **Limit max number of parallel executions** is unchecked. With limiting **checked**, saving persists **Max parallel** as **`blazemeter.http.controller.maxConcurrentAsyncInController`**; the unchecked runtime path ignores that element value even if leftover XML still contains it. |
 | **`blazemeter.http.controller.limitMaxParallel`** and **`blazemeter.http.controller.maxConcurrentAsyncInController` on `.jmx`** | Come from GUI saves/manual XML edits—they are **not** supplied automatically from unrelated JMeter properties. |
 
 **Java system properties** (set on the launcher as **`-Dname=value`**). They are **not** loaded from **`user.properties`** / **`jmeter.properties`**.
@@ -322,7 +321,7 @@ These entries are persisted **per** **`bzm - HTTP Async Controller`** in the `.j
 |---|---|
 | **`blazemeter.http.controller.generateParentSample`** | Mirrors **Generate Parent Sample** (`true` / `false`). |
 | **`blazemeter.http.controller.limitMaxParallel`** | Mirrors **Limit max number of parallel executions** (`true` / `false`). |
-| **`blazemeter.http.controller.maxConcurrentAsyncInController`** | Mirrors **Max parallel** when limiting is enabled (integer, minimum **1**). |
+| **`blazemeter.http.controller.maxConcurrentAsyncInController`** | **Max parallel**—updated from the GUI **only while Limit max number of parallel executions is checked** (integer ≥ **1**); read for the concurrent cap **only while** that limit checkbox is checked. |
 
 You may also set **`blazemeter.http.controller.generateParentSample`** in **`user.properties`** or **`jmeter.properties`** so **new** controllers inherit that default whenever the element omits explicit values.
 
