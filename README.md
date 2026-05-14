@@ -206,11 +206,24 @@ Layout:
 | **`blazemeter.http.maxConcurrentAsyncInController`** | Defines the concurrent ceiling whenever **Limit max number of parallel executions** is unchecked; flipping that checkbox persists **`blazemeter.http.controller.maxConcurrentAsyncInController`** instead. |
 | **`blazemeter.http.controller.limitMaxParallel`** and **`blazemeter.http.controller.maxConcurrentAsyncInController` on `.jmx`** | Come from GUI saves/manual XML edits—they are **not** supplied automatically from unrelated JMeter properties. |
 
-**Java system properties** (passed as **`-Dproperty=value`** when starting the JVM) gate a few diagnostics and transport quirks. Examples: **`blazemeter.http.lowLevelLog`**, **`blazemeter.http.skipHttp2Settings`**, **`blazemeter.http.directSend`**, **`blazemeter.http.disableBrotliDecoder`**, **`blazemeter.http.disableZstdDecoder`**, **`blazemeter.http.disableGzipDecoder`**, **`blazemeter.http.disableDeflateDecoder`**, **`blazemeter.http.skipManualDecodeWhenAdvertised`**. They bypass the **`user.properties`** / **`jmeter.properties`** pipeline—set them on the JVM when required.
+**Java system properties** (set on the launcher as **`-Dname=value`**). They are **not** loaded from **`user.properties`** / **`jmeter.properties`**.
 
-Verbose HTTP(S) Test Script Recorder UI tracing uses **`blazemeter.http.debugProxyRecorderTypeUi=true`** as an ordinary **JMeter** property (**`jmeter.log`** lines begin with **`[bzm proxy recorder Type UI]`** when enabled).
+| **Attribute** | **Description** | **Default** |
+|---|---|---:|
+| **blazemeter.http.lowLevelLog** | Enables low-level HTTP/2/3 client tracing (may write under **`target/`**, e.g. **`http2-debug.log`**) | false |
+| **blazemeter.http.skipHttp2Settings** | Skips custom HTTP/2 SETTINGS tuning in the client | false |
+| **blazemeter.http.directSend** | Uses Jetty **`request.send()`** directly (diagnostic; bypasses listener path) | false |
+| **blazemeter.http.disableBrotliDecoder** | Disables Brotli content decoder registration | false |
+| **blazemeter.http.disableZstdDecoder** | Disables Zstandard content decoder registration | false |
+| **blazemeter.http.disableGzipDecoder** | Disables gzip content decoder registration | false |
+| **blazemeter.http.disableDeflateDecoder** | Disables deflate content decoder registration | false |
+| **blazemeter.http.skipManualDecodeWhenAdvertised** | Skips redundant manual body decode when **`Content-Encoding`** is already advertised | true |
 
-Further **`-D`** troubleshooting toggles are documented in **`docs/http2-jetty-debug-notes.md`**.Restart JMeter after changing JMeter properties that are applied when affected classes initialize.
+**Recording UI tracing (JMeter property, not `-D`):** **`blazemeter.http.debugProxyRecorderTypeUi=true`** — normal **JMeter** property; **`jmeter.log`** lines use prefix **`[bzm proxy recorder Type UI]`** when enabled.
+
+More context for the **`-D`** flags: **`docs/http2-jetty-debug-notes.md`**.
+
+Restart JMeter after changing JMeter properties that are applied when affected classes initialize.
 
 ### Protocol Profiles
 
