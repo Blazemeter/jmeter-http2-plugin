@@ -6,30 +6,39 @@
  <img src="https://raw.githubusercontent.com/Blazemeter/jmeter-bzm-commons/refs/heads/master/src/main/resources/light-theme/blazemeter-by-perforce-logo.png">
 </picture>
 
-This plugin provides a `bzm - HTTP Sampler` (multi-protocol: **HTTP/1.1**, **HTTP/2**, **HTTP/3 (QUIC)**) and an `HTTP Async Controller` for running many requests concurrently (multiplexing).
+This plugin provides a `bzm - HTTP Sampler` (multi-protocol: **HTTP/1.1**, **HTTP/2**, **HTTP/3 (QUIC)**) and **`bzm - HTTP Async Controller`** so multiple BlazeMeter HTTP samplers can run **overlapped in time** (concurrent sampler execution controlled by that controller—not the same thing as HTTP/2 stream multiplexing on the wire).
 
-_**IMPORTANT:** Java 17+ required_
-_**WARNING:** It should be noted that JMeter up to version 5.6.3 is not compatible with Java versions higher than Java 21. For those versions of JMeter, it's recommended to use Java 17 or Java 21._
+_**IMPORTANT:** Requires **Java 17+**, matching this project’s build and CI toolchain._
+
+_**Compatibility:** This project **compiles** against Apache JMeter **5.4.1** (`pom.xml`). CI also exercises the packaged plugin with JMeter **5.6.3** on **Java 17** (GitHub Actions: `.github/workflows/ci-jmeter-compatibility.yaml`). Pair your JMeter and Java versions according to what that JMeter release supports—see Apache’s **[Getting Started](https://jmeter.apache.org/usermanual/get-started.html)** and release notes for the version you run._
 
 # Setup
 
 1. Install the plugin from the [JMeter Plugins Manager](https://www.blazemeter.com/blog/how-install-jmeter-plugins-manager).
+
+## Building from source
+
+Uses **Maven 3** from the repository root:
+
+`mvn clean package`
+
+Artifacts land under **`target/`**. Compilation tracks **`jmeter.version`** in **`pom.xml`**; runtime compatibility with other JMeter GA versions is exercised in CI **as configured** above (extend the workflow if you want to cover additional versions).
 
 
 ## To create your test
 
 ### Option A: Recording (JMeter HTTP(S) Test Script Recorder)
 
-This plugin can act as a sampler creator during JMeter proxy recording, it is **enabled by default**.
+This plugin can act as a sampler creator during JMeter proxy recording; it is **enabled by default**.
 
 1. Use JMeter’s [**HTTP(S) Test Script Recorder**](https://jmeter.apache.org/usermanual/jmeter_proxy_step_by_step.html) as usual.
 
-2. As the elements are recorded, the plugin will be creating the BlazeMeter HTTP Sampler automatically. 
+2. As the elements are recorded, the plugin creates the BlazeMeter HTTP Sampler automatically.
 
 Notes:
 
-- For Disable recording support, you can do it in the Tool menu -> BlazeMeter HTTP -> Disable...
-- Also you can disble this manually adding or updating the property `blazemeter.http.proxy_enabled=false` on `user.properties`.
+- To disable recording support, use the Tools menu -> BlazeMeter HTTP -> Disable...
+- You can also disable this manually by adding or updating `blazemeter.http.proxy_enabled=false` in `user.properties`.
 - The recorder creates `bzm - HTTP Sampler` elements, but you may still want to adjust protocol/profile settings afterwards.
 
 
@@ -44,7 +53,7 @@ Notes:
 3. Configure the sampler URL + client behavior (profile/protocols) as described below.
 4. Add timers, assertions, listeners, etc.
 
-_**NOTE:** The plugin supports all current practices related to JMeter HTTP Requests._
+_**NOTE:** Where possible the sampler aligns with behaviors you know from JMeter’s **HTTP Request**. There are deliberate differences wherever multi-protocol negotiation, QUIC, or the Jetty client requires them._
 
 ## Configuring the sampler
 
@@ -92,7 +101,7 @@ The available profiles are:
 | Enable HTTP/2 | Allows HTTP/2. Over TLS this is typically negotiated via ALPN. For cleartext origins see H2C options below. |
 | Enable HTTP/1.1 | Allows HTTP/1.1. If disabled, the client will avoid HTTP/1.1 unless forced by server/proxy constraints. |
 | H2C Upgrade (HTTP/1.1 Upgrade) | For cleartext (`http://`) origins, allow HTTP/1.1 -> HTTP/2 (h2c) upgrade. Visible when HTTP/1.1 and HTTP/2 are enabled. |
-| Enable ALPN | Enables ALPN negotiation (TLS) for HTTP/2 and HTTP/1.1. (HTTP/3 discovery is via Alt-Svc, not ALPN.) |
+| Enable ALPN | Enables TLS ALPN for **HTTPS** (**HTTP/1.1** and **HTTP/2**). (**HTTP/3 discovery** uses **Alt-Svc**, not ALPN.) Cleartext **h2c** uses upgrade/prior-knowledge flows instead of TLS ALPN. |
 | Automatic fallback | Enables automatic fallback between protocols (e.g. prefer HTTP/3, then fall back to HTTP/2/1.1 as needed). |
 | Fallback on HTTP/2 protocol_error | If an HTTP/2 `protocol_error` occurs, retry using HTTP/1.1 (when fallback is enabled). |
 | Alt-Svc cache | Caches `Alt-Svc` advertisements used for HTTP/3 discovery. |
@@ -145,57 +154,71 @@ HTTP/3 notes:
 
 ## Buffer capacity
 
-By default, the size of the downloaded resources is set to 2 MB (2097152 bytes) but, the limit can be increased by adding the `blazemeter.http.maxBufferSize` property on the jmeter.properties file in bytes.
+By default, the size of downloaded resources is limited to 2 MB (2,097,152 bytes); you can raise the limit by setting `blazemeter.http.maxBufferSize` in `jmeter.properties` or `user.properties` (value in bytes).
 
-## Multiplexing
+## Multiplexing, HTTP/2, and overlapping sampler execution
 
-One of the main features that were incorporated in HTTP2 was the multiplexing capability.
-Multiplexing in HTTP2 allows for multiple concurrent requests and responses to be transmitted over a single connection, improving efficiency and reducing latency.
+**HTTP/2 multiplexing** means many requests can share **one TLS/TCP connection** as separate streams—the Jetty stack does this whenever negotiation selects HTTP/2.
 
-Currently, the plugin does not handle any limit for the asynchronous requests. However, it could be limited by setting the `maxConcurrentAsyncInController` property or it's also possible to tune the maximum number of requests per connection  
-`httpJettyClient.maxRequestsPerConnection` which is 100 by default.
+**Overlapping sampler execution** (several BlazeMeter HTTP samplers in progress at once **within one thread iteration**) requires **`bzm - HTTP Async Controller`**. Its default in-flight ceiling (when **Limit max number of parallel executions** is off) follows **`blazemeter.http.maxConcurrentAsyncInController`** (default **100**); when limiting is enabled, **`blazemeter.http.controller.maxConcurrentAsyncInController`** is stored on the controller from the GUI. Tune **`blazemeter.http.maxRequestsPerConnection`** (default **100**) for Jetty concurrency per pooled connection.
 
-> IMPORTANT: All HTTP2 requests outside a HTTP2 Async Controller will run synchronous (multiplexing disabled)
+> **IMPORTANT:** Outside **`bzm - HTTP Async Controller`**, a Thread Group still runs BlazeMeter HTTP samplers **one after another** (the sampler returns before JMeter proceeds). That sequential **test-plan** pacing is orthogonal to HTTP/2 **transport** multiplexing.
 
-## HTTP2 Async Controller
+## HTTP Async Controller
 
-All HTTP2 samplers embedded in a HTTP2 Async controller will run asynchronous.
+Add **`bzm - HTTP Async Controller`** (**Add -> Logic Controller -> bzm - HTTP Async Controller**). The tree shows that label; recorder tooling (**Tools -> BlazeMeter HTTP**) uses the same name. BlazeMeter HTTP samplers that are **direct children** of this controller can execute **with overlap**, subject to caps and checkpoints below.
 
-![HTTP2 Controller Demonstration](docs/http2-async-controller.gif)
+![HTTP Async Controller demonstration](docs/http2-async-controller.gif)
 
 **Considerations**:
 
-1. The amount of asynchronous requests will be determined by the JMeter property `httpJettyClient.maxConcurrentAsyncInController` which by default is `100`
-2. If there are any elements within the Async Controller that are not HTTP2Samplers, they will function as a synchronization point for all asynchronous requests that occur before those elements. This means that before executing the different element, the controller will wait for all previous requests to complete.
-3. Listeners such as View Result Tree will process the elements that finish first, so the order in which they display results may not necessarily follow the TestPlan order.
-4. To emit a parent sample for the async controller duration (from the first async request start to the last completion), enable **Generate Parent Sample** in the controller UI. Child samples will be attached as sub-results of that parent sample.
+1. **Concurrency cap**: The JVM property **`blazemeter.http.maxConcurrentAsyncInController`** sets the default ceiling (**100**) used when **Limit max number of parallel executions** is **unchecked**. When that limit is enabled in the UI, the cap is stored on the controller under **`blazemeter.http.controller.maxConcurrentAsyncInController`**.
+2. Elements within the Async Controller that are not BlazeMeter HTTP samplers act as synchronization points for all asynchronous requests that occurred before them. Before those elements execute, the controller waits for all such requests to complete.
+3. Listeners such as **View Results Tree** process whichever samples finish first, so the displayed order may not match the Test Plan order.
+4. Parent sample (**Generate Parent Sample**): **`blazemeter.http.controller.generateParentSample`** persists the UI toggle; child BlazeMeter HTTP results attach as **sub-results** of that aggregated sample. Optionally set this key in **`user.properties`** / **`jmeter.properties`** as the default for **new** controllers when the `.jmx` has no explicit value.
 
 ## ALPN
 
-The plugin offers Application-Layer Protocol Negotiation (ALPN) support, which facilitates the negotiation of application-layer protocols within the TLS handshake.
+The plugin uses **TLS ALPN** so HTTPS connections can advertise **HTTP/1.1** and **HTTP/2** (`h2`). **HTTP/3 discovery** is separate—it relies on **`Alt-Svc`** (see **Protocols** above), not TLS ALPN.
 
-The plugin supports the following protocols for ALPN negotiation:
+Cleartext **h2c** never uses TLS ALPN; negotiation uses **HTTP/1.1 Upgrade** or **prior knowledge**, matching the **`http://`** options described elsewhere in this README.
 
-- HTTP/1.1
-- HTTP/2 (over TLS)
-- HTTP/2 (over cleartext, h2c)
-
-For TLS/SSL configuration please refer to [SSL Manager](https://jmeter.apache.org/usermanual/component_reference.html#SSL_Manager) and [Keystore Configuration](https://jmeter.apache.org/usermanual/component_reference.html#Keystore_Configuration).
+For TLS keystores/truststores, see JMeter’s [SSL Manager](https://jmeter.apache.org/usermanual/component_reference.html#SSL_Manager) and [Keystore Configuration](https://jmeter.apache.org/usermanual/component_reference.html#Keystore_Configuration).
 
 ## Auth Manager
 
 Currently, we only support the Basic and Digest authentication mechanisms.
 
-To make use of Basic preemptive authentication results, make sure to create and set the property `httpJettyClient.auth.preemptive` to true in the jmeter.properties file.
+To use Basic preemptive authentication, set `blazemeter.http.auth.preemptive` to **`true`** in **`jmeter.properties`** or **`user.properties`**.
 
 ## Embedded Resources
 
-To retrieve all embedded resources asynchronously, you simply need to choose "Parallel Downloads" as the option, unless the value is equal to 1.
-If you would like to download embedded resources in a synchronous way choose "Parallel Downloads" and set the number to 1.
+To fetch embedded resources asynchronously, enable **Parallel downloads** unless the pool size equals **1** (which behaves synchronously).
+
+To fetch them synchronously, enable **Parallel downloads** and set the pool size to **1**.
 
 ## Properties
 
-This document describes JMeter properties. The properties present in jmeter.properties also should be set in the user.properties file. These properties are only taken into account after restarting JMeter as they are usually resolved when the class is loaded.
+Most names documented below are **JMeter properties**: place them in **`user.properties`** (preferred for overrides), **`jmeter.properties`**, or JMeter’s UI equivalents so they enter the merged **`JMeterUtils`** map.
+
+Layout:
+
+- **`blazemeter.http.*`** governs BlazeMeter HTTP client defaults—profiles, protocol toggles, pooling, QUIC, caches, auth, concurrency caps unrelated to persisted controller checkbox state, embedded resources knobs, etc.
+- **`blazemeter.http.controller.*`** survives **inside each `bzm - HTTP Async Controller` element** in the `.jmx` whenever you toggle that controller’s options (see **HTTP Async Controller property names**, below).
+
+**Construction-time globals** versus **serialized controller fields**:
+
+| Source | Applies when |
+|---|---|
+| **`blazemeter.http.controller.generateParentSample`** in **`user.properties` / `jmeter.properties`** | **New controllers** lacking an explicit value on the `.jmx` inherit this boolean default. |
+| **`blazemeter.http.maxConcurrentAsyncInController`** | Defines the concurrent ceiling whenever **Limit max number of parallel executions** is unchecked; flipping that checkbox persists **`blazemeter.http.controller.maxConcurrentAsyncInController`** instead. |
+| **`blazemeter.http.controller.limitMaxParallel`** and **`blazemeter.http.controller.maxConcurrentAsyncInController` on `.jmx`** | Come from GUI saves/manual XML edits—they are **not** supplied automatically from unrelated JMeter properties. |
+
+**Java system properties** (passed as **`-Dproperty=value`** when starting the JVM) gate a few diagnostics and transport quirks. Examples: **`blazemeter.http.lowLevelLog`**, **`blazemeter.http.skipHttp2Settings`**, **`blazemeter.http.directSend`**, **`blazemeter.http.disableBrotliDecoder`**, **`blazemeter.http.disableZstdDecoder`**, **`blazemeter.http.disableGzipDecoder`**, **`blazemeter.http.disableDeflateDecoder`**, **`blazemeter.http.skipManualDecodeWhenAdvertised`**. They bypass the **`user.properties`** / **`jmeter.properties`** pipeline—set them on the JVM when required.
+
+Verbose HTTP(S) Test Script Recorder UI tracing uses **`blazemeter.http.debugProxyRecorderTypeUi=true`** as an ordinary **JMeter** property (**`jmeter.log`** lines begin with **`[bzm proxy recorder Type UI]`** when enabled).
+
+Further **`-D`** troubleshooting toggles are documented in **`docs/http2-jetty-debug-notes.md`**.Restart JMeter after changing JMeter properties that are applied when affected classes initialize.
 
 ### Protocol Profiles
 
@@ -210,7 +233,7 @@ Profile selection:
 
 | **Attribute** | **Description** | **Default** |
 |---|---|---|
-| **httpJettyClient.profile** | Protocol behavior profile | browser-like |
+| **blazemeter.http.profile** | Protocol behavior profile | browser-like |
 
 Profile defaults summary:
 
@@ -228,8 +251,8 @@ Notes:
 
 ### What “profile” means (in practice)
 
-- The **global** profile is `httpJettyClient.profile` (applies when a sampler has no per-sampler overrides).
-- Each sampler can store a profile in `HTTP2Sampler.profile`.
+- The **global** profile is **`blazemeter.http.profile`** (applies when a sampler has no per-sampler overrides).
+- Each sampler stores its chosen profile alongside that sampler in the saved test plan.
 - Profiles define defaults for:
   - which protocols are enabled (HTTP/3, HTTP/2, HTTP/1.1)
   - whether ALPN is used
@@ -242,23 +265,39 @@ In the UI:
 - If you use any other profile, the UI typically persists only the selected profile and relies on profile defaults.
 
 
-### JMeter properties
+### HTTP Async Controller property names (**`blazemeter.http.controller.*`**)
+
+These entries are persisted **per** **`bzm - HTTP Async Controller`** in the `.jmx` (**the GUI uses the names below when saving**).
+
+| Key | Role |
+|---|---|
+| **`blazemeter.http.controller.generateParentSample`** | Mirrors **Generate Parent Sample** (`true` / `false`). |
+| **`blazemeter.http.controller.limitMaxParallel`** | Mirrors **Limit max number of parallel executions** (`true` / `false`). |
+| **`blazemeter.http.controller.maxConcurrentAsyncInController`** | Mirrors **Max parallel** when limiting is enabled (integer, minimum **1**). |
+
+You may also set **`blazemeter.http.controller.generateParentSample`** in **`user.properties`** or **`jmeter.properties`** so **new** controllers inherit that default whenever the element omits explicit values.
+
+
+### JMeter property reference
+
+The rows below are **JMeter properties** (not JVM `-D` properties), unless you already set overrides as described above.
 
 | **Attribute** | **Description** | **Default** |
 |---|---|---:|
 | **blazemeter.http.maxBufferSize** | Maximum size of the downloaded resources in bytes | 2097152 |
-| **blazemeter.http.minThreads** | Minimum number of threads per http client | 1 |
-| **blazemeter.http.maxThreads** | Maximum number of threads per http client | 5 |
+| **blazemeter.http.minThreads** | Minimum number of threads per HTTP client | 1 |
+| **blazemeter.http.maxThreads** | Maximum number of threads per HTTP client | 5 |
 | **blazemeter.http.maxRequestsQueuedPerDestination** | Maximum number of requests that may be queued to a destination | 32767 |
-| **blazemeter.http.maxConnectionsPerDestination** | Sets the max number of connections to open to each destinations | 100 |
-| **blazemeter.http.byteBufferPoolFactor** | Factor number used in the allocation of memory in the buffer of http client | 4 |
+| **blazemeter.http.maxConnectionsPerDestination** | Sets the maximum number of connections to open to each destination | 100 |
+| **blazemeter.http.byteBufferPoolFactor** | Factor applied when allocating buffers for the HTTP client | 4 |
 | **blazemeter.http.strictEventOrdering** | Force request events ordering | false |
 | **blazemeter.http.sharedThreadPool** | Use a shared thread pool across HTTP clients | false |
 | **blazemeter.http.idleTimeout** | Max time, in milliseconds, a connection can be idle | 60000 |
 | **blazemeter.http.auth.preemptive** | Use of Basic preemptive authentication results | false |
 | **blazemeter.http.maxConcurrentPushedStreams** | Maximum number of server push streams concurrently received | 100 |
-| **blazemeter.http.maxConcurrentAsyncInController** | Maximum number of concurrent samplers inside a HTTP2 Async Controller | 1000 |
-| **HTTPSampler.response_timeout** | Maximum waiting time without timeout defined (ms) | 0 |
+| **blazemeter.http.maxRequestsPerConnection** | Maximum Jetty HTTP requests per pooled connection | 100 |
+| **blazemeter.http.maxConcurrentAsyncInController** | Default concurrency cap inside **`bzm - HTTP Async Controller`** when parallel limiting is unchecked | 100 |
+| **HTTPSampler.response_timeout** | Default response timeout (ms) when the sampler defines none | 0 |
 | **http.post_add_content_type_if_missing** | Add Content-Type header if missing? | false |
 | **blazemeter.http.enableHttp3** | Enable HTTP/3 support (Alt-Svc + QUIC) | profile |
 | **blazemeter.http.enableHttp2** | Enable HTTP/2 support | profile |
@@ -272,7 +311,7 @@ In the UI:
 | **blazemeter.http.altSvcCacheEnabled** | Enable Alt-Svc cache for HTTP/3 discovery | profile |
 | **blazemeter.http.http1OnlyCacheEnabled** | Enable HTTP/1.1-only cache for HTTPS origins | profile |
 | **blazemeter.http.h2cCacheEnabled** | Enable H2C cache for cleartext origins | profile |
-| **blazemeter.http.h2cUpgradeEnabled** | Default value for `HTTP2Sampler.http1_upgrade` | false |
+| **blazemeter.http.h2cUpgradeEnabled** | Enable **H2C Upgrade (HTTP/1.1 Upgrade)** | false |
 | **blazemeter.http.h2cCacheTtlMs** | H2C cache TTL in milliseconds | profile |
 | **blazemeter.http.http1OnlyCooldownMs** | HTTP/1.1-only cache TTL in milliseconds | profile |
 | **blazemeter.http.http3BrokenCooldownMs** | Cooldown before retrying HTTP/3 after failures (ms) | profile |
@@ -283,8 +322,11 @@ In the UI:
 | **blazemeter.http.quicMaxUnidirectionalStreams** | QUIC max unidirectional streams | 100 |
 | **blazemeter.http.settingsMaxHeaderListSize** | HTTP/2 SETTINGS_MAX_HEADER_LIST_SIZE | 4096 |
 
-Legacy property (backward compatibility):
+Additional property:
 
-- **blazemeter.http.removeIdleDestinations**: if set to false, disables destination idle timeout.
+- **`blazemeter.http.removeIdleDestinations`**: if **`false`**, disables destination idle timeout.
 
+## License
+
+Distributed under the **Apache License 2.0**. See **`LICENSE`** in this repository.
 
