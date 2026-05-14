@@ -12,9 +12,42 @@ _**IMPORTANT:** Requires **Java 17+**._
 
 _**Compatibility:** Use **Java** and **Apache JMeter** versions that are **supported together** for the JMeter release you run. Through **JMeter 5.6.3**, JMeter does **not** support **Java** versions **newer than 21** — use **Java 17** or **Java 21** with those JMeter lines unless your vendor documents otherwise. For newer JMeter versions, follow Apache’s prerequisites in **[Getting Started](https://jmeter.apache.org/usermanual/get-started.html)** and the release notes for that version._
 
-# Setup
+# Install
 
-Install the plugin from the [JMeter Plugins Manager](https://www.blazemeter.com/blog/how-install-jmeter-plugins-manager).
+Install this plugin via **Plugins Manager** when possible. Start from the prerequisites, then install, verify, and update as needed.
+
+## Prerequisites
+
+1. **[Apache JMeter](https://jmeter.apache.org/download_jmeter.cgi)** installed and runnable with a **Java** version that matches that JMeter release (see **IMPORTANT** / **Compatibility** at the top of this README).
+2. **[JMeter Plugins Manager](https://www.blazemeter.com/blog/how-install-jmeter-plugins-manager)** installed inside JMeter. Plugins Manager is the usual way to add and update community plugins such as this one.
+
+## Installation using Plugins Manager
+
+1. Start **JMeter** and open **Plugins Manager** (typically **Options -> Plugins Manager** depending on your JMeter build).
+2. Open the **Available Plugins** tab and search for **BlazeMeter HTTP**.
+3. Select it, click **Apply Changes and Restart JMeter**, and wait for the install to finish.
+
+Dependencies required by the plugin should be resolved by Plugins Manager alongside the main JAR.
+
+## Updating
+
+If the plugin is already installed, open **Plugins Manager -> Installed Plugins**, find the same entry, and install updates when offered (then restart JMeter when prompted), same as other Plugins Manager extensions.
+
+## Manual installation
+
+Use this path when Plugins Manager is not an option—for example offline installs.
+
+1. Open **[Releases](https://github.com/Blazemeter/jmeter-http2-plugin/releases)** for this repository and choose the plugin version that matches your JMeter line (the **Latest** tag is usually the right default).
+2. Under **Assets** for that release, download **`jmeter-bzm-http2-<version>.jar`**.
+3. Copy **`jmeter-bzm-http2-<version>.jar`** into **`<JMETER_HOME>/lib/ext`**.
+4. **Restart JMeter**.
+
+## Verifying the installation
+
+1. In **Plugins Manager -> Installed Plugins**, confirm the BlazeMeter HTTP plugin is listed.
+2. In a test plan: **Add -> Sampler** and check that **`bzm - HTTP Sampler`** is available. Optionally **Add -> Logic Controller** and verify **`bzm - HTTP Async Controller`**.
+
+To build the JAR yourself from this repository, see **[Building from source](#building-from-source)** below.
 
 
 ## To create your test
@@ -45,7 +78,7 @@ Notes:
 - Since BlazeMeter Automatic Correlation Recorder inherits and is compatible with the JMeter recorder, the process of enabling and disabling Recording support is the same as the method documented in Option A.
 
 
-### Option B: Manual setup
+### Option C: Manual setup
 
 1. Create a Thread Group.
 
