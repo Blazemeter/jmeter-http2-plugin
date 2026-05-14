@@ -34,6 +34,17 @@ Notes:
 - The recorder creates `bzm - HTTP Sampler` elements, but you may still want to adjust protocol/profile settings afterwards.
 
 
+### Option B: Recording with BlazeMeter Automatic Correlation Recorder
+
+This plugin is also compatible with the BlazeMeter Automatic Correlation Recorder recording method.
+
+For more information: [BlazeMeter Automatic Correlation Recorder - Installing the Plugin](https://blazemeter.github.io/CorrelationRecorder/guide/installation-guide.html#prerequisites)
+
+Notes:
+
+- Since BlazeMeter Automatic Correlation Recorder inherits and is compatible with the JMeter recorder, the process of enabling and disabling Recording support is the same as the method documented in Option A.
+
+
 ### Option B: Manual setup
 
 1. Create a Thread Group.
