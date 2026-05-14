@@ -8,9 +8,11 @@
 
 This plugin provides a `bzm - HTTP Sampler` (multi-protocol: **HTTP/1.1**, **HTTP/2**, **HTTP/3 (QUIC)**) and **`bzm - HTTP Async Controller`** so multiple BlazeMeter HTTP samplers can run **overlapped in time** (concurrent sampler execution controlled by that controller—not the same thing as HTTP/2 stream multiplexing on the wire).
 
-_**IMPORTANT:** Requires **Java 17+**._
+> [!IMPORTANT]
+> Requires **Java 17+**
 
-_**Compatibility:** Use **Java** and **Apache JMeter** versions that are **supported together** for the JMeter release you run. Through **JMeter 5.6.3**, JMeter does **not** support **Java** versions **newer than 21** — use **Java 17** or **Java 21** with those JMeter lines unless your vendor documents otherwise. For newer JMeter versions, follow Apache’s prerequisites in **[Getting Started](https://jmeter.apache.org/usermanual/get-started.html)** and the release notes for that version._
+> [!NOTE]
+> **Compatibility:** Use **Java** and **Apache JMeter** versions that are **supported together** for the JMeter release you run. Through **JMeter 5.6.3**, JMeter does **not** support **Java** versions **newer than 21** — use **Java 17** or **Java 21** with those JMeter lines unless your vendor documents otherwise. For newer JMeter versions, follow Apache’s prerequisites in **[Getting Started](https://jmeter.apache.org/usermanual/get-started.html)** and the release notes for that version.
 
 # Install
 
@@ -18,7 +20,7 @@ Install this plugin via **Plugins Manager** when possible. Start from the prereq
 
 ## Prerequisites
 
-1. **[Apache JMeter](https://jmeter.apache.org/download_jmeter.cgi)** installed and runnable with a **Java** version that matches that JMeter release (see **IMPORTANT** / **Compatibility** at the top of this README).
+1. **[Apache JMeter](https://jmeter.apache.org/download_jmeter.cgi)** installed and runnable with a **Java** version that matches that JMeter release (see the **Important** / **Note** alerts at the top of this README).
 2. **[JMeter Plugins Manager](https://www.blazemeter.com/blog/how-install-jmeter-plugins-manager)** installed inside JMeter. Plugins Manager is the usual way to add and update community plugins such as this one.
 
 ## Installation using Plugins Manager
@@ -59,11 +61,11 @@ This plugin can act as a sampler creator during JMeter proxy recording; it is **
 
 2. As the elements are recorded, the plugin creates the BlazeMeter HTTP Sampler automatically.
 
-Notes:
-
-- To disable recording support, use the Tools menu -> BlazeMeter HTTP -> Disable...
-- You can also disable this manually by adding or updating `blazemeter.http.proxy_enabled=false` in `user.properties`.
-- The recorder creates `bzm - HTTP Sampler` elements, but you may still want to adjust protocol/profile settings afterwards.
+> [!NOTE]
+>
+> - To disable recording support, use the Tools menu -> BlazeMeter HTTP -> Disable...
+> - You can also disable this manually by adding or updating `blazemeter.http.proxy_enabled=false` in `user.properties`.
+> - The recorder creates `bzm - HTTP Sampler` elements, but you may still want to adjust protocol/profile settings afterwards.
 
 
 ### Option B: Recording with BlazeMeter Automatic Correlation Recorder
@@ -72,9 +74,9 @@ This plugin is also compatible with the BlazeMeter Automatic Correlation Recorde
 
 For more information: [BlazeMeter Automatic Correlation Recorder - Installing the Plugin](https://blazemeter.github.io/CorrelationRecorder/guide/installation-guide.html#prerequisites)
 
-Notes:
-
-- Since BlazeMeter Automatic Correlation Recorder inherits and is compatible with the JMeter recorder, the process of enabling and disabling Recording support is the same as the method documented in Option A.
+> [!NOTE]
+>
+> - Since BlazeMeter Automatic Correlation Recorder inherits and is compatible with the JMeter recorder, the process of enabling and disabling Recording support is the same as the method documented in Option A.
 
 
 ### Option C: Manual setup
@@ -88,7 +90,8 @@ Notes:
 3. Configure the sampler URL + client behavior (profile/protocols) as described below.
 4. Add timers, assertions, listeners, etc.
 
-_**NOTE:** Where possible the sampler aligns with behaviors you know from JMeter’s **HTTP Request**. There are deliberate differences wherever multi-protocol negotiation, QUIC, or the Jetty client requires them._
+> [!NOTE]
+> Where possible the sampler aligns with behaviors you know from JMeter’s **HTTP Request**. There are deliberate differences wherever multi-protocol negotiation, QUIC, or the Jetty client requires them.
 
 ## Configuring the sampler
 
@@ -183,9 +186,9 @@ Common configurations:
 - **Cleartext h2c (upgrade)**: use `http://` scheme, enable HTTP/1.1 + HTTP/2, and enable **H2C Upgrade**.
 - **Cleartext h2c (prior knowledge)**: use `http://` scheme, enable HTTP/2, enable **HTTP/2 prior knowledge for cleartext (h2c)** (only if the server supports it).
 
-HTTP/3 notes:
-
-- HTTP/3 is **discovered via Alt-Svc** (and optionally cached), not via ALPN.
+> [!NOTE]
+>
+> - HTTP/3 is **discovered via Alt-Svc** (and optionally cached), not via ALPN.
 
 ## Buffer capacity
 
@@ -197,7 +200,8 @@ By default, the size of downloaded resources is limited to 2 MB (2,097,152 bytes
 
 **Overlapping sampler execution** (several BlazeMeter HTTP samplers in progress at once **within one thread iteration**) requires **`bzm - HTTP Async Controller`**. The concurrent cap follows **`blazemeter.http.maxConcurrentAsyncInController`** (default **100**) whenever **Limit max number of parallel executions** is unchecked. When limiting is checked, saves persist **Max parallel** as **`blazemeter.http.controller.maxConcurrentAsyncInController`**; unchecking restores the global cap at runtime whether or not stale values linger in the saved plan (see considerations under **HTTP Async Controller** below). Tune **`blazemeter.http.maxRequestsPerConnection`** (default **100**) for Jetty concurrency per pooled connection.
 
-> **IMPORTANT:** Outside **`bzm - HTTP Async Controller`**, a Thread Group still runs BlazeMeter HTTP samplers **one after another** (the sampler returns before JMeter proceeds). That sequential **test-plan** pacing is orthogonal to HTTP/2 **transport** multiplexing.
+> [!IMPORTANT]
+> Outside **`bzm - HTTP Async Controller`**, a Thread Group still runs BlazeMeter HTTP samplers **one after another** (the sampler returns before JMeter proceeds). That sequential **test-plan** pacing is orthogonal to HTTP/2 **transport** multiplexing.
 
 ## HTTP Async Controller
 
@@ -292,10 +296,10 @@ Profile defaults summary:
 | browser-compatible | on | on | on | on | off (0 ms) |
 | legacy | off | off | on | off | off (0 ms) |
 
-Notes:
-
-- HTTP/3 is discovered via Alt-Svc, not ALPN.
-- Happy Eyeballs is only used for HTTP/3 (H3 + H2).
+> [!NOTE]
+>
+> - HTTP/3 is discovered via Alt-Svc, not ALPN.
+> - Happy Eyeballs is only used for HTTP/3 (H3 + H2).
 
 ### What “profile” means (in practice)
 
