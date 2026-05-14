@@ -6,36 +6,45 @@
  <img src="https://raw.githubusercontent.com/Blazemeter/jmeter-bzm-commons/refs/heads/master/src/main/resources/light-theme/blazemeter-by-perforce-logo.png">
 </picture>
 
-This plugin provides a `bzm - HTTP Sampler` (multi-protocol: **HTTP/1.1**, **HTTP/2**, **HTTP/3 (QUIC)**) and an `HTTP2 Async Controller` for running many requests concurrently (multiplexing).
+This plugin provides a `bzm - HTTP Sampler` (multi-protocol: **HTTP/1.1**, **HTTP/2**, **HTTP/3 (QUIC)**) and an `HTTP Async Controller` for running many requests concurrently (multiplexing).
 
-_**IMPORTANT:** Java 17 required_
+_**IMPORTANT:** Java 17+ required_
+_**WARNING:** It should be noted that JMeter up to version 5.6.3 is not compatible with Java versions higher than Java 21. For those versions of JMeter, it's recommended to use Java 17 or Java 21._
+
+# Setup
+
+1. Install the plugin from the [JMeter Plugins Manager](https://www.blazemeter.com/blog/how-install-jmeter-plugins-manager).
+
 
 ## To create your test
 
-### Option A: Manual setup (recommended)
+### Option A: Recording (JMeter HTTP(S) Test Script Recorder)
 
-1. Install the plugin from the [JMeter Plugins Manager](https://www.blazemeter.com/blog/how-install-jmeter-plugins-manager).
-2. Create a Thread Group.
+This plugin can act as a sampler creator during JMeter proxy recording, it is **enabled by default**.
 
-3. Add the HTTP Sampler (Add-> Sampler-> bzm - HTTP Sampler).
-s
-![](docs/addHTTP2Sampler.png)
+1. Use JMeter’s [**HTTP(S) Test Script Recorder**](https://jmeter.apache.org/usermanual/jmeter_proxy_step_by_step.html) as usual.
 
-4. Configure the sampler URL + client behavior (profile/protocols) as described below.
-5. Add timers, assertions, listeners, etc.
-
-### Option B: Experimental recording (HTTP(S) Test Script Recorder)
-
-This plugin can act as a sampler creator during JMeter proxy recording, but it is **disabled by default**.
-
-1. Enable recording support by adding to `user.properties` (or `jmeter.properties`), then restart JMeter:
-   - `HTTP2Sampler.proxy_enabled=true`
-2. Use JMeter’s **HTTP(S) Test Script Recorder** as usual.
+2. As the elements are recorded, the plugin will be creating the BlazeMeter HTTP Sampler automatically. 
 
 Notes:
 
-- This is **experimental**. If you hit issues, disable it and record with the default HTTP sampler.
+- For Disable recording support, you can do it in the Tool menu -> BlazeMeter HTTP -> Disable...
+- Also you can disble this manually adding or updating the property `blazemeter.http.proxy_enabled=false` on `user.properties`.
 - The recorder creates `bzm - HTTP Sampler` elements, but you may still want to adjust protocol/profile settings afterwards.
+
+
+### Option B: Manual setup
+
+1. Create a Thread Group.
+
+2. Add the HTTP Sampler (Add -> Sampler -> bzm - HTTP Sampler).
+
+![](docs/addHTTP2Sampler.png)
+
+3. Configure the sampler URL + client behavior (profile/protocols) as described below.
+4. Add timers, assertions, listeners, etc.
+
+_**NOTE:** The plugin supports all current practices related to JMeter HTTP Requests._
 
 ## Configuring the sampler
 
@@ -64,7 +73,7 @@ This is the standard JMeter URL configuration panel (domain, port, path, method,
 
 ![](docs/http2Sampler-advanced.png)
 
-#### Client Behavior → Profile
+#### Client Behavior -> Profile
 
 A **profile** is a named bundle of protocol defaults (which protocols are enabled, whether ALPN is enabled, fallback/caches, and timings). Profiles make it easy to mimic “how browsers behave” vs “legacy compatibility”.
 
@@ -75,14 +84,14 @@ The available profiles are:
 - **Legacy / Older Systems** (`legacy`)
 - **Browser-like (Custom)** (`browser-like-custom`) (persists per-sampler toggles below)
 
-#### Client Behavior → Protocols / Fallback / Cache / Timing
+#### Client Behavior -> Protocols / Fallback / Cache / Timing
 
 | **Control** | **What it does** |
 |---|---|
 | Enable HTTP/3 (Alt-Svc + QUIC) | Allows HTTP/3 when the origin advertises it via `Alt-Svc`. Typically requires `https` and UDP/QUIC reachability. |
 | Enable HTTP/2 | Allows HTTP/2. Over TLS this is typically negotiated via ALPN. For cleartext origins see H2C options below. |
 | Enable HTTP/1.1 | Allows HTTP/1.1. If disabled, the client will avoid HTTP/1.1 unless forced by server/proxy constraints. |
-| H2C Upgrade (HTTP/1.1 Upgrade) | For cleartext (`http://`) origins, allow HTTP/1.1 → HTTP/2 (h2c) upgrade. Visible when HTTP/1.1 and HTTP/2 are enabled. |
+| H2C Upgrade (HTTP/1.1 Upgrade) | For cleartext (`http://`) origins, allow HTTP/1.1 -> HTTP/2 (h2c) upgrade. Visible when HTTP/1.1 and HTTP/2 are enabled. |
 | Enable ALPN | Enables ALPN negotiation (TLS) for HTTP/2 and HTTP/1.1. (HTTP/3 discovery is via Alt-Svc, not ALPN.) |
 | Automatic fallback | Enables automatic fallback between protocols (e.g. prefer HTTP/3, then fall back to HTTP/2/1.1 as needed). |
 | Fallback on HTTP/2 protocol_error | If an HTTP/2 `protocol_error` occurs, retry using HTTP/1.1 (when fallback is enabled). |
@@ -136,7 +145,7 @@ HTTP/3 notes:
 
 ## Buffer capacity
 
-By default, the size of the downloaded resources is set to 2 MB (2097152 bytes) but, the limit can be increased by adding the `httpJettyClient.maxBufferSize` property on the jmeter.properties file in bytes.
+By default, the size of the downloaded resources is set to 2 MB (2097152 bytes) but, the limit can be increased by adding the `blazemeter.http.maxBufferSize` property on the jmeter.properties file in bytes.
 
 ## Multiplexing
 
@@ -225,78 +234,57 @@ Notes:
   - which protocols are enabled (HTTP/3, HTTP/2, HTTP/1.1)
   - whether ALPN is used
   - fallback + caching behavior
-  - timing knobs used for HTTP/3 → HTTP/2 “Happy Eyeballs”
+  - timing knobs used for HTTP/3 -> HTTP/2 “Happy Eyeballs”
 
 In the UI:
 
 - If you use **Browser-like (Custom)**, toggles are saved per-sampler.
 - If you use any other profile, the UI typically persists only the selected profile and relies on profile defaults.
 
-### UI to Sampler Mapping
-
-The sampler UI stores settings as per-sampler properties. These values override profile defaults at runtime. Only **Browser-like (Custom)** persists individual toggles; other profiles store only the selected profile and use defaults.
-
-| **UI Control** | **Sampler Property** |
-|---|---|
-| Client Behavior → Profile | `HTTP2Sampler.profile` |
-| Protocols → Enable HTTP/3 | `HTTP2Sampler.enableHttp3` |
-| Protocols → Enable HTTP/2 | `HTTP2Sampler.enableHttp2` |
-| Protocols → Enable HTTP/1.1 | `HTTP2Sampler.enableHttp1` |
-| Protocols → Enable ALPN | `HTTP2Sampler.alpnEnabled` |
-| Fallback → Automatic fallback | `HTTP2Sampler.fallbackEnabled` |
-| Fallback → protocol_error fallback | `HTTP2Sampler.protocolErrorFallbackEnabled` |
-| Cache → Alt-Svc cache | `HTTP2Sampler.altSvcCacheEnabled` |
-| Cache → HTTP/1.1-only cache | `HTTP2Sampler.http1OnlyCacheEnabled` |
-| Cache → H2C cache | `HTTP2Sampler.h2cCacheEnabled` |
-| Cache → HTTP/2 prior knowledge (cleartext) | `HTTP2Sampler.http2PriorKnowledge` |
-| Timing → Happy Eyeballs delay (ms) | `HTTP2Sampler.happyEyeballsDelayMs` |
-| Timing → HTTP/3 broken cooldown (ms) | `HTTP2Sampler.http3BrokenCooldownMs` |
-| Timing → HTTP/1.1-only cache TTL (ms) | `HTTP2Sampler.http1OnlyCooldownMs` |
-| Timing → H2C cache TTL (ms) | `HTTP2Sampler.h2cCacheTtlMs` |
-| H2C Upgrade (HTTP/1.1 Upgrade) | `HTTP2Sampler.http1_upgrade` |
 
 ### JMeter properties
 
 | **Attribute** | **Description** | **Default** |
 |---|---|---:|
-| **httpJettyClient.maxBufferSize** | Maximum size of the downloaded resources in bytes | 2097152 |
-| **httpJettyClient.minThreads** | Minimum number of threads per http client | 1 |
-| **httpJettyClient.maxThreads** | Maximum number of threads per http client | 5 |
-| **httpJettyClient.maxRequestsQueuedPerDestination** | Maximum number of requests that may be queued to a destination | 32767 |
-| **httpJettyClient.maxConnectionsPerDestination** | Sets the max number of connections to open to each destinations | 100 |
-| **httpJettyClient.byteBufferPoolFactor** | Factor number used in the allocation of memory in the buffer of http client | 4 |
-| **httpJettyClient.strictEventOrdering** | Force request events ordering | false |
-| **httpJettyClient.sharedThreadPool** | Use a shared thread pool across HTTP clients | false |
-| **httpJettyClient.idleTimeout** | Max time, in milliseconds, a connection can be idle | 60000 |
-| **httpJettyClient.auth.preemptive** | Use of Basic preemptive authentication results | false |
-| **httpJettyClient.maxConcurrentPushedStreams** | Maximum number of server push streams concurrently received | 100 |
-| **httpJettyClient.maxConcurrentAsyncInController** | Maximum number of concurrent samplers inside a HTTP2 Async Controller | 1000 |
+| **blazemeter.http.maxBufferSize** | Maximum size of the downloaded resources in bytes | 2097152 |
+| **blazemeter.http.minThreads** | Minimum number of threads per http client | 1 |
+| **blazemeter.http.maxThreads** | Maximum number of threads per http client | 5 |
+| **blazemeter.http.maxRequestsQueuedPerDestination** | Maximum number of requests that may be queued to a destination | 32767 |
+| **blazemeter.http.maxConnectionsPerDestination** | Sets the max number of connections to open to each destinations | 100 |
+| **blazemeter.http.byteBufferPoolFactor** | Factor number used in the allocation of memory in the buffer of http client | 4 |
+| **blazemeter.http.strictEventOrdering** | Force request events ordering | false |
+| **blazemeter.http.sharedThreadPool** | Use a shared thread pool across HTTP clients | false |
+| **blazemeter.http.idleTimeout** | Max time, in milliseconds, a connection can be idle | 60000 |
+| **blazemeter.http.auth.preemptive** | Use of Basic preemptive authentication results | false |
+| **blazemeter.http.maxConcurrentPushedStreams** | Maximum number of server push streams concurrently received | 100 |
+| **blazemeter.http.maxConcurrentAsyncInController** | Maximum number of concurrent samplers inside a HTTP2 Async Controller | 1000 |
 | **HTTPSampler.response_timeout** | Maximum waiting time without timeout defined (ms) | 0 |
 | **http.post_add_content_type_if_missing** | Add Content-Type header if missing? | false |
-| **httpJettyClient.enableHttp3** | Enable HTTP/3 support (Alt-Svc + QUIC) | profile |
-| **httpJettyClient.enableHttp2** | Enable HTTP/2 support | profile |
-| **httpJettyClient.enableHttp1** | Enable HTTP/1.1 support | profile |
-| **httpJettyClient.alpnEnabled** | Enable ALPN | profile |
-| **httpJettyClient.fallbackEnabled** | Enable automatic fallback between protocols | profile |
-| **httpJettyClient.protocolErrorFallbackEnabled** | Enable fallback to HTTP/1.1 for HTTP/2 protocol_error | profile |
-| **httpJettyClient.disableFallback** | Legacy flag (inverse of protocolErrorFallbackEnabled) | false |
-| **httpJettyClient.goawayRetryEnabled** | Enable retry on HTTP/2 GOAWAY | true |
-| **httpJettyClient.maxGoawayRetries** | Max retries on GOAWAY before fallback | 1 |
-| **httpJettyClient.altSvcCacheEnabled** | Enable Alt-Svc cache for HTTP/3 discovery | profile |
-| **httpJettyClient.http1OnlyCacheEnabled** | Enable HTTP/1.1-only cache for HTTPS origins | profile |
-| **httpJettyClient.h2cCacheEnabled** | Enable H2C cache for cleartext origins | profile |
-| **httpJettyClient.h2cUpgradeEnabled** | Default value for `HTTP2Sampler.http1_upgrade` | false |
-| **httpJettyClient.h2cCacheTtlMs** | H2C cache TTL in milliseconds | profile |
-| **httpJettyClient.http1OnlyCooldownMs** | HTTP/1.1-only cache TTL in milliseconds | profile |
-| **httpJettyClient.http3BrokenCooldownMs** | Cooldown before retrying HTTP/3 after failures (ms) | profile |
-| **httpJettyClient.happyEyeballsDelayMs** | Delay before starting HTTP/2 fallback for HTTP/3 (ms) | profile |
-| **httpJettyClient.http2PriorKnowledge** | Force HTTP/2 prior knowledge for cleartext origins (h2c) | false |
-| **httpJettyClient.quicMaxIdleTimeout** | QUIC max idle timeout in milliseconds | 30000 |
-| **httpJettyClient.quicMaxBidirectionalStreams** | QUIC max bidirectional streams | 100 |
-| **httpJettyClient.quicMaxUnidirectionalStreams** | QUIC max unidirectional streams | 100 |
-| **httpJettyClient.settingsMaxHeaderListSize** | HTTP/2 SETTINGS_MAX_HEADER_LIST_SIZE | 4096 |
+| **blazemeter.http.enableHttp3** | Enable HTTP/3 support (Alt-Svc + QUIC) | profile |
+| **blazemeter.http.enableHttp2** | Enable HTTP/2 support | profile |
+| **blazemeter.http.enableHttp1** | Enable HTTP/1.1 support | profile |
+| **blazemeter.http.alpnEnabled** | Enable ALPN | profile |
+| **blazemeter.http.fallbackEnabled** | Enable automatic fallback between protocols | profile |
+| **blazemeter.http.protocolErrorFallbackEnabled** | Enable fallback to HTTP/1.1 for HTTP/2 protocol_error | profile |
+| **blazemeter.http.disableFallback** | Legacy flag (inverse of protocolErrorFallbackEnabled) | false |
+| **blazemeter.http.goawayRetryEnabled** | Enable retry on HTTP/2 GOAWAY | true |
+| **blazemeter.http.maxGoawayRetries** | Max retries on GOAWAY before fallback | 1 |
+| **blazemeter.http.altSvcCacheEnabled** | Enable Alt-Svc cache for HTTP/3 discovery | profile |
+| **blazemeter.http.http1OnlyCacheEnabled** | Enable HTTP/1.1-only cache for HTTPS origins | profile |
+| **blazemeter.http.h2cCacheEnabled** | Enable H2C cache for cleartext origins | profile |
+| **blazemeter.http.h2cUpgradeEnabled** | Default value for `HTTP2Sampler.http1_upgrade` | false |
+| **blazemeter.http.h2cCacheTtlMs** | H2C cache TTL in milliseconds | profile |
+| **blazemeter.http.http1OnlyCooldownMs** | HTTP/1.1-only cache TTL in milliseconds | profile |
+| **blazemeter.http.http3BrokenCooldownMs** | Cooldown before retrying HTTP/3 after failures (ms) | profile |
+| **blazemeter.http.happyEyeballsDelayMs** | Delay before starting HTTP/2 fallback for HTTP/3 (ms) | profile |
+| **blazemeter.http.http2PriorKnowledge** | Force HTTP/2 prior knowledge for cleartext origins (h2c) | false |
+| **blazemeter.http.quicMaxIdleTimeout** | QUIC max idle timeout in milliseconds | 30000 |
+| **blazemeter.http.quicMaxBidirectionalStreams** | QUIC max bidirectional streams | 100 |
+| **blazemeter.http.quicMaxUnidirectionalStreams** | QUIC max unidirectional streams | 100 |
+| **blazemeter.http.settingsMaxHeaderListSize** | HTTP/2 SETTINGS_MAX_HEADER_LIST_SIZE | 4096 |
 
 Legacy property (backward compatibility):
 
-- **httpJettyClient.removeIdleDestinations**: if set to false, disables destination idle timeout.
+- **blazemeter.http.removeIdleDestinations**: if set to false, disables destination idle timeout.
+
 
