@@ -14,21 +14,21 @@
 All diagnostics are **system properties** (use `-Dkey=value`).
 
 Low-level logging:
-- `bzm-http2-plugin.lowLevelLog`  
+- `blazemeter.http.lowLevelLog`  
   Enables frame-level logging and file logging to `target/http2-debug.log`.
 
 Diagnostic toggles:
-- `bzm-http2-plugin.skipHttp2Settings`  
+- `blazemeter.http.skipHttp2Settings`  
   Skip custom HTTP/2 SETTINGS configuration.
-- `bzm-http2-plugin.directSend`  
+- `blazemeter.http.directSend`  
   Use `request.send()` directly (bypass listener flow).
-- `bzm-http2-plugin.disableGzipDecoder`  
+- `blazemeter.http.disableGzipDecoder`  
   Disable gzip decoder registration.
-- `bzm-http2-plugin.disableBrotliDecoder`  
+- `blazemeter.http.disableBrotliDecoder`  
   Disable brotli decoder registration.
-- `bzm-http2-plugin.disableZstdDecoder`  
+- `blazemeter.http.disableZstdDecoder`  
   Disable zstd decoder registration.
-- `bzm-http2-plugin.disableDeflateDecoder`  
+- `blazemeter.http.disableDeflateDecoder`  
   Disable deflate decoder registration.
 
 ## Notes on Tests
@@ -38,9 +38,9 @@ Diagnostic toggles:
 ## How to Enable Low-Level Logs
 Example:
 ```
-java -Dbzm-http2-plugin.lowLevelLog=true ...
+java -Dblazemeter.http.lowLevelLog=true ...
 ```
 
 ## Why Only One Logging Toggle
 To avoid overhead and file I/O during normal runs, low-level logging is
-fully disabled unless `bzm-http2-plugin.lowLevelLog=true` is set.
+fully disabled unless `blazemeter.http.lowLevelLog=true` is set.

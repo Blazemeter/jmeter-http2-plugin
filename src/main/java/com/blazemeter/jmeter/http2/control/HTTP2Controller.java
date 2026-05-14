@@ -2,6 +2,7 @@ package com.blazemeter.jmeter.http2.control;
 
 import com.blazemeter.jmeter.http2.core.HTTP2FutureResponseListener;
 import com.blazemeter.jmeter.http2.sampler.HTTP2Sampler;
+import com.blazemeter.jmeter.http2.util.BzmHttpPluginProperties;
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.List;
@@ -46,8 +47,9 @@ public class HTTP2Controller extends GenericController implements Serializable {
 
   public HTTP2Controller() {
     super();
-    maxConcurrentAsyncInController = Integer
-        .parseInt(JMeterUtils.getPropDefault("httpJettyClient.maxConcurrentAsyncInController",
+    maxConcurrentAsyncInController =
+        Integer.parseInt(BzmHttpPluginProperties.getPropDefault(
+            "httpJettyClient.maxConcurrentAsyncInController",
             String.valueOf(maxConcurrentAsyncInController)));
     generateControllerSample = JMeterUtils.getPropDefault(
         GENERATE_ASYNC_CONTROLLER_SAMPLE_PROP, false);
@@ -110,7 +112,7 @@ public class HTTP2Controller extends GenericController implements Serializable {
       while (!interrupted && (http2FListener != null)) {
         if (http2FListener.isDone() || http2FListener.isCancelled()) {
           String urlProcesed = http2FListener.getRequest().getURI().toString();
-          LOG.debug("HTTP2 Future Finished, retrying the sample with that data {}", urlProcesed);
+          LOG.debug("HTTP Future Finished, retrying the sample with that data {}", urlProcesed);
           http2SamplesSync.remove(0); // Remove the sample
           http2Sam.suppressPreProcessorsOnce();
           return http2Sam; // The second attempt take the data from the finished listener

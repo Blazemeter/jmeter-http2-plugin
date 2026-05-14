@@ -41,7 +41,8 @@ public class Installer {
       // Only show dialog if JMeter is running in GUI mode (not headless)
       if (isGuiMode()) {
         JOptionPane.showMessageDialog(null,
-            "The HTTP2 Plugin requires Java 17 or higher, please upgrade your Java version and "
+            "The BlazeMeter HTTP Plugin requires Java 17 or higher, "
+                + " please upgrade your Java version and "
                 + "restart JMeter before using the plugin.",
             "Java 17 is required", JOptionPane.WARNING_MESSAGE);
       }

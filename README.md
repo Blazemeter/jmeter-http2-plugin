@@ -16,8 +16,9 @@ _**IMPORTANT:** Java 17 required_
 
 1. Install the plugin from the [JMeter Plugins Manager](https://www.blazemeter.com/blog/how-install-jmeter-plugins-manager).
 2. Create a Thread Group.
-3. Add the sampler: **Add → Sampler → bzm - HTTP Sampler**.
 
+3. Add the HTTP Sampler (Add-> Sampler-> bzm - HTTP Sampler).
+s
 ![](docs/addHTTP2Sampler.png)
 
 4. Configure the sampler URL + client behavior (profile/protocols) as described below.

@@ -4,10 +4,11 @@ import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.ByteArrayOutputStream;
-import java.io.File;
 import java.io.IOException;
 import java.net.URISyntaxException;
+import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -250,10 +251,16 @@ public class ServerBuilder {
 
   private String getKeyStorePathAsUriPathInSSLContextFactoryFormat() {
     try {
-      // Generate a absolute path in URI format with compatibility with Windows
-      // IMPORTANT: SSLContextFactory need a URI in relative format, internally they concat the path
-      return new File("./").toURI().relativize(getClass().getResource("keystore.p12").toURI())
-          .getPath();
+      URL resource = getClass().getResource("keystore.p12");
+      if (resource == null) {
+        throw new IllegalStateException("classpath resource keystore.p12 not found");
+      }
+      if (!"file".equalsIgnoreCase(resource.getProtocol())) {
+        throw new IllegalStateException(
+            "keystore.p12 must be a file URL (tests run from target/test-classes), got: "
+                + resource);
+      }
+      return Paths.get(resource.toURI()).toAbsolutePath().normalize().toString();
     } catch (URISyntaxException e) {
       throw new RuntimeException(e);
     }

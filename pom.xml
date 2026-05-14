@@ -7,9 +7,9 @@
   <groupId>com.blazemeter.jmeter</groupId>
   <artifactId>jmeter-bzm-http2</artifactId>
   <packaging>jar</packaging>
-  <version>2.1.0</version>
-  <name>HTTP/2 Sampler</name>
-  <description>HTTP/2 protocol sampler</description>
+  <version>3.0.0</version>
+  <name>BlazeMeter HTTP Sampler</name>
+  <description>BlazeMeter HTTP protocol sampler</description>
 
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
@@ -416,24 +416,6 @@
         <artifactId>maven-dependency-plugin</artifactId>
         <version>3.0.2</version>
         <executions>
-          <execution>
-            <id>copy-jmeter-dependencies</id>
-            <phase>install</phase>
-            <goals>
-              <goal>
-                copy-dependencies
-              </goal>
-            </goals>
-            <configuration>
-              <includeArtifactIds>
-                jetty-http2-client, jetty-client, jetty-http2-client-transport, jetty-http2-common, jetty-http2-hpack,
-                jetty-http, jetty-alpn-client, jetty-alpn-java-client, jetty-io, jetty-util,
-                jetty-http3-client, jetty-quic-client, jetty-compression-gzip, jetty-compression-common, dec
-              </includeArtifactIds>
-              <outputDirectory>${project.build.directory}/jmeter-test/lib</outputDirectory>
-              <stripVersion>true</stripVersion>
-            </configuration>
-          </execution>
           <execution>
             <id>copy-plugin-to-jmeter-dependencies</id>
             <phase>install</phase>

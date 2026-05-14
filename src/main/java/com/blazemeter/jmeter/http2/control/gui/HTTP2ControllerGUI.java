@@ -2,17 +2,20 @@ package com.blazemeter.jmeter.http2.control.gui;
 
 import com.blazemeter.jmeter.http2.control.HTTP2Controller;
 import java.awt.BorderLayout;
-import java.awt.Container;
+import java.awt.Dimension;
+import java.awt.Rectangle;
 import java.awt.event.ItemEvent;
 import javax.swing.JCheckBox;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JTextField;
+import javax.swing.Scrollable;
+import javax.swing.SwingConstants;
 import org.apache.jmeter.control.gui.AbstractControllerGui;
-import org.apache.jmeter.gui.util.HorizontalPanel;
+import org.apache.jmeter.gui.util.VerticalPanel;
 import org.apache.jmeter.testelement.TestElement;
 
-public class HTTP2ControllerGUI extends AbstractControllerGui {
+public class HTTP2ControllerGUI extends AbstractControllerGui implements Scrollable {
   private static final long serialVersionUID = 240L;
   private final JCheckBox generateControllerSample;
   private final JCheckBox limitMaxParallel;
@@ -28,7 +31,7 @@ public class HTTP2ControllerGUI extends AbstractControllerGui {
 
   @Override
   public String getStaticLabel() {
-    return "bzm - HTTP2 Async Controller";
+    return "bzm - HTTP Async Controller";
   }
 
   @Override
@@ -72,35 +75,8 @@ public class HTTP2ControllerGUI extends AbstractControllerGui {
     // WARNING: called from ctor so must not be overridden (i.e. must be private or final)
     setLayout(new BorderLayout(0, 5));
     setBorder(makeBorder());
-    Container topPanel = makeTitlePanel();
-    add(topPanel, BorderLayout.NORTH);
-    buildOptionsPanel(topPanel);
-  }
-
-  private void buildOptionsPanel(Container topPanel) {
-    JLabel disclaimer = new JLabel(
-        "All direct child elements of this controller that can run in HTTP Async "
-            + "will run in parallel.", JLabel.CENTER);
-    topPanel.add(disclaimer);
-
-    JPanel parentSamplePanel = new HorizontalPanel();
-    parentSamplePanel.add(generateControllerSample);
-    parentSamplePanel.add(new JLabel("Generate parent sample", JLabel.RIGHT));
-
-    JPanel limitPanel = new HorizontalPanel();
-    limitPanel.add(limitMaxParallel);
-    limitPanel.add(new JLabel("Limit max number of parallel executions", JLabel.RIGHT));
-
-    JPanel maxPanel = new HorizontalPanel();
-    maxPanel.add(new JLabel("Max parallel: ", JLabel.RIGHT));
-    maxPanel.add(maxParallelField);
-
-    HorizontalPanel limitWrap = new HorizontalPanel();
-    limitWrap.add(limitPanel);
-    limitWrap.add(maxPanel);
-
-    topPanel.add(parentSamplePanel);
-    topPanel.add(limitWrap);
+    add(makeTitlePanel(), BorderLayout.NORTH);
+    add(buildOptionsPanel(), BorderLayout.CENTER);
 
     limitMaxParallel.addItemListener(event -> {
       boolean enabled = event.getStateChange() == ItemEvent.SELECTED;
@@ -109,6 +85,29 @@ public class HTTP2ControllerGUI extends AbstractControllerGui {
         maxParallelField.setText(String.valueOf(defaultMaxParallel));
       }
     });
+  }
+
+  private JPanel buildOptionsPanel() {
+    VerticalPanel panel = new VerticalPanel();
+    JLabel disclaimer = new JLabel(
+        "<html><div style='text-align:center'>All direct child elements of this controller that "
+            + "can run in HTTP Async will run in parallel.</div></html>",
+        JLabel.CENTER);
+    disclaimer.setAlignmentX(JLabel.CENTER_ALIGNMENT);
+    panel.add(disclaimer);
+
+    generateControllerSample.setAlignmentX(JCheckBox.LEFT_ALIGNMENT);
+    panel.add(generateControllerSample);
+
+    limitMaxParallel.setAlignmentX(JCheckBox.LEFT_ALIGNMENT);
+    panel.add(limitMaxParallel);
+
+    JPanel maxRow = new JPanel(new BorderLayout(8, 0));
+    maxRow.add(new JLabel("Max parallel: "), BorderLayout.WEST);
+    maxRow.add(maxParallelField, BorderLayout.CENTER);
+    panel.add(maxRow);
+
+    return panel;
   }
 
   private void updateMaxParallelFieldState(HTTP2Controller controller) {
@@ -132,5 +131,37 @@ public class HTTP2ControllerGUI extends AbstractControllerGui {
     } catch (Exception e) {
       return defaultMaxParallel > 0 ? defaultMaxParallel : 1;
     }
+  }
+
+  /**
+   * Same as {@link com.blazemeter.jmeter.http2.sampler.gui.HTTP2SamplerGui}: JMeter embeds
+   * controller settings in a {@link javax.swing.JScrollPane}; tracking viewport width allows the
+   * form to narrow when the window is resized.
+   */
+  @Override
+  public Dimension getPreferredScrollableViewportSize() {
+    return getPreferredSize();
+  }
+
+  @Override
+  public int getScrollableUnitIncrement(Rectangle visibleRect, int orientation, int direction) {
+    return orientation == SwingConstants.VERTICAL
+        ? Math.max(1, visibleRect.height / 10)
+        : Math.max(1, visibleRect.width / 10);
+  }
+
+  @Override
+  public int getScrollableBlockIncrement(Rectangle visibleRect, int orientation, int direction) {
+    return orientation == SwingConstants.VERTICAL ? visibleRect.height : visibleRect.width;
+  }
+
+  @Override
+  public boolean getScrollableTracksViewportWidth() {
+    return true;
+  }
+
+  @Override
+  public boolean getScrollableTracksViewportHeight() {
+    return false;
   }
 }
