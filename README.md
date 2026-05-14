@@ -8,21 +8,13 @@
 
 This plugin provides a `bzm - HTTP Sampler` (multi-protocol: **HTTP/1.1**, **HTTP/2**, **HTTP/3 (QUIC)**) and **`bzm - HTTP Async Controller`** so multiple BlazeMeter HTTP samplers can run **overlapped in time** (concurrent sampler execution controlled by that controller—not the same thing as HTTP/2 stream multiplexing on the wire).
 
-_**IMPORTANT:** Requires **Java 17+**, matching this project’s build and CI toolchain._
+_**IMPORTANT:** Requires **Java 17+**._
 
-_**Compatibility:** This project **compiles** against Apache JMeter **5.4.1** (`pom.xml`). CI also exercises the packaged plugin with JMeter **5.6.3** on **Java 17** (GitHub Actions: `.github/workflows/ci-jmeter-compatibility.yaml`). Pair your JMeter and Java versions according to what that JMeter release supports—see Apache’s **[Getting Started](https://jmeter.apache.org/usermanual/get-started.html)** and release notes for the version you run._
+_**Compatibility:** Use **Java** and **Apache JMeter** versions that are **supported together** for the JMeter release you run. Through **JMeter 5.6.3**, JMeter does **not** support **Java** versions **newer than 21** — use **Java 17** or **Java 21** with those JMeter lines unless your vendor documents otherwise. For newer JMeter versions, follow Apache’s prerequisites in **[Getting Started](https://jmeter.apache.org/usermanual/get-started.html)** and the release notes for that version._
 
 # Setup
 
-1. Install the plugin from the [JMeter Plugins Manager](https://www.blazemeter.com/blog/how-install-jmeter-plugins-manager).
-
-## Building from source
-
-Uses **Maven 3** from the repository root:
-
-`mvn clean package`
-
-Artifacts land under **`target/`**. Compilation tracks **`jmeter.version`** in **`pom.xml`**; runtime compatibility with other JMeter GA versions is exercised in CI **as configured** above (extend the workflow if you want to cover additional versions).
+Install the plugin from the [JMeter Plugins Manager](https://www.blazemeter.com/blog/how-install-jmeter-plugins-manager).
 
 
 ## To create your test
@@ -172,7 +164,7 @@ Add **`bzm - HTTP Async Controller`** (**Add -> Logic Controller -> bzm - HTTP A
 
 **Considerations**:
 
-1. **Concurrency cap**: The JVM property **`blazemeter.http.maxConcurrentAsyncInController`** sets the default ceiling (**100**) used when **Limit max number of parallel executions** is **unchecked**. When that limit is enabled in the UI, the cap is stored on the controller under **`blazemeter.http.controller.maxConcurrentAsyncInController`**.
+1. **Concurrency cap**: The JMeter property **`blazemeter.http.maxConcurrentAsyncInController`** sets the default ceiling (**100**) used when **Limit max number of parallel executions** is **unchecked**. When that limit is enabled in the UI, the cap is stored on the controller under **`blazemeter.http.controller.maxConcurrentAsyncInController`**.
 2. Elements within the Async Controller that are not BlazeMeter HTTP samplers act as synchronization points for all asynchronous requests that occurred before them. Before those elements execute, the controller waits for all such requests to complete.
 3. Listeners such as **View Results Tree** process whichever samples finish first, so the displayed order may not match the Test Plan order.
 4. Parent sample (**Generate Parent Sample**): **`blazemeter.http.controller.generateParentSample`** persists the UI toggle; child BlazeMeter HTTP results attach as **sub-results** of that aggregated sample. Optionally set this key in **`user.properties`** / **`jmeter.properties`** as the default for **new** controllers when the `.jmx` has no explicit value.
@@ -325,6 +317,14 @@ The rows below are **JMeter properties** (not JVM `-D` properties), unless you a
 Additional property:
 
 - **`blazemeter.http.removeIdleDestinations`**: if **`false`**, disables destination idle timeout.
+
+## Building from source
+
+Uses **Maven 3** from the repository root:
+
+`mvn clean package`
+
+Artifacts land under **`target/`**. Compilation uses the **`jmeter.version`** declared in **`pom.xml`**; at runtime install the packaged JAR against the JMeter build you intend to run and validate with a short smoke plan.
 
 ## License
 
