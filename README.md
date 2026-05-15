@@ -108,9 +108,9 @@ This plugin can act as a sampler creator during JMeter proxy recording; it is **
 
 > [!NOTE]
 >
-> - To disable recording support, use the Tools menu → BlazeMeter HTTP → Disable...
-> - You can also disable this manually by adding or updating `blazemeter.http.proxy_enabled=false` in `user.properties`.
-> - The recorder creates `bzm - HTTP Sampler` elements, but you may still want to adjust protocol/profile settings afterwards.
+> To disable recording support, use the Tools menu → BlazeMeter HTTP → Disable...
+> You can also disable this manually by adding or updating `blazemeter.http.proxy_enabled=false` in `user.properties`.
+> The recorder creates `bzm - HTTP Sampler` elements, but you may still want to adjust protocol/profile settings afterwards.
 
 
 <a id="readme-option-b-correlation"></a>
@@ -122,7 +122,7 @@ For more information: [BlazeMeter Automatic Correlation Recorder - Installing th
 
 > [!NOTE]
 >
-> - Since BlazeMeter Automatic Correlation Recorder inherits and is compatible with the JMeter recorder, the process of enabling and disabling Recording support is the same as the method documented in Option A.
+> Since BlazeMeter Automatic Correlation Recorder inherits and is compatible with the JMeter recorder, the process of enabling and disabling Recording support is the same as the method documented in Option A.
 
 
 <a id="readme-option-c-manual"></a>
@@ -253,7 +253,7 @@ Common configurations:
 
 > [!NOTE]
 >
-> - HTTP/3 is **discovered via Alt-Svc** (and optionally cached), not via ALPN.
+> HTTP/3 is **discovered via Alt-Svc** (and optionally cached), not via ALPN.
 
 
 <a id="readme-buffer-capacity"></a>
