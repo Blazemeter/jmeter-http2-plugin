@@ -1,14 +1,17 @@
 package com.blazemeter.jmeter.http2.control;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import com.blazemeter.jmeter.http2.HTTP2TestBase;
 import com.blazemeter.jmeter.http2.core.HTTP2FutureResponseListener;
 import com.blazemeter.jmeter.http2.sampler.HTTP2Sampler;
 import com.blazemeter.jmeter.http2.sampler.JMeterTestUtils;
+import com.blazemeter.jmeter.http2.util.BzmHttpPluginProperties;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.util.Properties;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -16,7 +19,8 @@ import org.apache.jmeter.control.NextIsNullException;
 import org.apache.jmeter.protocol.http.sampler.HTTPSampler;
 import org.apache.jmeter.samplers.Sampler;
 import org.apache.jmeter.util.JMeterUtils;
-import org.eclipse.jetty.client.HttpRequest;
+import org.eclipse.jetty.client.Request;
+
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -34,7 +38,7 @@ public class HTTP2ControllerTest extends HTTP2TestBase {
   private HTTP2Sampler secondSampler;
   private final HTTPSampler otherSamplerType = new HTTPSampler();
   @Mock
-  private HttpRequest request;
+  private Request request;
   @Mock
   private HTTP2FutureResponseListener firstSamplerListener;
   @Mock
@@ -105,6 +109,118 @@ public class HTTP2ControllerTest extends HTTP2TestBase {
       next = http2Controller.next();
     }
     assertThat(next).isInstanceOf(HTTPSampler.class);
+  }
+
+  @Test
+  public void shouldSuppressPreProcessorsOnAsyncCompletionBeforeReturningSampler()
+      throws Exception {
+    FlagHTTP2Sampler flaggedSampler = new FlagHTTP2Sampler();
+    HTTP2FutureResponseListener flaggedListener = mock(HTTP2FutureResponseListener.class);
+    flaggedSampler.setFutureResponseListener(flaggedListener);
+
+    JMeterUtils.setProperty(MAX_CONCURRENT_ASYNC_IN_CONTROLLER, "1000");
+    http2Controller = new HTTP2Controller();
+    http2Controller.addTestElement(flaggedSampler);
+    http2Controller.addTestElement(otherSamplerType);
+
+    when(request.getURI()).thenReturn(new URI("https://test.com"));
+    when(flaggedListener.getRequest()).thenReturn(request);
+    when(flaggedListener.isDone()).thenReturn(true);
+
+    http2Controller.next();
+    Sampler next = http2Controller.next();
+
+    assertThat(next).isSameAs(flaggedSampler);
+    assertThat(flaggedSampler.wasSuppressed()).isTrue();
+  }
+
+  @Test
+  public void shouldResolveGenerateParentSampleFromPreferredJvmPropertyBeforeLegacy() {
+    JMeterTestUtils.setupJmeterEnv();
+    Properties props = JMeterUtils.getJMeterProperties();
+    String pref =
+        BzmHttpPluginProperties.CONTROLLER_PREFERRED_PREFIX + "generateParentSample";
+    String leg = BzmHttpPluginProperties.CONTROLLER_LEGACY_PREFIX + "generateParentSample";
+    String prevPref = props.getProperty(pref);
+    String prevLeg = props.getProperty(leg);
+    try {
+      props.remove(pref);
+      props.remove(leg);
+      JMeterUtils.setProperty(leg, "false");
+      JMeterUtils.setProperty(pref, "true");
+      HTTP2Controller c = new HTTP2Controller();
+      assertThat(c.isGenerateControllerSample()).isTrue();
+    } finally {
+      if (prevPref == null) {
+        props.remove(pref);
+      } else {
+        JMeterUtils.setProperty(pref, prevPref);
+      }
+      if (prevLeg == null) {
+        props.remove(leg);
+      } else {
+        JMeterUtils.setProperty(leg, prevLeg);
+      }
+    }
+  }
+
+  @Test
+  public void shouldReadGenerateParentSampleFromLegacyJvmPropertyWhenPreferredUnset() {
+    JMeterTestUtils.setupJmeterEnv();
+    Properties props = JMeterUtils.getJMeterProperties();
+    String pref =
+        BzmHttpPluginProperties.CONTROLLER_PREFERRED_PREFIX + "generateParentSample";
+    String leg = BzmHttpPluginProperties.CONTROLLER_LEGACY_PREFIX + "generateParentSample";
+    String prevPref = props.getProperty(pref);
+    String prevLeg = props.getProperty(leg);
+    try {
+      props.remove(pref);
+      props.remove(leg);
+      JMeterUtils.setProperty(leg, "true");
+      HTTP2Controller c = new HTTP2Controller();
+      assertThat(c.isGenerateControllerSample()).isTrue();
+    } finally {
+      if (prevPref == null) {
+        props.remove(pref);
+      } else {
+        JMeterUtils.setProperty(pref, prevPref);
+      }
+      if (prevLeg == null) {
+        props.remove(leg);
+      } else {
+        JMeterUtils.setProperty(leg, prevLeg);
+      }
+    }
+  }
+
+  @Test
+  public void elementLegacyLimitMaxParallelPropertyIsHonored() {
+    JMeterTestUtils.setupJmeterEnv();
+    HTTP2Controller c = new HTTP2Controller();
+    c.setProperty(BzmHttpPluginProperties.CONTROLLER_LEGACY_PREFIX + "limitMaxParallel", true);
+    assertThat(c.isLimitMaxParallel()).isTrue();
+  }
+
+  @Test
+  public void preferredElementPropertyOverridesLegacyForLimitMaxParallel() {
+    JMeterTestUtils.setupJmeterEnv();
+    HTTP2Controller c = new HTTP2Controller();
+    c.setProperty(BzmHttpPluginProperties.CONTROLLER_LEGACY_PREFIX + "limitMaxParallel", false);
+    c.setProperty(BzmHttpPluginProperties.CONTROLLER_PREFERRED_PREFIX + "limitMaxParallel", true);
+    assertThat(c.isLimitMaxParallel()).isTrue();
+  }
+
+  private static class FlagHTTP2Sampler extends HTTP2Sampler {
+    private boolean suppressed;
+
+    @Override
+    public void suppressPreProcessorsOnce() {
+      suppressed = true;
+    }
+
+    boolean wasSuppressed() {
+      return suppressed;
+    }
   }
 
   // TODO:

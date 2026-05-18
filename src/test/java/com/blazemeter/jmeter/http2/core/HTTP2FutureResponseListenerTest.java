@@ -1,10 +1,11 @@
 package com.blazemeter.jmeter.http2.core;
 
 import com.blazemeter.jmeter.http2.HTTP2TestBase;
-import org.eclipse.jetty.client.HttpRequest;
+import org.eclipse.jetty.client.Request;
 import org.eclipse.jetty.client.HttpResponseException;
-import org.eclipse.jetty.client.api.ContentResponse;
-import org.eclipse.jetty.client.api.Result;
+import org.eclipse.jetty.client.ContentResponse;
+import org.eclipse.jetty.client.Result;
+import org.eclipse.jetty.client.Response;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
@@ -20,12 +21,12 @@ import static org.mockito.Mockito.*;
 
 public class HTTP2FutureResponseListenerTest extends HTTP2TestBase {
     private HTTP2FutureResponseListener listener;
-    private HttpRequest mockRequest;
+    private Request mockRequest;
 
     @Before
     public void setUp() {
         listener = new HTTP2FutureResponseListener();
-        mockRequest = mock(HttpRequest.class);
+        mockRequest = mock(Request.class);
         listener.setRequest(mockRequest);
     }
 
@@ -63,7 +64,7 @@ public class HTTP2FutureResponseListenerTest extends HTTP2TestBase {
 
     @Test
     public void cancelAbortsRequest() {
-        when(mockRequest.abort(Mockito.any(CancellationException.class))).thenReturn(true);
+        when(mockRequest.abort(Mockito.any(CancellationException.class))).thenReturn(java.util.concurrent.CompletableFuture.completedFuture(true));
 
         boolean cancelled = listener.cancel(true);
 
@@ -94,9 +95,20 @@ public class HTTP2FutureResponseListenerTest extends HTTP2TestBase {
 
     @Test
     public void getWithTimeoutWaitsForCompletion() throws ExecutionException, InterruptedException, TimeoutException {
-        listener.onComplete(mock(Result.class));
+        // Create a proper mock Result with a Response
+        Result mockResult = mock(Result.class);
+        Response mockResponse = mock(Response.class);
+        when(mockResponse.getStatus()).thenReturn(200);
+        when(mockResponse.getReason()).thenReturn("OK");
+        when(mockResponse.getVersion()).thenReturn(org.eclipse.jetty.http.HttpVersion.HTTP_2);
+        when(mockResponse.getHeaders()).thenReturn(org.eclipse.jetty.http.HttpFields.EMPTY);
+        when(mockResponse.getTrailers()).thenReturn(org.eclipse.jetty.http.HttpFields.EMPTY);
+        when(mockResponse.getRequest()).thenReturn(mockRequest);
+        when(mockResult.getResponse()).thenReturn(mockResponse);
+        when(mockResult.getFailure()).thenReturn(null);
+        
+        listener.onComplete(mockResult);
 
-        ContentResponse response = listener.get();
         long timeout = 1000; // Timeout in milliseconds
         TimeUnit unit = TimeUnit.MILLISECONDS;
 
