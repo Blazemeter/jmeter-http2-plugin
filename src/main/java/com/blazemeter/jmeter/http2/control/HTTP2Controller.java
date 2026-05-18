@@ -4,8 +4,10 @@ import com.blazemeter.jmeter.http2.core.HTTP2FutureResponseListener;
 import com.blazemeter.jmeter.http2.sampler.HTTP2Sampler;
 import com.blazemeter.jmeter.http2.util.BzmHttpPluginProperties;
 import java.io.Serializable;
+import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import org.apache.jmeter.control.GenericController;
 import org.apache.jmeter.control.NextIsNullException;
@@ -290,15 +292,57 @@ public class HTTP2Controller extends GenericController implements Serializable {
     if (vars == null) {
       return null;
     }
-    Object pack = vars.getObject("JMeterThread.pack");
+    Object pack = vars.getObject(JMeterThread.PACKAGE_OBJECT);
     return pack instanceof SamplePackage ? (SamplePackage) pack : null;
   }
 
   private void registerParentSamplePackage(ParentSample sampler) {
-    SamplePackage pack = getSamplePackageFromContext();
-    if (pack == null) {
-      return;
+    SamplePackage childPack = getSamplePackageFromContext();
+    if (childPack == null) {
+      childPack = resolveChildSamplePackageFromCompiler();
     }
+    SamplePackage parentPack = childPack != null
+        ? createParentExecutionPackage(childPack)
+        : createEmptyParentExecutionPackage();
+    parentPack.setSampler(sampler);
+    putSamplerPackageInCompilerMap(sampler, parentPack);
+  }
+
+  private SamplePackage resolveChildSamplePackageFromCompiler() {
+    JMeterThread thread = JMeterContextService.getContext().getThread();
+    if (thread == null) {
+      return null;
+    }
+    try {
+      java.lang.reflect.Field compilerField = JMeterThread.class.getDeclaredField("compiler");
+      compilerField.setAccessible(true);
+      TestCompiler compiler = (TestCompiler) compilerField.get(thread);
+      if (compiler == null) {
+        return null;
+      }
+      java.lang.reflect.Field mapField = TestCompiler.class.getDeclaredField("samplerConfigMap");
+      mapField.setAccessible(true);
+      @SuppressWarnings("unchecked")
+      Map<Object, SamplePackage> map =
+          (Map<Object, SamplePackage>) mapField.get(compiler);
+      if (map == null) {
+        return null;
+      }
+      for (TestElement element : subControllersAndSamplers) {
+        if (element instanceof HTTP2Sampler) {
+          SamplePackage pack = map.get(element);
+          if (pack != null) {
+            return pack;
+          }
+        }
+      }
+    } catch (Exception e) {
+      LOG.debug("Failed to resolve child SamplePackage from compiler", e);
+    }
+    return null;
+  }
+
+  private void putSamplerPackageInCompilerMap(Object sampler, SamplePackage pack) {
     JMeterThread thread = JMeterContextService.getContext().getThread();
     if (thread == null) {
       return;
@@ -313,14 +357,41 @@ public class HTTP2Controller extends GenericController implements Serializable {
       java.lang.reflect.Field mapField = TestCompiler.class.getDeclaredField("samplerConfigMap");
       mapField.setAccessible(true);
       @SuppressWarnings("unchecked")
-      java.util.Map<Object, SamplePackage> map =
-          (java.util.Map<Object, SamplePackage>) mapField.get(compiler);
+      Map<Object, SamplePackage> map =
+          (Map<Object, SamplePackage>) mapField.get(compiler);
       if (map != null) {
         map.put(sampler, pack);
       }
     } catch (Exception e) {
       LOG.debug("Failed to register parent sampler package", e);
     }
+  }
+
+  /**
+   * Parent synthetic sampler must not inherit child assertions/post-processors: JMeter would run
+   * them against the aggregated parent {@link SampleResult}, whose response body is empty.
+   */
+  private static SamplePackage createParentExecutionPackage(SamplePackage childPack) {
+    SamplePackage parentPack = new SamplePackage(
+        childPack.getConfigs(),
+        childPack.getSampleListeners(),
+        childPack.getTimers(),
+        new ArrayList<>(),
+        new ArrayList<>(),
+        new ArrayList<>(),
+        new ArrayList<>());
+    return parentPack;
+  }
+
+  private static SamplePackage createEmptyParentExecutionPackage() {
+    return new SamplePackage(
+        new ArrayList<>(),
+        new ArrayList<>(),
+        new ArrayList<>(),
+        new ArrayList<>(),
+        new ArrayList<>(),
+        new ArrayList<>(),
+        new ArrayList<>());
   }
 
   private SampleResult buildParentSampleResult() {
@@ -435,7 +506,20 @@ public class HTTP2Controller extends GenericController implements Serializable {
         : original.getAssertionResults()) {
       copy.addAssertionResult(assertion);
     }
+    // Sub-samples attached to the async parent must not stay ignored (the child sampler is ignored
+    // only so JMeter does not notify listeners twice). JMeter 5.4 exposes only no-arg setIgnore().
+    clearIgnoreOnSampleResult(copy);
     return copy;
+  }
+
+  private static void clearIgnoreOnSampleResult(SampleResult result) {
+    try {
+      Field ignoreField = SampleResult.class.getDeclaredField("ignore");
+      ignoreField.setAccessible(true);
+      ignoreField.setBoolean(result, false);
+    } catch (Exception e) {
+      LOG.debug("Could not clear ignore flag on async parent sub-sample copy", e);
+    }
   }
 
 }
