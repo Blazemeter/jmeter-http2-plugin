@@ -43,6 +43,7 @@ import org.apache.jmeter.testelement.TestElement;
 import org.apache.jmeter.testelement.ThreadListener;
 import org.apache.jmeter.testelement.property.JMeterProperty;
 import org.apache.jmeter.testelement.property.NullProperty;
+import org.apache.jmeter.threads.JMeterContext;
 import org.apache.jmeter.threads.JMeterContextService;
 import org.apache.jmeter.threads.JMeterThread;
 import org.apache.jmeter.threads.JMeterVariables;
@@ -435,10 +436,13 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
             this.result = sampleFromListener(
                 this.result, areFollowingRedirect, depth, this.asyncListener);
             if (isAsyncParentSampleEnabled()) {
+              applyAsyncParentCompletionPipeline(this.result);
               this.result.setIgnore();
+              HTTP2Controller.registerAsyncSampleResult(this, this.result, this.asyncListener);
+              return null;
             }
             HTTP2Controller.registerAsyncSampleResult(this, this.result, this.asyncListener);
-            return isAsyncParentSampleEnabled() ? null : this.result;
+            return this.result;
           } finally {
             restoreSuppressedPreProcessors();
           }
@@ -454,6 +458,7 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
       }
       HTTPSampleResult errorResult = buildErrorResult(e, this.result);
       if (isAsyncParentSampleEnabled()) {
+        applyAsyncParentCompletionPipeline(errorResult);
         errorResult.setIgnore();
       }
       HTTP2Controller.registerAsyncSampleResult(this, errorResult, this.asyncListener);
@@ -513,10 +518,62 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
       }
       HTTPSampleResult errorResult = buildErrorResult(e, this.result);
       if (isAsyncParentSampleEnabled()) {
+        applyAsyncParentCompletionPipeline(errorResult);
         errorResult.setIgnore();
       }
       HTTP2Controller.registerAsyncSampleResult(this, errorResult, this.asyncListener);
       return isAsyncParentSampleEnabled() ? null : errorResult;
+    }
+  }
+
+  /**
+   * When {@link #isAsyncParentSampleEnabled()} and this sampler returns {@code null} to JMeter,
+   * run post-processors and assertions here (same order as {@code JMeterThread}) so child elements
+   * still apply; pre-processors already ran on the initial async dispatch and stay suppressed until
+   * {@link #restoreSuppressedPreProcessors()} in {@code finally}.
+   */
+  private void applyAsyncParentCompletionPipeline(HTTPSampleResult res) {
+    if (res == null || !isAsyncParentSampleEnabled()) {
+      return;
+    }
+    JMeterContext ctx = JMeterContextService.getContext();
+    SamplePackage pack = resolveSamplePackageForAsyncCompletion(ctx);
+    if (pack == null) {
+      LOG.warn("Async parent completion pipeline skipped for sampler={}: no SamplePackage",
+          getName());
+      return;
+    }
+    ctx.setCurrentSampler(this);
+    AsyncCompletionSamplePipeline.runAfterAsyncSample(res, pack, ctx);
+  }
+
+  /**
+   * Resolves the {@link SamplePackage} for the in-flight {@code JMeterThread.executeSamplePackage}
+   * call. Prefer the pack captured when pre-processors were suppressed for async completion, then
+   * {@code JMeterThread.PACKAGE_OBJECT}, then the compiler map.
+   */
+  private SamplePackage resolveSamplePackageForAsyncCompletion(JMeterContext ctx) {
+    if (suppressedSamplePackage != null) {
+      return suppressedSamplePackage;
+    }
+    if (ctx != null && ctx.getVariables() != null) {
+      Object packObj = ctx.getVariables().getObject(JMeterThread.PACKAGE_OBJECT);
+      if (packObj instanceof SamplePackage) {
+        return (SamplePackage) packObj;
+      }
+    }
+    try {
+      JMeterThread thread = ctx != null ? ctx.getThread() : null;
+      if (thread == null) {
+        return null;
+      }
+      Field compilerField = JMeterThread.class.getDeclaredField("compiler");
+      compilerField.setAccessible(true);
+      TestCompiler compiler = (TestCompiler) compilerField.get(thread);
+      return getSamplePackageFromCompiler(compiler);
+    } catch (Exception e) {
+      LOG.debug("Failed to resolve SamplePackage for async completion", e);
+      return null;
     }
   }
 
