@@ -8,8 +8,10 @@ import com.blazemeter.jmeter.http2.HTTP2TestBase;
 import com.blazemeter.jmeter.http2.core.HTTP2FutureResponseListener;
 import com.blazemeter.jmeter.http2.sampler.HTTP2Sampler;
 import com.blazemeter.jmeter.http2.sampler.JMeterTestUtils;
+import com.blazemeter.jmeter.http2.util.BzmHttpPluginProperties;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.util.Properties;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -18,6 +20,7 @@ import org.apache.jmeter.protocol.http.sampler.HTTPSampler;
 import org.apache.jmeter.samplers.Sampler;
 import org.apache.jmeter.util.JMeterUtils;
 import org.eclipse.jetty.client.Request;
+
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -129,6 +132,82 @@ public class HTTP2ControllerTest extends HTTP2TestBase {
 
     assertThat(next).isSameAs(flaggedSampler);
     assertThat(flaggedSampler.wasSuppressed()).isTrue();
+  }
+
+  @Test
+  public void shouldResolveGenerateParentSampleFromPreferredJvmPropertyBeforeLegacy() {
+    JMeterTestUtils.setupJmeterEnv();
+    Properties props = JMeterUtils.getJMeterProperties();
+    String pref =
+        BzmHttpPluginProperties.CONTROLLER_PREFERRED_PREFIX + "generateParentSample";
+    String leg = BzmHttpPluginProperties.CONTROLLER_LEGACY_PREFIX + "generateParentSample";
+    String prevPref = props.getProperty(pref);
+    String prevLeg = props.getProperty(leg);
+    try {
+      props.remove(pref);
+      props.remove(leg);
+      JMeterUtils.setProperty(leg, "false");
+      JMeterUtils.setProperty(pref, "true");
+      HTTP2Controller c = new HTTP2Controller();
+      assertThat(c.isGenerateControllerSample()).isTrue();
+    } finally {
+      if (prevPref == null) {
+        props.remove(pref);
+      } else {
+        JMeterUtils.setProperty(pref, prevPref);
+      }
+      if (prevLeg == null) {
+        props.remove(leg);
+      } else {
+        JMeterUtils.setProperty(leg, prevLeg);
+      }
+    }
+  }
+
+  @Test
+  public void shouldReadGenerateParentSampleFromLegacyJvmPropertyWhenPreferredUnset() {
+    JMeterTestUtils.setupJmeterEnv();
+    Properties props = JMeterUtils.getJMeterProperties();
+    String pref =
+        BzmHttpPluginProperties.CONTROLLER_PREFERRED_PREFIX + "generateParentSample";
+    String leg = BzmHttpPluginProperties.CONTROLLER_LEGACY_PREFIX + "generateParentSample";
+    String prevPref = props.getProperty(pref);
+    String prevLeg = props.getProperty(leg);
+    try {
+      props.remove(pref);
+      props.remove(leg);
+      JMeterUtils.setProperty(leg, "true");
+      HTTP2Controller c = new HTTP2Controller();
+      assertThat(c.isGenerateControllerSample()).isTrue();
+    } finally {
+      if (prevPref == null) {
+        props.remove(pref);
+      } else {
+        JMeterUtils.setProperty(pref, prevPref);
+      }
+      if (prevLeg == null) {
+        props.remove(leg);
+      } else {
+        JMeterUtils.setProperty(leg, prevLeg);
+      }
+    }
+  }
+
+  @Test
+  public void elementLegacyLimitMaxParallelPropertyIsHonored() {
+    JMeterTestUtils.setupJmeterEnv();
+    HTTP2Controller c = new HTTP2Controller();
+    c.setProperty(BzmHttpPluginProperties.CONTROLLER_LEGACY_PREFIX + "limitMaxParallel", true);
+    assertThat(c.isLimitMaxParallel()).isTrue();
+  }
+
+  @Test
+  public void preferredElementPropertyOverridesLegacyForLimitMaxParallel() {
+    JMeterTestUtils.setupJmeterEnv();
+    HTTP2Controller c = new HTTP2Controller();
+    c.setProperty(BzmHttpPluginProperties.CONTROLLER_LEGACY_PREFIX + "limitMaxParallel", false);
+    c.setProperty(BzmHttpPluginProperties.CONTROLLER_PREFERRED_PREFIX + "limitMaxParallel", true);
+    assertThat(c.isLimitMaxParallel()).isTrue();
   }
 
   private static class FlagHTTP2Sampler extends HTTP2Sampler {

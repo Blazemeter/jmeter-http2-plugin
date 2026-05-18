@@ -14,24 +14,31 @@ import org.apache.jmeter.samplers.Entry;
 import org.apache.jmeter.samplers.SampleResult;
 import org.apache.jmeter.samplers.Sampler;
 import org.apache.jmeter.testelement.TestElement;
+import org.apache.jmeter.testelement.property.JMeterProperty;
+import org.apache.jmeter.testelement.property.PropertyIterator;
 import org.apache.jmeter.threads.JMeterContextService;
 import org.apache.jmeter.threads.JMeterThread;
 import org.apache.jmeter.threads.JMeterVariables;
 import org.apache.jmeter.threads.SamplePackage;
 import org.apache.jmeter.threads.TestCompiler;
-import org.apache.jmeter.util.JMeterUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public class HTTP2Controller extends GenericController implements Serializable {
 
   private static final Logger LOG = LoggerFactory.getLogger(HTTP2Controller.class);
-  private static final String GENERATE_ASYNC_CONTROLLER_SAMPLE_PROP =
-      "http2AsyncController.generateParentSample";
-  private static final String LIMIT_MAX_PARALLEL_PROP =
-      "http2AsyncController.limitMaxParallel";
-  private static final String MAX_CONCURRENT_PROP =
-      "http2AsyncController.maxConcurrentAsyncInController";
+  private static final String GENERATE_PARENT_SAMPLE_PREF =
+      BzmHttpPluginProperties.CONTROLLER_PREFERRED_PREFIX + "generateParentSample";
+  private static final String GENERATE_PARENT_SAMPLE_LEGACY =
+      BzmHttpPluginProperties.CONTROLLER_LEGACY_PREFIX + "generateParentSample";
+  private static final String LIMIT_MAX_PARALLEL_PREF =
+      BzmHttpPluginProperties.CONTROLLER_PREFERRED_PREFIX + "limitMaxParallel";
+  private static final String LIMIT_MAX_PARALLEL_LEGACY =
+      BzmHttpPluginProperties.CONTROLLER_LEGACY_PREFIX + "limitMaxParallel";
+  private static final String MAX_CONCURRENT_PREF =
+      BzmHttpPluginProperties.CONTROLLER_PREFERRED_PREFIX + "maxConcurrentAsyncInController";
+  private static final String MAX_CONCURRENT_LEGACY =
+      BzmHttpPluginProperties.CONTROLLER_LEGACY_PREFIX + "maxConcurrentAsyncInController";
   private static final ThreadLocal<AsyncParentContext> ASYNC_PARENT_CONTEXT =
       new ThreadLocal<>();
 
@@ -51,24 +58,30 @@ public class HTTP2Controller extends GenericController implements Serializable {
         Integer.parseInt(BzmHttpPluginProperties.getPropDefault(
             "httpJettyClient.maxConcurrentAsyncInController",
             String.valueOf(maxConcurrentAsyncInController)));
-    generateControllerSample = JMeterUtils.getPropDefault(
-        GENERATE_ASYNC_CONTROLLER_SAMPLE_PROP, false);
+    generateControllerSample =
+        BzmHttpPluginProperties.getControllerPropDefault(GENERATE_PARENT_SAMPLE_PREF, false);
   }
 
   public void setLimitMaxParallel(boolean enabled) {
-    setProperty(LIMIT_MAX_PARALLEL_PROP, enabled);
+    removeProperty(LIMIT_MAX_PARALLEL_LEGACY);
+    setProperty(LIMIT_MAX_PARALLEL_PREF, enabled);
   }
 
   public boolean isLimitMaxParallel() {
-    return getPropertyAsBoolean(LIMIT_MAX_PARALLEL_PROP, false);
+    return controllerBooleanPreferPreferred(
+        LIMIT_MAX_PARALLEL_PREF, LIMIT_MAX_PARALLEL_LEGACY, false);
   }
 
   public void setMaxConcurrentAsyncInController(int maxConcurrentAsyncInController) {
-    setProperty(MAX_CONCURRENT_PROP, maxConcurrentAsyncInController);
+    removeProperty(MAX_CONCURRENT_LEGACY);
+    setProperty(MAX_CONCURRENT_PREF, maxConcurrentAsyncInController);
   }
 
   public int getMaxConcurrentAsyncInController() {
-    return getPropertyAsInt(MAX_CONCURRENT_PROP, getDefaultMaxConcurrentAsyncInController());
+    return controllerIntPreferPreferred(
+        MAX_CONCURRENT_PREF,
+        MAX_CONCURRENT_LEGACY,
+        getDefaultMaxConcurrentAsyncInController());
   }
 
   public int getDefaultMaxConcurrentAsyncInController() {
@@ -83,12 +96,45 @@ public class HTTP2Controller extends GenericController implements Serializable {
 
   public void setGenerateControllerSample(boolean enabled) {
     this.generateControllerSample = enabled;
-    setProperty(GENERATE_ASYNC_CONTROLLER_SAMPLE_PROP, enabled);
+    removeProperty(GENERATE_PARENT_SAMPLE_LEGACY);
+    setProperty(GENERATE_PARENT_SAMPLE_PREF, enabled);
   }
 
   public boolean isGenerateControllerSample() {
-    return getPropertyAsBoolean(GENERATE_ASYNC_CONTROLLER_SAMPLE_PROP,
-        generateControllerSample);
+    return controllerBooleanPreferPreferred(
+        GENERATE_PARENT_SAMPLE_PREF, GENERATE_PARENT_SAMPLE_LEGACY, generateControllerSample);
+  }
+
+  private boolean containsElementPropertyNamed(String propertyName) {
+    PropertyIterator it = propertyIterator();
+    while (it.hasNext()) {
+      JMeterProperty p = it.next();
+      if (propertyName.equals(p.getName())) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private boolean controllerBooleanPreferPreferred(String preferredKey, String legacyKey,
+                                                   boolean fallback) {
+    if (containsElementPropertyNamed(preferredKey)) {
+      return getPropertyAsBoolean(preferredKey, fallback);
+    }
+    if (containsElementPropertyNamed(legacyKey)) {
+      return getPropertyAsBoolean(legacyKey, fallback);
+    }
+    return fallback;
+  }
+
+  private int controllerIntPreferPreferred(String preferredKey, String legacyKey, int fallback) {
+    if (containsElementPropertyNamed(preferredKey)) {
+      return getPropertyAsInt(preferredKey, fallback);
+    }
+    if (containsElementPropertyNamed(legacyKey)) {
+      return getPropertyAsInt(legacyKey, fallback);
+    }
+    return fallback;
   }
 
   public static void registerAsyncSampleResult(HTTP2Sampler sampler, SampleResult result,
