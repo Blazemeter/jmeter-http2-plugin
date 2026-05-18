@@ -6,7 +6,7 @@
  <img src="https://raw.githubusercontent.com/Blazemeter/jmeter-bzm-commons/refs/heads/master/src/main/resources/light-theme/blazemeter-by-perforce-logo.png">
 </picture>
 
-This plugin provides a `bzm - HTTP Sampler` (multi-protocol: **HTTP/1.1**, **HTTP/2**, **HTTP/3 (QUIC)**) and **`bzm - HTTP Async Controller`** so multiple BlazeMeter HTTP samplers can run **overlapped in time** (concurrent sampler execution controlled by that controller—not the same thing as HTTP/2 stream multiplexing on the wire).
+This plugin provides a `bzm - HTTP Sampler` (multi-protocol: **HTTP/1.1**, **HTTP/2**, **HTTP/3 (QUIC)**) and **`bzm - HTTP Async Controller`** so multiple BlazeMeter HTTP samplers can run **overlapped in time** (concurrent sampler execution controlled by that controller—not the same thing as HTTP/2 stream multiplexing on the wire). If your test plan already uses JMeter’s standard **HTTP Request** sampler, you can **convert those elements to `bzm - HTTP Sampler`** in a few clicks—see **[Migrate from JMeter HTTP Request to BlazeMeter HTTP](#readme-migrate-jmeter-http-request)**.
 
 > [!IMPORTANT]
 > Requires **Java 17+**
@@ -22,6 +22,9 @@ This plugin provides a `bzm - HTTP Sampler` (multi-protocol: **HTTP/1.1**, **HTT
   - [Updating](#readme-updating)
   - [Manual installation](#readme-manual-installation)
   - [Verifying the installation](#readme-verifying-installation)
+- [**Migrate from JMeter HTTP Request to BlazeMeter HTTP**](#readme-migrate-jmeter-http-request)
+  - [When to use it](#readme-migrate-when)
+  - [How to run migration](#readme-migrate-how)
 - [**Creating the Test Plan**](#readme-creating-test-plan)
   - [Option A: Recording (JMeter HTTP(S) Test Script Recorder)](#readme-option-a-recording)
   - [Option B: Recording with BlazeMeter Automatic Correlation Recorder](#readme-option-b-correlation)
@@ -94,8 +97,57 @@ Use this path when Plugins Manager is not an option—for example offline instal
 To build the JAR yourself from this repository, see **[Building from source](#readme-building-from-source)** below.
 
 
+<a id="readme-migrate-jmeter-http-request"></a>
+## Migrate from JMeter HTTP Request to BlazeMeter HTTP
+
+If your plan uses Apache JMeter’s standard **HTTP Request** sampler, convert those elements to **`bzm - HTTP Sampler`** to use **HTTP/1.1**, **HTTP/2**, and **HTTP/3** from this plugin. 
+
+The tool replaces **HTTP Request → BlazeMeter HTTP** in the test tree.
+
+![Migrate HTTP Request samplers to BlazeMeter HTTP](docs/migrate-http-to-blazemeter-http.gif)
+
+<a id="readme-migrate-when"></a>
+### When to use it
+
+Use this path when:
+
+- Your `.jmx` drives HTTP traffic with JMeter’s stock **HTTP Request** sampler (tree label **HTTP Request**; element type `HTTPSamplerProxy`, or legacy `HTTPSampler` on very old plans).
+- You want **`bzm - HTTP Sampler`** and its multi-protocol client (**HTTP/1.1**, **HTTP/2**, **HTTP/3**, profiles, Jetty behavior) **without** manually re-adding every request.
+- You are **not** starting from a blank plan (for that, see [Creating the Test Plan](#readme-creating-test-plan) below).
+
+
+<a id="readme-migrate-how"></a>
+### How to run migration
+
+Open **Tools → BlazeMeter HTTP** and choose one of:
+
+| Menu item | Behavior |
+|-----------|----------|
+| **Migrate Entire Test Plan (HTTP Request → BlazeMeter HTTP)…** | Scans the whole tree and replaces every migratable **HTTP Request** sampler after confirmation. |
+| **Migrate Selected (HTTP Request → BlazeMeter HTTP)…** | Replaces only selected tree nodes that qualify; non-HTTP selections are listed as skipped in the confirm dialog. |
+
+**Recommended flow:**
+
+1. [Install and verify](#readme-verifying-installation) the plugin.
+2. Open your `.jmx` in JMeter (**stop any running test** before migrating).
+3. **Save a backup** of the test plan—migration **cannot be undone**.
+4. **Tools → BlazeMeter HTTP →** run **Migrate Entire Test Plan…** or **Migrate Selected…**.
+5. Confirm the sampler count in the dialog.
+6. Review migrated **`bzm - HTTP Sampler`** nodes; tune **Advanced → Client Behavior** (profiles, HTTP/2, HTTP/3) as needed.
+7. Save the updated `.jmx`.
+
+> [!NOTE] **Preserved during migration:**
+>
+> - **Sampler settings** from the original HTTP Request (URL, method, body, timeouts, redirects, etc.)—properties are copied; only the GUI/test class names change to BlazeMeter HTTP.
+> - **Child elements** under each HTTP Request (assertions, timers, preprocessors, etc.)—they stay attached under the new sampler.
+> - **Tree position**—same parent and index in the test plan.
+> - **Selection**—after a batch migration, tree selection is restored to the new nodes where possible.
+
 <a id="readme-creating-test-plan"></a>
 # Creating the Test Plan
+
+> **Already using JMeter’s standard HTTP Request sampler?** **[Migrate from JMeter HTTP Request to BlazeMeter HTTP](#readme-migrate-jmeter-http-request)**.  
+> **No script yet?** Pick an option below.
 
 <a id="readme-option-a-recording"></a>
 ### Option A: Recording (JMeter HTTP(S) Test Script Recorder)
@@ -108,8 +160,8 @@ This plugin can act as a sampler creator during JMeter proxy recording; it is **
 
 > [!NOTE]
 >
-> To disable recording support, use the Tools menu → BlazeMeter HTTP → Disable...
-> You can also disable this manually by adding or updating `blazemeter.http.proxy_enabled=false` in `user.properties`.
+> To disable recording support, use **Tools → BlazeMeter HTTP → Disable Recording with HTTP(S) Test Script Recorder** (restart when prompted).
+> You can also set `blazemeter.http.proxy_enabled=false` in `user.properties` (legacy `HTTP2Sampler.proxy_enabled` is accepted too).
 > The recorder creates `bzm - HTTP Sampler` elements, but you may still want to adjust protocol/profile settings afterwards.
 
 
@@ -322,6 +374,7 @@ Restart JMeter after changing JMeter properties that are applied when affected c
 
 | **Attribute** | **Description** | **Default** |
 |---|---|---:|
+| **blazemeter.http.proxy_enabled** | When **`true`**, the HTTP(S) Test Script Recorder creates **`bzm - HTTP Sampler`** instead of stock **HTTP Request** (legacy `HTTP2Sampler.proxy_enabled` accepted) | true |
 | **blazemeter.http.maxBufferSize** | Maximum size of the downloaded resources in bytes | 2097152 |
 | **blazemeter.http.minThreads** | Minimum number of threads per HTTP client | 1 |
 | **blazemeter.http.maxThreads** | Maximum number of threads per HTTP client | 5 |
