@@ -5,7 +5,7 @@
   <artifactId>jmeter-bzm-http2</artifactId>
   <packaging>jar</packaging>
   <version>3.0.1</version>
-  <name>BlazeMeter HTTP Sampler</name>
+  <name>BlazeMeter HTTP</name>
   <description>BlazeMeter HTTP Plugin for JMeter (HTTP/1.1, HTTP/2, HTTP/3/QUIC)</description>
   <licenses>
     <license>
