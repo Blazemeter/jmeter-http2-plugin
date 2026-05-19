@@ -16,6 +16,8 @@
     <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
     <jmeter.version>5.4.1</jmeter.version>
     <jetty.version>12.1.6</jetty.version>
+    <!-- Matches jetty-project ${brotli4j.version} for Jetty 12.1.6 -->
+    <brotli4j.version>1.20.0</brotli4j.version>
     <checkstyle.skip>false</checkstyle.skip>
   </properties>
 
@@ -113,6 +115,37 @@
       <groupId>org.eclipse.jetty.compression</groupId>
       <artifactId>jetty-compression-brotli</artifactId>
       <version>${jetty.version}</version>
+    </dependency>
+    <!-- brotli4j pulls one native-* for the build OS only; add the rest for cross-platform shaded jar -->
+    <dependency>
+      <groupId>com.aayushatharva.brotli4j</groupId>
+      <artifactId>native-linux-x86_64</artifactId>
+      <version>${brotli4j.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>com.aayushatharva.brotli4j</groupId>
+      <artifactId>native-linux-aarch64</artifactId>
+      <version>${brotli4j.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>com.aayushatharva.brotli4j</groupId>
+      <artifactId>native-windows-x86_64</artifactId>
+      <version>${brotli4j.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>com.aayushatharva.brotli4j</groupId>
+      <artifactId>native-windows-aarch64</artifactId>
+      <version>${brotli4j.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>com.aayushatharva.brotli4j</groupId>
+      <artifactId>native-osx-x86_64</artifactId>
+      <version>${brotli4j.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>com.aayushatharva.brotli4j</groupId>
+      <artifactId>native-osx-aarch64</artifactId>
+      <version>${brotli4j.version}</version>
     </dependency>
     <dependency>
       <groupId>org.eclipse.jetty.compression</groupId>
