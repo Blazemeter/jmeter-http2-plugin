@@ -31,11 +31,11 @@ import javax.swing.MenuElement;
 import javax.swing.SwingUtilities;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.jmeter.gui.GuiPackage;
-import org.apache.jmeter.gui.action.AbstractActionWithNoRunningTest;
 import org.apache.jmeter.gui.action.ActionNames;
 import org.apache.jmeter.gui.action.ActionRouter;
 import org.apache.jmeter.gui.action.Restart;
 import org.apache.jmeter.gui.plugin.MenuCreator;
+import org.apache.jmeter.gui.plugin.MenuCreator.MENU_LOCATION;
 import org.apache.jmeter.gui.tree.JMeterTreeModel;
 import org.apache.jmeter.gui.tree.JMeterTreeNode;
 import org.apache.jmeter.protocol.http.sampler.HTTPSampler;
@@ -49,10 +49,13 @@ import org.slf4j.LoggerFactory;
  * Tools → BlazeMeter HTTP: {@link HTTP2SampleCreator} recording toggle,
  * migrating HTTPSamplerProxy / HTTPSampler HTTP Request samplers to BlazeMeter HTTP.
  * Reads the proxy flag from {@link BzmHttpPluginProperties}.
+ *
+ * <p>Not registered via SPI: JMeter also scans {@code lib/ext} for {@link MenuCreator}
+ * and {@link org.apache.jmeter.gui.action.Command} implementations. Only
+ * {@link BlazeMeterHttpMenuCommandBootstrap} is listed in {@code META-INF/services};
+ * this class is instantiated by the bootstrap on Java 17+.
  */
-public class BlazeMeterHttpMenuCommand
-    extends AbstractActionWithNoRunningTest
-    implements MenuCreator {
+public class BlazeMeterHttpMenuCommand {
 
   private static final Logger LOG = LoggerFactory.getLogger(BlazeMeterHttpMenuCommand.class);
 
@@ -111,13 +114,11 @@ public class BlazeMeterHttpMenuCommand
         ProxyRecorderSamplerTypeUi::installRecorderUiHookOnce);
   }
 
-  @Override
   public Set<String> getActionNames() {
     return ACTION_NAMES;
   }
 
-  @Override
-  protected void doActionAfterCheck(ActionEvent e) {
+  public void doActionAfterCheck(ActionEvent e) {
     String cmd = e.getActionCommand();
     if (ACTION_PROXY_TOGGLE.equals(cmd)) {
       doProxyToggle();
@@ -594,7 +595,6 @@ public class BlazeMeterHttpMenuCommand
     return sb.toString().trim();
   }
 
-  @Override
   public JMenuItem[] getMenuItemsAtLocation(MENU_LOCATION location) {
     if (location != MENU_LOCATION.TOOLS) {
       return new JMenuItem[0];
@@ -629,17 +629,14 @@ public class BlazeMeterHttpMenuCommand
     return new JMenuItem[] {root};
   }
 
-  @Override
   public JMenu[] getTopLevelMenus() {
     return new JMenu[0];
   }
 
-  @Override
   public boolean localeChanged(MenuElement menu) {
     return false;
   }
 
-  @Override
   public void localeChanged() {
     // Labels are fixed English strings; no bundle wiring.
   }
