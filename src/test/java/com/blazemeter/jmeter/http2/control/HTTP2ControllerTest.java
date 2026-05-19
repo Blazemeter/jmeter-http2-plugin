@@ -16,8 +16,13 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import org.apache.jmeter.control.NextIsNullException;
+import org.apache.jmeter.protocol.http.sampler.HTTPSampleResult;
 import org.apache.jmeter.protocol.http.sampler.HTTPSampler;
+import org.apache.jmeter.protocol.http.util.HTTPConstants;
+import org.apache.jmeter.samplers.SampleResult;
 import org.apache.jmeter.samplers.Sampler;
+import java.lang.reflect.Method;
+import java.net.URL;
 import org.apache.jmeter.util.JMeterUtils;
 import org.eclipse.jetty.client.Request;
 
@@ -246,6 +251,40 @@ public class HTTP2ControllerTest extends HTTP2TestBase {
     assertThat(http2Controller.isDone()).isTrue();
   }
   */
+
+  @Test
+  public void deepCopyHttpSampleResultDoesNotDuplicateRequestBodyInSamplerData() throws Exception {
+    HTTPSampleResult original = new HTTPSampleResult();
+    original.setHTTPMethod(HTTPConstants.POST);
+    original.setURL(new URL("https://example.com/api"));
+    original.setQueryString("field=unique-body-token");
+    original.setSamplerData("");
+
+    Method deepCopy = HTTP2Controller.class.getDeclaredMethod(
+        "deepCopySampleResult", SampleResult.class);
+    deepCopy.setAccessible(true);
+    HTTPSampleResult copy = (HTTPSampleResult) deepCopy.invoke(null, original);
+
+    String bodyToken = "unique-body-token";
+    assertThat(countOccurrences(copy.getSamplerData(), bodyToken)).isEqualTo(1);
+    assertThat(countOccurrences(original.getSamplerData(), bodyToken)).isEqualTo(1);
+  }
+
+  private static int countOccurrences(String source, String token) {
+    if (source == null || token == null || token.isEmpty()) {
+      return 0;
+    }
+    int count = 0;
+    int fromIndex = 0;
+    while (true) {
+      int index = source.indexOf(token, fromIndex);
+      if (index < 0) {
+        return count;
+      }
+      count++;
+      fromIndex = index + token.length();
+    }
+  }
 
   /*
   @Test
