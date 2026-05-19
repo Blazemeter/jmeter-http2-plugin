@@ -492,7 +492,10 @@ public class HTTP2Controller extends GenericController implements Serializable {
     }
     copy.setRequestHeaders(original.getRequestHeaders());
     copy.setResponseHeaders(original.getResponseHeaders());
-    copy.setSamplerData(original.getSamplerData());
+    // Do not copy sampler data here: clone() already copies the raw field. For HTTPSampleResult,
+    // getSamplerData() is a computed view (method, URL, queryString, cookies, plus raw field);
+    // setSamplerData(getSamplerData()) would store that view in the raw field and duplicate the
+    // request body on the next getSamplerData() call. BlazeMeter HTTP keeps the raw field empty.
     copy.setResponseData(original.getResponseData());
     if (original.getURL() != null) {
       copy.setURL(original.getURL());
