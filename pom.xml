@@ -1,16 +1,32 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0"
-  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-  xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
   <modelVersion>4.0.0</modelVersion>
-
   <groupId>com.blazemeter.jmeter</groupId>
   <artifactId>jmeter-bzm-http2</artifactId>
   <packaging>jar</packaging>
   <version>3.0.1</version>
   <name>BlazeMeter HTTP</name>
   <description>BlazeMeter HTTP Plugin for JMeter (HTTP/1.1, HTTP/2, HTTP/3/QUIC)</description>
-
+  <licenses>
+    <license>
+      <name>The Apache Software License, Version 2.0</name>
+      <url>http://www.apache.org/licenses/LICENSE-2.0.txt</url>
+      <distribution>repo</distribution>
+    </license>
+  </licenses>
+  <url>https://github.com/Blazemeter/jmeter-http2-plugin</url>
+  <scm>
+    <connection>scm:git:git://github.com/Blazemeter/jmeter-http2-plugin.git</connection>
+    <developerConnection>scm:git:ssh://github.com:Blazemeter/jmeter-http2-plugin.git</developerConnection>
+    <url>https://github.com/Blazemeter/jmeter-http2-plugin/tree/master</url>
+  </scm>
+  <developers>
+    <developer>
+      <id>team</id>
+      <name>blazelabs</name>
+      <email>blazelabs@perforce.com</email>
+    </developer>
+  </developers>
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
@@ -20,7 +36,6 @@
     <brotli4j.version>1.20.0</brotli4j.version>
     <checkstyle.skip>false</checkstyle.skip>
   </properties>
-
   <dependencies>
     <dependency>
       <groupId>org.apache.jmeter</groupId>
@@ -264,7 +279,6 @@
       <scope>test</scope>
     </dependency>
   </dependencies>
-
   <build>
     <resources>
       <resource>
@@ -553,6 +567,67 @@
                 </configuration>
               </execution>
             </executions>
+          </plugin>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-source-plugin</artifactId>
+            <version>3.3.0</version>
+            <executions>
+              <execution>
+                <id>attach-sources</id>
+                <goals>
+                  <goal>jar</goal>
+                </goals>
+              </execution>
+            </executions>
+          </plugin>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-javadoc-plugin</artifactId>
+            <version>3.5.0</version>
+            <executions>
+              <execution>
+                <id>attach-javadocs</id>
+                <goals>
+                  <goal>jar</goal>
+                </goals>
+              </execution>
+            </executions>
+            <configuration>
+              <source>17</source>
+              <failOnError>false</failOnError>
+              <doclint>none</doclint>
+            </configuration>
+          </plugin>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-gpg-plugin</artifactId>
+            <version>3.1.0</version>
+            <executions>
+              <execution>
+                <id>sign-artifacts</id>
+                <goals>
+                  <goal>sign</goal>
+                </goals>
+                <configuration>
+                  <gpgArguments>
+                    <arg>--pinentry-mode</arg>
+                    <arg>loopback</arg>
+                  </gpgArguments>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+          <plugin>
+            <groupId>org.sonatype.central</groupId>
+            <artifactId>central-publishing-maven-plugin</artifactId>
+            <version>0.9.0</version>
+            <extensions>true</extensions>
+            <configuration>
+              <publishingServerId>central</publishingServerId>
+              <autoPublish>true</autoPublish>
+              <waitUntil>published</waitUntil>
+            </configuration>
           </plugin>
         </plugins>
       </build>
