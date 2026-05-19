@@ -82,6 +82,19 @@ public class HTTP2DependenciesIntegrationTest extends HTTP2TestBase {
   private static final String SHADED_QUIC_CLIENT_RESOURCE =
       "com/blazemeter/jmeter/http2/shaded/org/eclipse/jetty/quic/client/QuicClientConnector.class";
 
+  /**
+   * Brotli4j native libraries under {@code lib/<os>-<arch>/}; must be present for every
+   * platform we ship, independent of the OS used to run {@code mvn package}.
+   */
+  private static final List<String> SHADED_BROTLI_NATIVE_RESOURCES = Arrays.asList(
+      "lib/linux-x86_64/libbrotli.so",
+      "lib/linux-aarch64/libbrotli.so",
+      "lib/windows-x86_64/brotli.dll",
+      "lib/windows-aarch64/brotli.dll",
+      "lib/osx-x86_64/libbrotli.dylib",
+      "lib/osx-aarch64/libbrotli.dylib"
+  );
+
   @BeforeClass
   public static void once() {
     HTTP2TestBase.once();
@@ -213,6 +226,16 @@ public class HTTP2DependenciesIntegrationTest extends HTTP2TestBase {
     assertJarContainsClass(pluginJar,
       "com/aayushatharva/brotli4j/decoder/BrotliInputStream.class",
       "Shaded jar should include Brotli4j decoder class");
+  }
+
+  @Test
+  public void shouldBundleBrotliNativesForAllSupportedPlatforms() {
+    Path pluginJar = requireShadedJar();
+
+    for (String resource : SHADED_BROTLI_NATIVE_RESOURCES) {
+      assertJarContainsClass(pluginJar, resource,
+          "Shaded jar must include Brotli4j native for all shipped platforms: " + resource);
+    }
   }
 
   @Test
