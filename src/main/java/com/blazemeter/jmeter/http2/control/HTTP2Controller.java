@@ -368,14 +368,13 @@ public class HTTP2Controller extends GenericController implements Serializable {
   }
 
   /**
-   * Parent synthetic sampler must not inherit child assertions/post-processors: JMeter would run
-   * them against the aggregated parent {@link SampleResult}, whose response body is empty.
+   * Parent synthetic sampler must not inherit child timers, assertions, or post-processors.
    */
   private static SamplePackage createParentExecutionPackage(SamplePackage childPack) {
     SamplePackage parentPack = new SamplePackage(
         childPack.getConfigs(),
         childPack.getSampleListeners(),
-        childPack.getTimers(),
+        new ArrayList<>(),
         new ArrayList<>(),
         new ArrayList<>(),
         new ArrayList<>(),

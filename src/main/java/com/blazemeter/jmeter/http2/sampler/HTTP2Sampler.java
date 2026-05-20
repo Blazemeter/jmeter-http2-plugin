@@ -49,6 +49,7 @@ import org.apache.jmeter.threads.JMeterThread;
 import org.apache.jmeter.threads.JMeterVariables;
 import org.apache.jmeter.threads.SamplePackage;
 import org.apache.jmeter.threads.TestCompiler;
+import org.apache.jmeter.timers.Timer;
 import org.apache.jmeter.util.JMeterUtils;
 import org.apache.jorphan.util.JOrphanUtils;
 import org.apache.oro.text.MalformedCachePatternException;
@@ -152,6 +153,7 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
   private int requestTimeout;
   private HTTPSampleResult result;
   private transient List<PreProcessor> suppressedPreProcessors;
+  private transient List<Timer> suppressedTimers;
   private transient SamplePackage suppressedSamplePackage;
   private transient boolean profileInferenceWarningLogged;
   private transient boolean asyncParentSampleEnabled;
@@ -529,8 +531,8 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
   /**
    * When {@link #isAsyncParentSampleEnabled()} and this sampler returns {@code null} to JMeter,
    * run post-processors and assertions here (same order as {@code JMeterThread}) so child elements
-   * still apply; pre-processors already ran on the initial async dispatch and stay suppressed until
-   * {@link #restoreSuppressedPreProcessors()} in {@code finally}.
+   * still apply; pre-processors and timers already ran on the initial async dispatch and stay
+   * suppressed until {@link #restoreSuppressedPreProcessors()} in {@code finally}.
    */
   private void applyAsyncParentCompletionPipeline(HTTPSampleResult res) {
     if (res == null || !isAsyncParentSampleEnabled()) {
@@ -1083,8 +1085,12 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
     }
   }
 
+  /**
+   * Clears pre-processors and timers from the {@link SamplePackage} before the async completion
+   * pass so JMeter does not run them twice.
+   */
   public void suppressPreProcessorsOnce() {
-    if (suppressedPreProcessors != null) {
+    if (suppressedSamplePackage != null) {
       return;
     }
     try {
@@ -1099,21 +1105,32 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
         return;
       }
       SamplePackage pack = getSamplePackageFromCompiler(compiler);
-      if (pack == null || pack.getPreProcessors() == null) {
-        LOG.debug("No SamplePackage found for sampler={}, skipping pre-processor suppression",
+      if (pack == null) {
+        LOG.debug(
+            "No SamplePackage found for sampler={}, skipping async completion suppression",
             getName());
         return;
       }
+      boolean suppressed = false;
       List<PreProcessor> currentPre = pack.getPreProcessors();
-      if (currentPre.isEmpty()) {
-        return;
+      if (currentPre != null && !currentPre.isEmpty()) {
+        suppressedPreProcessors = new ArrayList<>(currentPre);
+        currentPre.clear();
+        suppressed = true;
       }
-      suppressedPreProcessors = new ArrayList<>(currentPre);
-      suppressedSamplePackage = pack;
-      currentPre.clear();
-      LOG.debug("Pre-processors suppressed for async completion run (sampler={})", getName());
+      List<Timer> currentTimers = pack.getTimers();
+      if (currentTimers != null && !currentTimers.isEmpty()) {
+        suppressedTimers = new ArrayList<>(currentTimers);
+        currentTimers.clear();
+        suppressed = true;
+      }
+      if (suppressed) {
+        suppressedSamplePackage = pack;
+        LOG.debug("Pre-processors/timers suppressed for async completion run (sampler={})",
+            getName());
+      }
     } catch (Exception e) {
-      LOG.debug("Failed to suppress pre-processors for async completion", e);
+      LOG.debug("Failed to suppress pre-processors/timers for async completion", e);
     }
   }
 
@@ -1130,18 +1147,28 @@ public class HTTP2Sampler extends HTTPSamplerBase implements LoopIterationListen
   }
 
   private void restoreSuppressedPreProcessors() {
-    if (suppressedPreProcessors == null || suppressedSamplePackage == null) {
+    if (suppressedSamplePackage == null) {
       return;
     }
     try {
-      List<PreProcessor> currentPre = suppressedSamplePackage.getPreProcessors();
-      if (currentPre != null) {
-        currentPre.clear();
-        currentPre.addAll(suppressedPreProcessors);
+      if (suppressedPreProcessors != null) {
+        List<PreProcessor> currentPre = suppressedSamplePackage.getPreProcessors();
+        if (currentPre != null) {
+          currentPre.clear();
+          currentPre.addAll(suppressedPreProcessors);
+        }
       }
-      LOG.debug("Pre-processors restored after async completion (sampler={})", getName());
+      if (suppressedTimers != null) {
+        List<Timer> currentTimers = suppressedSamplePackage.getTimers();
+        if (currentTimers != null) {
+          currentTimers.clear();
+          currentTimers.addAll(suppressedTimers);
+        }
+      }
+      LOG.debug("Pre-processors/timers restored after async completion (sampler={})", getName());
     } finally {
       suppressedPreProcessors = null;
+      suppressedTimers = null;
       suppressedSamplePackage = null;
     }
   }

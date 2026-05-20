@@ -212,6 +212,7 @@ public class HTTP2AsyncParentSampleAssertionTest extends HTTP2TestBase {
 
     SamplePackage parentPack = getCompiler(jmeterThread).configureSampler(parentSampler);
     assertThat(parentPack.getAssertions()).isEmpty();
+    assertThat(parentPack.getTimers()).isEmpty();
 
     SampleResult parentResult = jmeterContext.getPreviousResult();
     assertThat(parentResult).isNotNull();
