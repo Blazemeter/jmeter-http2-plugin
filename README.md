@@ -237,6 +237,39 @@ The available profiles are:
 - **Legacy / Older Systems** (`legacy`)
 - **Browser-like (Custom)** (`browser-like-custom`) (persists per-sampler toggles below)
 
+You can also define additional profiles in `user.properties` / `jmeter.properties`.
+Custom profiles are loaded by both the GUI and non-GUI runtime, so the same profile
+works in local, CLI, and distributed test runs.
+
+Example:
+
+```properties
+blazemeter.http.profiles.mobile-h3.label=Mobile H3 Conservative
+blazemeter.http.profiles.mobile-h3.extends=browser-like
+blazemeter.http.profiles.mobile-h3.enableHttp3=true
+blazemeter.http.profiles.mobile-h3.enableHttp2=true
+blazemeter.http.profiles.mobile-h3.enableHttp1=true
+blazemeter.http.profiles.mobile-h3.happyEyeballsDelayMs=500
+blazemeter.http.profiles.mobile-h3.http3BrokenCooldownMs=600000
+```
+
+Profile IDs may contain lowercase letters, digits, `_`, and `-`. If `extends` is omitted,
+the custom profile inherits from `browser-like`. Supported fields are:
+
+`label`, `extends`, `enableHttp3`, `enableHttp2`, `enableHttp1`, `alpnEnabled`,
+`fallbackEnabled`, `protocolErrorFallbackEnabled`, `altSvcCacheEnabled`,
+`http1OnlyCacheEnabled`, `h2cCacheEnabled`, `http2PriorKnowledge`,
+`h2cUpgradeEnabled`, `happyEyeballsDelayMs`, `http3BrokenCooldownMs`,
+`http1OnlyCooldownMs`, and `h2cCacheTtlMs`.
+
+For larger profile sets, put the same properties in a separate file and reference it:
+
+```properties
+blazemeter.http.profiles.file=/path/to/http-profiles.properties
+```
+
+Profile values defined directly in JMeter properties override values loaded from that file.
+
 
 <a id="readme-client-protocols"></a>
 #### Client Behavior → Protocols / Fallback / Cache / Timing
@@ -391,6 +424,8 @@ Restart JMeter after changing JMeter properties that are applied when affected c
 | **blazemeter.http.maxConcurrentAsyncInController** | Default concurrency cap inside **`bzm - HTTP Async Controller`** when parallel limiting is unchecked | 100 |
 | **HTTPSampler.response_timeout** | Default response timeout (ms) when the sampler defines none | 0 |
 | **http.post_add_content_type_if_missing** | Add Content-Type header if missing? | false |
+| **blazemeter.http.profile** | Default client behavior profile when a sampler does not define one | browser-like |
+| **blazemeter.http.profiles.file** | Optional `.properties` file containing custom profile definitions | |
 | **blazemeter.http.enableHttp3** | Enable HTTP/3 support (Alt-Svc + QUIC) | profile |
 | **blazemeter.http.enableHttp2** | Enable HTTP/2 support | profile |
 | **blazemeter.http.enableHttp1** | Enable HTTP/1.1 support | profile |
@@ -403,7 +438,7 @@ Restart JMeter after changing JMeter properties that are applied when affected c
 | **blazemeter.http.altSvcCacheEnabled** | Enable Alt-Svc cache for HTTP/3 discovery | profile |
 | **blazemeter.http.http1OnlyCacheEnabled** | Enable HTTP/1.1-only cache for HTTPS origins | profile |
 | **blazemeter.http.h2cCacheEnabled** | Enable H2C cache for cleartext origins | profile |
-| **blazemeter.http.h2cUpgradeEnabled** | Enable **H2C Upgrade (HTTP/1.1 Upgrade)** | false |
+| **blazemeter.http.h2cUpgradeEnabled** | Enable **H2C Upgrade (HTTP/1.1 Upgrade)** | profile |
 | **blazemeter.http.h2cCacheTtlMs** | H2C cache TTL in milliseconds | profile |
 | **blazemeter.http.http1OnlyCooldownMs** | HTTP/1.1-only cache TTL in milliseconds | profile |
 | **blazemeter.http.http3BrokenCooldownMs** | Cooldown before retrying HTTP/3 after failures (ms) | profile |
@@ -432,4 +467,3 @@ Artifacts land under **`target/`**. Compilation uses the **`jmeter.version`** de
 ## License
 
 Distributed under the **Apache License 2.0**. See **`LICENSE`** in this repository.
-
