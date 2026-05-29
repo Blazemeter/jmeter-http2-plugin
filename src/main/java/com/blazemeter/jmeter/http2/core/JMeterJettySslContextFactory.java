@@ -24,7 +24,9 @@ public class JMeterJettySslContextFactory extends SslContextFactory.Client {
     setTrustAll(true);
     String keyStorePath = System.getProperty("javax.net.ssl.keyStore");
     if (keyStorePath != null && !keyStorePath.isEmpty()) {
-      setKeyStorePath("file://" + keyStorePath);
+      if (SslStorePathResolver.isFileBasedStoreLocation(keyStorePath)) {
+        setKeyStorePath(SslStorePathResolver.toJettyFileUri(keyStorePath));
+      }
       keys = getKeyStore((JsseSSLManager) SSLManager.getInstance());
       /*
        we need to set password after getting keystore since getKeystore may ask the user for the
@@ -37,7 +39,9 @@ public class JMeterJettySslContextFactory extends SslContextFactory.Client {
 
     String truststore = System.getProperty("javax.net.ssl.trustStore");
     if (truststore != null && !truststore.isEmpty()) {
-      setTrustStorePath("file://" + truststore);
+      if (SslStorePathResolver.isFileBasedStoreLocation(truststore)) {
+        setTrustStorePath(SslStorePathResolver.toJettyFileUri(truststore));
+      }
       getTrustStore((JsseSSLManager) SSLManager.getInstance());
       /*
        we need to set password after getting truststore since getTrustStore may ask the user for the
